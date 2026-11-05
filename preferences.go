@@ -5,6 +5,7 @@ import (
 	"github.com/foursmith/player/internal/projection"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 type preferences struct {
@@ -30,17 +31,15 @@ type storedState struct {
 	Preferences preferences
 	History     map[string]videoHistory
 	LastFile    string
+	RecentFiles []string
 }
 
 func defaultPreferences() preferences {
 	return preferences{Volume: 1, PlaybackRate: 1, QualityID: 2, FrameRateID: 3, SplitCount: 2, PreferredSplitAspect: "1:1", FaceAutoCenter: true, ResumeAfterMovement: true, SubtitlesEnabled: true, RepeatMode: "file", Locale: "en"}
 }
-func loadState(path, previousPath string) storedState {
+func loadState(path string) storedState {
 	state := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{}}
 	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) && previousPath != "" {
-		data, err = os.ReadFile(previousPath)
-	}
 	if err == nil {
 		candidate := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{}}
 		if json.Unmarshal(data, &candidate) == nil {
@@ -70,7 +69,24 @@ func loadState(path, previousPath string) storedState {
 			delete(state.History, key)
 		}
 	}
+	var recent []string
+	for _, path := range state.RecentFiles {
+		if filepath.IsAbs(path) && !slices.Contains(recent, path) && len(recent) < 10 {
+			recent = append(recent, path)
+		}
+	}
+	state.RecentFiles = recent
 	return state
+}
+
+func rememberFile(recent []string, path string) []string {
+	out := []string{path}
+	for _, previous := range recent {
+		if previous != path && len(out) < 10 {
+			out = append(out, previous)
+		}
+	}
+	return out
 }
 func saveState(path string, state storedState) error {
 	data, err := json.MarshalIndent(state, "", "  ")

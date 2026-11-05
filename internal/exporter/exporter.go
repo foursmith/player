@@ -17,7 +17,7 @@ import (
 
 type Options struct {
 	Source, Destination, Format string
-	Cookies, Encoder            string
+	Encoder                     string
 	Start, End                  float64
 	Width, Height, FPS, BitRate int
 	Parameters                  video.Parameters
@@ -35,7 +35,7 @@ func Export(ctx context.Context, o Options) error {
 	if o.Width < 2 || o.Height < 2 || o.FPS < 1 {
 		return fmt.Errorf("invalid output dimensions or frame rate")
 	}
-	decoder, err := media.OpenContext(ctx, media.Source{URL: o.Source, Cookies: o.Cookies}, false)
+	decoder, err := media.OpenContext(ctx, media.Source{URL: o.Source}, false)
 	if err != nil {
 		return err
 	}
@@ -59,9 +59,6 @@ func Export(ctx context.Context, o Options) error {
 	}
 	encoded := filepath.Join(dir, "clip."+format)
 	args := []string{"-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pixel_format", "rgba", "-video_size", fmt.Sprintf("%dx%d", o.Width, o.Height), "-framerate", strconv.Itoa(o.FPS), "-i", "pipe:0", "-ss", fmt.Sprintf("%.6f", o.Start)}
-	if o.Cookies != "" {
-		args = append(args, "-cookies", o.Cookies)
-	}
 	args = append(args, "-i", o.Source, "-map", "0:v:0", "-map", "1:a:0?", "-t", fmt.Sprintf("%.6f", o.End-o.Start), "-b:a", "128k")
 	if len(o.Cues) > 0 && !subtitle.NativeComposition {
 		path := filepath.Join(dir, "subtitles.ass")

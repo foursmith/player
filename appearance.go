@@ -139,13 +139,19 @@ func (a *application) iconControl(c *ui.Context, name, label string, style iconS
 	button.OnClick(action)
 	return button
 }
-func (a *application) pickers(c *ui.Context, width float32) {
+func (a *application) pickers(c *ui.Context, width float32, appendOnly bool) {
 	glass(c, 999).Width(width).Height(40).Children(func() {
 		ui.Row(c).Fill().Children(func() {
 			for i, item := range []struct {
 				icon, label string
 				folder      bool
-			}{{"file-video", "media.chooseFiles", false}, {"folder", "media.chooseFolder", true}} {
+			}{{"file-video", "media.openFiles", false}, {"folder", "media.openFolder", true}} {
+				if appendOnly {
+					item.label = "media.addFiles"
+					if item.folder {
+						item.label = "media.addFolder"
+					}
+				}
 				if i > 0 {
 					ui.Box(c).Width(1).Height(16).Background(white(.12))
 				}
@@ -161,7 +167,7 @@ func (a *application) pickers(c *ui.Context, width float32) {
 					p.RichText(x+20, r.Y+(r.H-h)/2, 0, text)
 				})
 				if button.Clicked() {
-					a.choose(item.folder)
+					a.choose(item.folder, appendOnly)
 				}
 			}
 		})

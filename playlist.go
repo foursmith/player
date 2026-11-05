@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/library"
 )
@@ -60,15 +62,15 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 					if a.expandedFolders[node.ID] {
 						name = "folder-open"
 					}
-					if depth == 0 && node.Folder.Kind != "browser" {
-						name = "source-" + node.Folder.Kind
+					if depth == 0 && node.Folder.DeviceID != "" {
+						name = "source-dlna"
 					}
 				}
 				if selected {
 					color = accent
 				}
 				ui.Icon(c, icons[name]).Size(14, 14).TextColor(color)
-				ui.Text(c, node.Name).FontSize(11).TextColor(color).Ellipsis("…").Grow(1)
+				ui.Text(c, node.Name).FontSize(11).TextColor(color).SingleLine().Grow(1).MinWidth(0)
 				if node.Folder != nil {
 					ui.Icon(c, icons["caret-down"]).Size(10, 10).TextColor(white(.4))
 				} else if a.entries[node.Index].Subtitle != "" {
@@ -82,36 +84,104 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 			} else {
 				a.expandedFolders[node.ID] = !a.expandedFolders[node.ID]
 				a.playlistRowsValid = false
-				if a.expandedFolders[node.ID] && node.Folder.SourceID != "" {
-					a.loadRemoteFolder(*node.Folder, nil)
+				if a.expandedFolders[node.ID] && node.Folder.DeviceID != "" {
+					a.loadDLNAFolder(*node.Folder)
 				}
 			}
 		})
 	})
 }
+func (a *application) cancelImports() {
+	a.importGeneration++
+	a.pendingPaths = nil
+	a.openFilesAt = time.Time{}
+}
+
 func (a *application) clearLocalPlaylist() {
-	a.persist()
-	selectedRemote := a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].SourceID != ""
-	var entries []library.Entry
+	a.cancelImports()
+	selectedDLNA := a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].DeviceID != ""
+	if !selectedDLNA {
+		a.resetPlayback()
+	}
+	entries := dlnaEntries(a.entries)
 	selected := -1
-	for i, e := range a.entries {
-		if e.SourceID != "" {
-			if i == a.selected {
-				selected = len(entries)
-			}
-			entries = append(entries, e)
+	for i, e := range entries {
+		if selectedDLNA && e.Path == a.entries[a.selected].Path {
+			selected = i
 		}
 	}
 	a.entries = entries
+	a.subtitlePaths = nil
 	a.invalidatePlaylist()
 	a.selected = selected
-	if !selectedRemote {
-		a.cancelExport()
-		a.player.Reset()
-		a.cancelSubtitle()
-		a.cues = nil
-		a.loopA = nil
-		a.loopB = nil
-		a.tracker.Reset()
+}
+
+func dlnaEntries(entries []library.Entry) []library.Entry {
+	var out []library.Entry
+	for _, entry := range entries {
+		if entry.DeviceID != "" {
+			out = append(out, entry)
+		}
 	}
+	return out
+}
+
+func mergeEntries(current, incoming []library.Entry) []library.Entry {
+	seen := make(map[string]bool, len(current)+len(incoming))
+	out := make([]library.Entry, 0, len(current)+len(incoming))
+	for _, entries := range [][]library.Entry{current, incoming} {
+		for _, entry := range entries {
+			if !seen[entry.Path] {
+				seen[entry.Path] = true
+				out = append(out, entry)
+			}
+		}
+	}
+	return out
+}
+
+func importedPlaylist(current, incoming []library.Entry, selected int, appendOnly bool) ([]library.Entry, int, bool) {
+	if !appendOnly {
+		current = dlnaEntries(current)
+		selected = -1
+	}
+	queue := mergeEntries(current, incoming)
+	if selected >= 0 && selected < len(current) {
+		return queue, selected, false
+	}
+	first := library.FirstVideo(library.Tree(incoming, nil))
+	if first >= 0 {
+		for i, entry := range queue {
+			if entry.Path == incoming[first].Path {
+				return queue, i, true
+			}
+		}
+	}
+	return queue, -1, false
+}
+
+func (a *application) closeVideo() {
+	a.cancelImports()
+	a.resetPlayback()
+}
+
+func (a *application) resetPlayback() {
+	a.persist()
+	a.cancelExport()
+	a.cancelSubtitle()
+	a.player.Reset()
+	a.selected = -1
+	a.cues = nil
+	a.loopA, a.loopB = nil, nil
+	a.singleClickAt = time.Time{}
+	a.scrubbing, a.dragging = false, false
+	a.adjustmentsOpen, a.projectionOpen = false, false
+	a.notice = ""
+	a.tracker.Reset()
+	if a.pipWindow != nil {
+		a.pipWindow.Close()
+	}
+	a.window.SetTitle(appInfo.Name)
+	a.stored.LastFile = ""
+	a.persist()
 }

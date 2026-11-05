@@ -11,7 +11,7 @@ void fsvr_cancel_set(FsvrCancel *cancel);
 void fsvr_cancel_free(FsvrCancel *cancel);
 uint64_t fsvr_frame_serial(FsvrFrame *f);
 
-FsvrDecoder *fsvr_open(const char *url, const char *cookies, FsvrCancel *cancel, int output_audio, char *error, int error_size);
+FsvrDecoder *fsvr_open(const char *url, FsvrCancel *cancel, int output_audio, char *error, int error_size);
 void fsvr_close(FsvrDecoder *d);
 int fsvr_next(FsvrDecoder *d, FsvrFrame **frame, char *error, int error_size);
 int fsvr_buffer_audio(FsvrDecoder *d, double seconds, char *error, int error_size);

@@ -4,6 +4,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/shader"
 	"math"
+	"path/filepath"
 	"time"
 )
 
@@ -32,14 +33,17 @@ func (a *application) empty(c *ui.Context) {
 	if wide {
 		heroW, heroH, logoSize = 400, 272, 192
 	}
+	if a.height < 560 {
+		heroW, heroH, logoSize = 280, 112, 96
+	}
 	ui.Box(c.Key("empty")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Draw(func(p *ui.Painter, r ui.Rect) { ocean.Draw(p, r, shader.Options{Uniforms: map[string]any{"Time": t}}) }).Children(func() {
 		driftTime := math.Mod(t, 72) / 36
 		if driftTime > 1 {
 			driftTime = 2 - driftTime
 		}
 		drift := motion(driftTime, []motionFrame{{at: 0, x: 16, y: -6}, {at: .28, x: -18, y: 1}, {at: .55, y: 8}, {at: .78, x: 18, y: 2}, {at: 1, x: -6, y: -8}}, [4]float64{.42, 0, .58, 1})
-		ui.Column(c).AlignItems(ui.Center).Gap(16).Translate(float32(drift.x), float32(drift.y)).Children(func() {
-			ui.Box(c).Size(heroW, heroH).Children(func() {
+		ui.Column(c).AlignItems(ui.Center).Gap(16).Children(func() {
+			ui.Box(c).Size(heroW, heroH).Translate(float32(drift.x), float32(drift.y)).Children(func() {
 				pose := motion(math.Mod(t, 18)/18, []motionFrame{{at: 0, x: 1, y: 1, rotate: -.2, scale: .998}, {at: .24, x: 1, y: 1, rotate: -.2, scale: .998}, {at: .48, x: 4, y: -2, rotate: .35, scale: 1.004}, {at: .56, x: -3, rotate: -.55, scale: .996}, {at: .63, x: -27, y: 1, rotate: -1.15, scale: 1.012}, {at: .70, x: -18, rotate: -.45, scale: 1.004}, {at: .84, x: 4, y: -1, rotate: .25, scale: 1}, {at: 1, x: 1, y: 1, rotate: -.2, scale: .998}}, [4]float64{.42, 0, .24, 1})
 				ui.Image(c, logo).Size(logoSize, logoSize).Attach(ui.AnchorCenter, ui.AnchorCenter).Translate(float32(pose.x), float32(pose.y)).Rotate(float32(pose.rotate)).Scale(float32(pose.scale), float32(pose.scale))
 				for i, dot := range []struct {
@@ -51,10 +55,21 @@ func (a *application) empty(c *ui.Context) {
 			})
 			ui.Column(c).AlignItems(ui.Center).Gap(24).Children(func() {
 				ui.RichText(c, ui.Span{Text: a.t("common.tagline"), Italic: true, Size: 11, Weight: 500, LetterSpacing: 2.1, Color: ui.RGBA(245, 255, 252, .42)})
-				if a.serverStatus == "authentication-required" || a.serverStatus == "connecting" {
-					a.authPicker(c)
-				} else {
-					a.pickers(c, 256)
+				a.pickers(c, 288, false)
+				label := a.t("playlist.scanDlna")
+				if a.scanning {
+					label = a.t("playlist.scanningDlna")
+				}
+				ui.Button(c, label).FontSize(11).Background(ui.Transparent).Border(0, ui.Transparent).Disabled(a.scanning).OnClick(a.scanDLNA)
+				if a.height >= 640 && len(a.stored.RecentFiles) > 0 {
+					ui.Column(c.Key("recent")).Width(288).Gap(4).Children(func() {
+						smallText(c, a.t("media.recentFiles"), .42).Padding(4, 8)
+						for _, path := range a.stored.RecentFiles[:min(3, len(a.stored.RecentFiles))] {
+							ui.Button(c.Key(path), "").FillWidth().Height(30).Padding(0, 8).Background(ui.Transparent).Border(0, ui.Transparent).Radius(8).Label(filepath.Base(path)).Children(func() {
+								ui.Text(c, filepath.Base(path)).FontSize(11).TextColor(white(.7)).SingleLine().FillWidth().MinWidth(0)
+							}).OnClick(func() { a.importPaths([]string{path}, false) })
+						}
+					})
 				}
 			})
 		})

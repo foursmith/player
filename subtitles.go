@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
+	"net/url"
 	"os"
-	"strings"
 
+	"github.com/foursmith/player/internal/dlna"
 	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/subtitle"
 )
@@ -25,20 +26,20 @@ func (a *application) loadSubtitle(path string) {
 }
 
 // A selection or manual subtitle load replaces the previous request. Discovery,
-// disk/network reads and parsing never block the native event/render thread.
+// disk/DLNA reads and parsing never block the native event/render thread.
 func (a *application) readSubtitle(entry library.Entry, path string, discover bool) {
 	a.cancelSubtitle()
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.subtitleCancel = cancel
 	paths := append([]string(nil), a.subtitlePaths...)
-	client, window := a.server, a.window
-	remote := func(path string) bool {
-		return strings.HasPrefix(path, "https://") || strings.HasPrefix(path, "http://")
+	if entry.DeviceID != "" {
+		paths = nil
 	}
+	window := a.window
 	go func() {
 		if discover {
 			path = library.MatchSubtitle(entry, paths)
-			if path == "" && !remote(entry.Path) {
+			if path == "" && entry.DeviceID == "" {
 				if siblings, err := library.SubtitleSiblings(entry.Path); err == nil {
 					path = library.MatchSubtitle(entry, siblings)
 				}
@@ -50,11 +51,9 @@ func (a *application) readSubtitle(entry library.Entry, path string, discover bo
 		name := path
 		var data []byte
 		var err error
-		if client != nil && remote(path) {
-			data, err = client.ReadSubtitle(ctx, path)
-			if entry.SubtitleName != "" {
-				name = entry.SubtitleName
-			}
+		if u, parseErr := url.Parse(path); parseErr == nil && (u.Scheme == "http" || u.Scheme == "https") {
+			data, err = dlna.ReadSubtitle(ctx, path)
+			name = u.Path
 		} else {
 			data, err = os.ReadFile(path)
 		}

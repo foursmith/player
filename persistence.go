@@ -2,6 +2,7 @@ package main
 
 import (
 	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -32,6 +33,7 @@ func newStateWriter(path string, failed func(error)) *stateWriter {
 
 func (w *stateWriter) Submit(state storedState) {
 	state.History = maps.Clone(state.History)
+	state.RecentFiles = slices.Clone(state.RecentFiles)
 	select {
 	case <-w.pending:
 	default:
@@ -50,11 +52,12 @@ func (a *application) persist() {
 	if a.shutdown {
 		return
 	}
-	if a.selected >= 0 && a.selected < len(a.entries) && (a.entries[a.selected].SourceID == "" || a.entries[a.selected].SourceID == "local") {
+	if a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].DeviceID == "" {
 		state := a.player.Snapshot()
 		entry := a.entries[a.selected]
-		a.stored.History[library.Identity(entry)] = videoHistory{Projection: a.mode, Position: state.Position, UpdatedAt: time.Now().UnixMilli()}
-		a.stored.LastFile = entry.Path
+		if state.URL == entry.Path && !state.Loading && state.Error == "" {
+			a.stored.History[library.Identity(entry)] = videoHistory{Projection: a.mode, Position: state.Position, UpdatedAt: time.Now().UnixMilli()}
+		}
 	}
 	if len(a.stored.History) > 10000 {
 		keys := make([]string, 0, len(a.stored.History))
@@ -67,6 +70,9 @@ func (a *application) persist() {
 		}
 	}
 	a.stored.Preferences = a.preferences
+	if a.window != nil && a.menuLocale != a.preferences.Locale {
+		a.refreshMenu()
+	}
 	a.stateWriter.Submit(a.stored)
 	a.lastSaved = time.Now()
 }

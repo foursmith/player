@@ -32,7 +32,3 @@ fmt:
 # 检查本机媒体依赖
 doctor:
     ./scripts/native-env go run ./cmd/doctor
-
-# 同步原版图标和翻译；不改变 web/ 源码
-assets:
-    bun run scripts/assets.ts

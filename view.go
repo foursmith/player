@@ -16,6 +16,13 @@ import (
 func (a *application) render(c *ui.Context) {
 	transparentTheme(c)
 	a.width, a.height = c.Size()
+	if !a.openFilesAt.IsZero() {
+		if c.Now().Before(a.openFilesAt) {
+			c.After(a.openFilesAt.Sub(c.Now()))
+		} else {
+			a.importPaths(a.pendingPaths, false)
+		}
+	}
 	state := a.player.Snapshot()
 	if a.exporting {
 		state.Position = a.exportPosition
@@ -119,6 +126,10 @@ func (a *application) topControls(c *ui.Context) {
 			a.iconButton(c, "playlist", a.t("playlist.open"), topControlSize, false, func() { a.playlistExpanded = true })
 		}
 		ui.Spacer(c).Grow(1)
+		a.iconButton(c, "file-video", a.t("media.openFiles"), topControlSize, false, func() { a.choose(false, false) })
+		if a.selected >= 0 {
+			a.iconButton(c, "x", a.t("media.closeVideo"), topControlSize, false, a.closeVideo)
+		}
 		if a.manuallyPaused || c.Now().Before(a.manualUntil) {
 			a.iconButton(c, "scan-face", a.t("debug.resumeCentering"), topControlSize, false, func() { a.manuallyPaused = false; a.manualUntil = time.Time{}; a.tracker.Reset() })
 		}
@@ -315,6 +326,9 @@ func (a *application) keyboard(c *ui.Context) {
 			a.projectionOpen = false
 		}
 		return
+	}
+	if c.Shortcut(0, ui.KeyEscape) && a.window.IsFullScreen() {
+		a.window.SetFullScreen(false)
 	}
 	state := a.player.Snapshot()
 	if state.URL == "" {
@@ -630,14 +644,7 @@ func (a *application) playlist(c *ui.Context, state media.State) {
 				}
 				a.persist()
 			})
-			if a.serverStatus == "connected" {
-				a.iconButton(c, "dlna-scan", a.t("playlist.scanDlna"), 32, a.scanning, func() {
-					if !a.scanning {
-						a.scanning = true
-						a.loadServerLibrary(true)
-					}
-				})
-			}
+			a.iconButton(c, "dlna-scan", a.t("playlist.scanDlna"), 32, a.scanning, a.scanDLNA)
 			a.iconControl(c, "trash", a.t("playlist.clear"), iconStyle{32, 14, floatingIcon}, false, a.clearLocalPlaylist)
 		})
 		rows := a.visiblePlaylist()
@@ -646,7 +653,7 @@ func (a *application) playlist(c *ui.Context, state media.State) {
 		ui.List(c.Key("playlist-rows"), &a.playlistList, len(rows), func(i int) {
 			a.playlistRow(c, rows[i])
 		}).FillWidth().Height(min(float32(len(rows))*36, max(40, a.height-top-306))).Padding(0, 8)
-		ui.Box(c).Padding(8).Children(func() { a.pickers(c, min(272, a.width-40)) })
+		ui.Box(c).Padding(8).Children(func() { a.pickers(c, min(272, a.width-40), true) })
 	})
 }
 

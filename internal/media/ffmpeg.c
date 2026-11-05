@@ -112,7 +112,7 @@ static int audio_filter(FsvrDecoder *d) {
     if (ret < 0) return ret;
     return avfilter_graph_config(d->filter, NULL);
 }
-FsvrDecoder *fsvr_open(const char *url, const char *cookies, FsvrCancel *cancel, int output_audio, char *error, int error_size) {
+FsvrDecoder *fsvr_open(const char *url, FsvrCancel *cancel, int output_audio, char *error, int error_size) {
     FsvrDecoder *d = av_mallocz(sizeof(*d));
     if (!d) { fail(AVERROR(ENOMEM), error, error_size); return NULL; }
     d->video_stream = d->audio_stream = -1;
@@ -123,7 +123,6 @@ FsvrDecoder *fsvr_open(const char *url, const char *cookies, FsvrCancel *cancel,
     d->format->interrupt_callback = (AVIOInterruptCB){interrupt_cb, d};
     AVDictionary *options = NULL;
     av_dict_set(&options, "rw_timeout", "10000000", 0);
-    if(cookies&&cookies[0])av_dict_set(&options,"cookies",cookies,0);
     int ret = avformat_open_input(&d->format, url, NULL, &options);
     av_dict_free(&options);
     if (ret < 0) goto failed;

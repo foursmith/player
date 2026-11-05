@@ -13,6 +13,7 @@ import (
 	_ "github.com/egoist/mygo/locales/ja"
 	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/ui"
+	"github.com/foursmith/player/internal/dlna"
 	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
@@ -34,70 +35,75 @@ type application struct {
 	exportFormat                              string
 	presentation                              [2]presentationState
 	controlsVisible                           bool
-	remoteState
-	folders                   []library.Folder
-	expandedFolders           map[string]bool
-	playlistTree              []library.Node
-	playlistRows              []playlistRow
-	playlistTreeValid         bool
-	playlistRowsValid         bool
-	playlistList              ui.ListState
-	timelineHandle            ui.Handle
-	controlsPanel             ui.Handle
-	projectionButton          ui.Handle
-	adjustmentsButton         ui.Handle
-	scrubbing                 bool
-	scrubTime                 float64
-	tracker                   tracking.Tracker
-	inference                 *inferenceWorker
-	lastTrackingAt            float64
-	trackingImage             *ui.Bitmap
-	window                    *mygo.Window
-	windowRef                 atomic.Pointer[mygo.Window]
-	player                    *media.Player
-	surface                   video.Surface
-	pipWindow                 *mygo.Window
-	pipSurface                video.Surface
-	preferences               preferences
-	stored                    storedState
-	entries                   []library.Entry
-	subtitlePaths             []string
-	pendingPaths              []string
-	cues                      []subtitle.Cue
-	selected                  int
-	view                      projection.View
-	mode                      projection.Mode
-	settingsOpen              bool
-	shortcutsOpen             bool
-	playlistExpanded          bool
-	projectionOpen            bool
-	projectionFocused         int
-	projectionItems           [7]ui.Handle
-	adjustmentsOpen           bool
-	debugOpen                 bool
-	controlsUntil             time.Time
-	controlsHeld              bool
-	lastPointer, pressPointer ui.Point
-	dragging                  bool
-	dragDistance              float64
-	singleClickAt             time.Time
-	width, height             float32
-	loopA, loopB              *float64
-	exportProgress            int
-	exporting                 bool
-	exportMessage, notice     string
-	lastAudible               float64
-	lastGeneration            uint64
-	lastSaved                 time.Time
-	endedGeneration           uint64
-	manuallyPaused            bool
-	manualUntil               time.Time
-	shutdown                  bool
+	dlnaDevices                               map[string]dlna.Device
+	scanning                                  bool
+	loadingFolders                            map[string]bool
+	importGeneration                          uint64
+	menuLocale                                string
+	dialogOpen                                bool
+	folders                                   []library.Folder
+	expandedFolders                           map[string]bool
+	playlistTree                              []library.Node
+	playlistRows                              []playlistRow
+	playlistTreeValid                         bool
+	playlistRowsValid                         bool
+	playlistList                              ui.ListState
+	timelineHandle                            ui.Handle
+	controlsPanel                             ui.Handle
+	projectionButton                          ui.Handle
+	adjustmentsButton                         ui.Handle
+	scrubbing                                 bool
+	scrubTime                                 float64
+	tracker                                   tracking.Tracker
+	inference                                 *inferenceWorker
+	lastTrackingAt                            float64
+	trackingImage                             *ui.Bitmap
+	window                                    *mygo.Window
+	windowRef                                 atomic.Pointer[mygo.Window]
+	player                                    *media.Player
+	surface                                   video.Surface
+	pipWindow                                 *mygo.Window
+	pipSurface                                video.Surface
+	preferences                               preferences
+	stored                                    storedState
+	entries                                   []library.Entry
+	subtitlePaths                             []string
+	pendingPaths                              []string
+	openFilesAt                               time.Time
+	cues                                      []subtitle.Cue
+	selected                                  int
+	view                                      projection.View
+	mode                                      projection.Mode
+	settingsOpen                              bool
+	shortcutsOpen                             bool
+	playlistExpanded                          bool
+	projectionOpen                            bool
+	projectionFocused                         int
+	projectionItems                           [7]ui.Handle
+	adjustmentsOpen                           bool
+	debugOpen                                 bool
+	controlsUntil                             time.Time
+	controlsHeld                              bool
+	lastPointer, pressPointer                 ui.Point
+	dragging                                  bool
+	dragDistance                              float64
+	singleClickAt                             time.Time
+	width, height                             float32
+	loopA, loopB                              *float64
+	exportProgress                            int
+	exporting                                 bool
+	exportMessage, notice                     string
+	lastAudible                               float64
+	lastGeneration                            uint64
+	lastSaved                                 time.Time
+	endedGeneration                           uint64
+	manuallyPaused                            bool
+	manualUntil                               time.Time
+	shutdown                                  bool
 }
 
 func main() {
 	dataDir := flag.String("data-dir", "", "application data directory")
-	server := flag.String("server", "", "FSVR server origin")
 	flag.Parse()
 	if err := loadAssets(); err != nil {
 		log.Fatal(err)
@@ -112,18 +118,12 @@ func main() {
 		log.Fatal(err)
 	}
 	path := filepath.Join(userData, "state.json")
-	previousPath := ""
-	if *dataDir == "" {
-		appData, err := mygo.App.Path(mygo.PathAppData)
-		if err != nil {
-			log.Fatal(err)
-		}
-		previousPath = filepath.Join(appData, "Foursmith VR", "state.json")
-	}
-	state := loadState(path, previousPath)
+	state := loadState(path)
 
 	a := &application{preferences: state.Preferences, stored: state, view: projection.DefaultView(), playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume}
 	a.expandedFolders = map[string]bool{}
+	a.dlnaDevices = map[string]dlna.Device{}
+	a.loadingFolders = map[string]bool{}
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
@@ -150,14 +150,17 @@ func main() {
 				a.window.Show()
 				a.window.Focus()
 				if len(args) > 1 {
-					a.importPaths(args[1:])
+					a.importPaths(args[1:], false)
 				}
 			})
 		}
 	})
 	mygo.App.OnOpenFile(func(path string) {
 		if w := a.windowRef.Load(); w != nil {
-			w.Update(func() { a.importPaths([]string{path}) })
+			w.Update(func() {
+				a.pendingPaths = append(a.pendingPaths, path)
+				a.openFilesAt = time.Now().Add(30 * time.Millisecond)
+			})
 		} else {
 			a.pendingPaths = append(a.pendingPaths, path)
 		}
@@ -198,23 +201,21 @@ func main() {
 		}
 		a.window.OnReadyToShow(a.window.Show)
 		a.refreshVideoOnReveal(a.window, 0)
-		a.window.OnFileDrop(func(event *mygo.FileDropEvent) { a.importPaths(event.Paths) })
+		a.window.OnFileDrop(func(event *mygo.FileDropEvent) { a.importPaths(event.Paths, false) })
 		a.window.OnClose(func(*mygo.CloseEvent) {
 			a.persist()
 			if a.pipWindow != nil {
 				a.pipWindow.Close()
 			}
 		})
-		if *server != "" {
-			a.connectServer(*server)
-		}
+		a.refreshMenu()
 		initialPaths := append(append([]string{}, flag.Args()...), a.pendingPaths...)
 		a.pendingPaths = nil
 		if len(initialPaths) > 0 {
-			a.importPaths(initialPaths)
-		} else if *server == "" && a.preferences.AutoResume && state.LastFile != "" {
+			a.importPaths(initialPaths, false)
+		} else if a.preferences.AutoResume && state.LastFile != "" {
 			if _, err := os.Stat(state.LastFile); err == nil {
-				a.importPaths([]string{state.LastFile})
+				a.importPaths([]string{state.LastFile}, false)
 			}
 		}
 	})
@@ -223,57 +224,65 @@ func main() {
 	}
 }
 func (a *application) activity(delay time.Duration) { a.controlsUntil = time.Now().Add(delay) }
-func (a *application) importPaths(paths []string) {
+
+// Opening replaces the local queue and always plays the requested selection.
+// Appending leaves the current selection alone, including when it is paused.
+func (a *application) importPaths(paths []string, appendOnly bool) {
+	if !appendOnly {
+		a.cancelImports()
+	}
+	generation := a.importGeneration
 	window, ctx := a.window, a.ctx
 	go func() {
 		entries, subtitles, err := library.FromPaths(paths)
-		preferred := library.FirstVideo(library.Tree(entries, nil))
 		window.Update(func() {
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || generation != a.importGeneration {
 				return
 			}
 			if err != nil {
 				a.notice = err.Error()
 				return
 			}
-			a.subtitlePaths = append(a.subtitlePaths, subtitles...)
 			if len(entries) == 0 {
 				if len(subtitles) > 0 {
+					a.subtitlePaths = append(a.subtitlePaths, subtitles...)
 					a.loadSubtitle(subtitles[0])
+				} else {
+					a.notice = a.t("media.noVideos")
 				}
 				return
 			}
-			indices := make(map[string]int, len(a.entries)+len(entries))
-			for i, entry := range a.entries {
-				indices[entry.Path] = i
+			queue, selected, play := importedPlaylist(a.entries, entries, a.selected, appendOnly)
+			if !appendOnly {
+				a.resetPlayback()
+				a.subtitlePaths = nil
+				a.expandedFolders = map[string]bool{}
 			}
-			for i, entry := range entries {
-				if entry.Path == a.stored.LastFile {
-					preferred = i
-				}
-				if _, exists := indices[entry.Path]; !exists {
-					indices[entry.Path] = len(a.entries)
-					a.entries = append(a.entries, entry)
-				}
-			}
+			a.subtitlePaths = append(a.subtitlePaths, subtitles...)
+			a.entries = queue
 			a.invalidatePlaylist()
 			var expand func([]library.Node)
 			expand = func(nodes []library.Node) {
 				for _, node := range nodes {
-					if node.Folder != nil && node.Folder.Kind == "browser" {
+					if node.Folder != nil && node.Folder.DeviceID == "" {
 						a.expandedFolders[node.ID] = true
 						expand(node.Children)
 					}
 				}
 			}
 			expand(a.playlistModel())
-			if !a.player.Snapshot().Playing {
-				a.openEntry(indices[entries[max(0, preferred)].Path])
+			if play {
+				a.playEntry(selected)
 			}
 		})
 	}()
 }
 func (a *application) openEntry(index int) {
+	a.cancelImports()
+	a.playEntry(index)
+}
+
+func (a *application) playEntry(index int) {
 	if index < 0 || index >= len(a.entries) {
 		return
 	}
@@ -284,31 +293,58 @@ func (a *application) openEntry(index int) {
 	a.mode = projection.SBS180
 	a.tracker.Reset()
 	entry := a.entries[index]
-	if history, ok := a.stored.History[library.Identity(entry)]; ok {
-		a.mode = history.Projection
+	start := 0.0
+	if entry.DeviceID == "" {
+		if history, ok := a.stored.History[library.Identity(entry)]; ok {
+			a.mode = history.Projection
+			start = history.Position
+		}
 	}
 	a.loopA = nil
 	a.loopB = nil
 	a.manuallyPaused = false
 	a.notice = ""
 	a.cues = nil
-	start := a.stored.History[library.Identity(entry)].Position
-	a.player.Open(media.Source{URL: entry.Path, Cookies: entry.Cookies, Start: start})
+	a.singleClickAt = time.Time{}
+	a.scrubbing, a.dragging = false, false
+	a.player.Open(media.Source{URL: entry.Path, Start: start})
+	a.window.SetTitle(entry.Name + " — " + appInfo.Name)
+	if entry.DeviceID == "" {
+		a.stored.LastFile = entry.Path
+		a.stored.RecentFiles = rememberFile(a.stored.RecentFiles, entry.Path)
+		a.refreshMenu()
+	} else {
+		a.stored.LastFile = ""
+	}
+	a.persist()
 	a.activity(3600 * time.Millisecond)
 	a.readSubtitle(entry, "", true)
 }
-func (a *application) choose(directory bool) {
+func (a *application) choose(directory, appendOnly bool) {
+	if a.dialogOpen {
+		return
+	}
+	a.dialogOpen = true
 	window, ctx := a.window, a.ctx
+	title := a.t("media.openFiles")
+	if directory && appendOnly {
+		title = a.t("media.addFolder")
+	} else if directory {
+		title = a.t("media.openFolder")
+	} else if appendOnly {
+		title = a.t("media.addFiles")
+	}
 	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: window, Multiple: !directory, Directory: directory})
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: window, Title: title, Multiple: !directory, Directory: directory})
 		window.Update(func() {
+			a.dialogOpen = false
 			if ctx.Err() != nil {
 				return
 			}
 			if err != nil {
 				a.notice = err.Error()
 			} else if len(paths) > 0 {
-				a.importPaths(paths)
+				a.importPaths(paths, appendOnly)
 			}
 		})
 	}()
@@ -336,7 +372,11 @@ func (a *application) next(automatic bool) {
 		next = 0
 	}
 	if len(order) > 0 {
-		a.openEntry(order[next])
+		if automatic {
+			a.playEntry(order[next])
+		} else {
+			a.openEntry(order[next])
+		}
 	}
 }
 func (a *application) setVolume(v float64) {

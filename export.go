@@ -114,7 +114,7 @@ func (a *application) exportLoop(format string) {
 			return p, nil
 		}
 		lastProgress := -1
-		err := exporter.Export(ctx, exporter.Options{Source: entry.Path, Cookies: entry.Cookies, Encoder: encoderPath(), CSSWidth: cssWidth, Cues: cues, Project: project, Frame: func(frame *media.Frame, p video.Parameters, at float64) { task.preview.Store(frame.Clone()) }, Destination: path, Format: format, Start: start, End: end, Width: width, Height: height, FPS: fps, BitRate: bitrate, Parameters: params, Progress: func(progress int) {
+		err := exporter.Export(ctx, exporter.Options{Source: entry.Path, Encoder: encoderPath(), CSSWidth: cssWidth, Cues: cues, Project: project, Frame: func(frame *media.Frame, p video.Parameters, at float64) { task.preview.Store(frame.Clone()) }, Destination: path, Format: format, Start: start, End: end, Width: width, Height: height, FPS: fps, BitRate: bitrate, Parameters: params, Progress: func(progress int) {
 			if progress == lastProgress {
 				return
 			}

@@ -44,8 +44,8 @@ type Decoder struct {
 }
 type Frame struct{ ptr *C.FsvrFrame }
 type Source struct {
-	URL, Cookies string
-	Start        float64
+	URL   string
+	Start float64
 }
 type Metadata struct {
 	Width, Height       int
@@ -68,14 +68,12 @@ func OpenContext(ctx context.Context, source Source, outputAudio bool) (*Decoder
 	stop := context.AfterFunc(ctx, cancel.cancel)
 	name := C.CString(source.URL)
 	defer C.free(unsafe.Pointer(name))
-	cookies := C.CString(source.Cookies)
-	defer C.free(unsafe.Pointer(cookies))
 	var message [1024]C.char
 	var audio C.int
 	if outputAudio {
 		audio = 1
 	}
-	ptr := C.fsvr_open(name, cookies, cancel.ptr, audio, &message[0], C.int(len(message)))
+	ptr := C.fsvr_open(name, cancel.ptr, audio, &message[0], C.int(len(message)))
 	if ptr == nil {
 		stop()
 		cancel.close()

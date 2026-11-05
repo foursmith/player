@@ -13,7 +13,7 @@ just build
 
 以上命令在本仓库根目录执行。构建产物位于 `build/darwin-arm64/Foursmith Player.app`。`just build` 收集本机 FFmpeg/SDL 的动态依赖和编码器，加入 LiteRT C 运行库，再重新执行本机临时签名。正式分发仍需开发者证书签名和公证。
 
-可选的 `just assets` 用于从迁移工作区的 `../web/` 重新同步资源，需要 Bun 和该 Web 项目的依赖；日常开发与构建不需要执行。
+图标、模型和三语文案由原生项目的 `assets/` 独立维护，应用名称与版本读取 `mygo.json`。
 
 已有原生应用在运行时，可用 `just build build/candidate` 输出到独立目录，避免改写正在使用的动态库。本次迁移验证产物使用该目录。
 
@@ -23,7 +23,11 @@ Windows/Linux 需要本平台的 FFmpeg、SDL3 开发 SDK 与 LiteRT C 库，设
 
 `just doctor` 检查媒体依赖和 GPU。`FSVR_TFLITE_LIBRARY` 可指定兼容的 TensorFlow Lite C 运行库。开发时需要 FFmpeg 与 SDL3 头文件和动态库；macOS 自动读取 Homebrew 路径，其他平台使用 `CGO_CFLAGS` / `CGO_LDFLAGS` 指定工具链。
 
-设置和播放历史保存在系统用户数据目录中的 `Foursmith Player/state.json`。首次使用新名称且尚无配置时会读取旧应用的设置和播放历史，随后保存在新目录。`--data-dir` 可隔离开发配置，不读取旧应用数据；文件或文件夹可直接作为启动参数。远程 FSVR 连接使用 `--server http://host:port`，密码和会话只保存在当前进程内。
+设置、最近文件和播放历史保存在系统用户数据目录中的 `Foursmith Player/state.json`，只读取当前应用的数据目录。`--data-dir` 可隔离开发配置；文件或文件夹可直接作为启动参数。本地播放历史按完整路径、大小和修改时间识别文件。
+
+打开文件、文件夹或拖入视频会替换本地播放列表，并立即播放新选择；播放列表底部的“添加”只追加文件，保留当前播放或暂停状态。原生“文件”菜单提供打开、最近文件、添加、关闭视频和 DLNA 搜索。macOS 使用 ⌘O 打开文件、⇧⌘O 打开文件夹、⇧⌘A 添加文件、⌘, 打开设置；Windows/Linux 使用 Ctrl。续播设置适用于本地文件，关闭视频会保存进度并停止下次启动时自动打开该文件。
+
+DLNA 搜索由原生端直接发送 IPv4 SSDP 请求，通过设备的 ContentDirectory 服务分页浏览目录，视频直接交给 FFmpeg 播放。无需运行 FSVR 服务，也不提供 FSVR 媒体库或密码登录。设备仅在点击搜索时发现，目录按需加载，字幕支持设备声明的 CaptionInfoEx 和目录中的独立字幕文件。真实设备兼容性仍需实机验收。
 
 迁移范围及验收记录见 [doc/MIGRATION.md](doc/MIGRATION.md)，人像居中算法见 [doc/PORTRAIT_CENTERING.md](doc/PORTRAIT_CENTERING.md)。
 

@@ -28,9 +28,7 @@ func (a *application) settings(c *ui.Context) {
 					a.qualityMatrix(c)
 					a.segmentSetting(c, "settings.portraitLayout", "settings.portraitLayoutDescription", "columns", []string{"1", "2", "3"}, a.preferences.SplitCount-1, func(i int) { a.preferences.SplitCount = i + 1 })
 					a.segmentSetting(c, "settings.preferredSplitAspect", "settings.preferredSplitAspectDescription", "corners-in", []string{"1:1", "9:16"}, map[bool]int{false: 0, true: 1}[a.preferences.PreferredSplitAspect == "9:16"], func(i int) { a.preferences.PreferredSplitAspect = []string{"1:1", "9:16"}[i] })
-					if a.server != nil {
-						a.toggleSetting(c, "settings.resumeLastVideo", "settings.resumeLastVideoDescription", "play", &a.preferences.AutoResume, false)
-					}
+					a.toggleSetting(c, "settings.resumeLastVideo", "settings.resumeLastVideoDescription", "play", &a.preferences.AutoResume, false)
 					if a.width >= 640 {
 						ui.Divider(c).Background(white(.07))
 						button := ui.Button(c, "").FillWidth().Height(52).Padding(4, 12).Background(ui.Transparent).Border(0, ui.Transparent).Label(a.t("settings.shortcuts"))

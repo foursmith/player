@@ -10,7 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-//go:embed assets
+//go:embed assets/icons assets/locales assets/models assets/logo.png
 var assets embed.FS
 
 //go:embed mygo.json

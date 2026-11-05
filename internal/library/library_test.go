@@ -64,15 +64,25 @@ func TestSubtitleAssignment(t *testing.T) {
 		}
 	}
 }
-func TestRemoteMediaIdentityAndRootPlayback(t *testing.T) {
-	e := Entry{Name: "video.mp4", Path: "http://localhost:123/api/v1/media/local/a%2Fb"}
-	if Identity(e) != "fsvr:local/a%2Fb" {
-		t.Fatal(Identity(e))
-	}
-	entries := []Entry{{Name: "root.mp4", Path: "r"}, {Name: "inside.mp4", Path: "v", Group: "folder", SourceID: "local"}}
-	tree := Tree(entries, []Folder{{ID: "folder", Name: "F", SourceID: "local"}})
+func TestRootPlaybackIncludesDLNAFolders(t *testing.T) {
+	entries := []Entry{{Name: "root.mp4", Path: "r"}, {Name: "inside.mp4", Path: "v", Group: "folder", DeviceID: "dlna-nas"}}
+	tree := Tree(entries, []Folder{{ID: "folder", Name: "F", DeviceID: "dlna-nas"}})
 	if got := PlaybackOrder(tree, 0); !reflect.DeepEqual(got, []int{1, 0}) {
 		t.Fatal(got)
+	}
+}
+
+func TestHistoryIdentityDistinguishesPathsAndReplacedFiles(t *testing.T) {
+	first := Entry{Name: "video.mp4", Path: filepath.Join(t.TempDir(), "video.mp4"), Size: 100, Modified: 123}
+	second := first
+	second.Path = filepath.Join(t.TempDir(), "video.mp4")
+	if Identity(first) == Identity(second) {
+		t.Fatal("different local files shared playback history")
+	}
+	second = first
+	second.Modified++
+	if Identity(first) == Identity(second) {
+		t.Fatal("a replaced file inherited stale playback history")
 	}
 }
 

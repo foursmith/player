@@ -8,7 +8,6 @@ import (
 	"golang.org/x/text/unicode/norm"
 	"io/fs"
 	"mime"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,15 +18,15 @@ import (
 )
 
 type Entry struct {
-	Name, Path, Group, Root, Subtitle, SubtitleName, Cookies, SourceID string
-	Size, Modified                                                     int64
+	Name, Path, Group, Root, Subtitle, DeviceID string
+	Size, Modified                              int64
 }
 
-// Local folders are derived from entry ancestry; remote records also represent
+// Local folders are derived from entry ancestry; DLNA records also represent
 // unloaded folders. The UI derives its tree instead of maintaining another copy.
 type Folder struct {
-	ID, Parent, Name, SourceID, RemotePath, Kind string
-	Loaded                                       bool
+	ID, Parent, Name, DeviceID, ObjectID string
+	Loaded                               bool
 }
 type Node struct {
 	ID, Name string
@@ -133,22 +132,15 @@ func FromPaths(paths []string) ([]Entry, []string, error) {
 	return entries, subtitles, nil
 }
 func Identity(e Entry) string {
-	if u, err := url.Parse(e.Path); err == nil && u.Scheme != "" {
-		parts := strings.Split(u.EscapedPath(), "/")
-		if len(parts) == 6 && parts[1] == "api" && parts[2] == "v1" && parts[3] == "media" {
-			return "fsvr:" + parts[4] + "/" + parts[5]
-		}
-		return "url:" + e.Path
-	}
-	return fmt.Sprintf("file:%s:%d:%d", e.Name, e.Size, e.Modified)
+	return fmt.Sprintf("%s:%d:%d", e.Path, e.Size, e.Modified)
 }
-func Tree(entries []Entry, remote []Folder) []Node {
+func Tree(entries []Entry, dlnaFolders []Folder) []Node {
 	folders := map[string]Folder{}
-	for _, f := range remote {
+	for _, f := range dlnaFolders {
 		folders[f.ID] = f
 	}
 	for _, e := range entries {
-		if e.SourceID != "" || e.Group == "" {
+		if e.DeviceID != "" || e.Group == "" {
 			continue
 		}
 		for p := e.Group; p != e.Root && p != "."; p = filepath.Dir(p) {
@@ -159,7 +151,7 @@ func Tree(entries []Entry, remote []Folder) []Node {
 			if parent == e.Root {
 				parent = ""
 			}
-			folders[p] = Folder{ID: p, Parent: parent, Name: filepath.Base(p), Kind: "browser", Loaded: true}
+			folders[p] = Folder{ID: p, Parent: parent, Name: filepath.Base(p), Loaded: true}
 			if parent == "" {
 				break
 			}

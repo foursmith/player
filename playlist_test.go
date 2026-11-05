@@ -10,8 +10,8 @@ import (
 
 func TestPlaylistModelTracksExpansionAndLibraryChanges(t *testing.T) {
 	a := &application{
-		entries:         []library.Entry{{Name: "Episode 10.mp4", Path: "10", Group: "folder", SourceID: "remote"}, {Name: "Episode 2.mp4", Path: "2", Group: "folder", SourceID: "remote"}},
-		folders:         []library.Folder{{ID: "folder", Name: "Remote", SourceID: "remote"}},
+		entries:         []library.Entry{{Name: "Episode 10.mp4", Path: "10", Group: "folder", DeviceID: "remote"}, {Name: "Episode 2.mp4", Path: "2", Group: "folder", DeviceID: "remote"}},
+		folders:         []library.Folder{{ID: "folder", Name: "Remote", DeviceID: "remote"}},
 		expandedFolders: map[string]bool{},
 	}
 	ids := func() []string {
@@ -63,4 +63,22 @@ func BenchmarkPlaylistModel(b *testing.B) {
 			a.visiblePlaylist()
 		}
 	})
+}
+
+func TestOpenReplacesLocalQueueWhileAppendKeepsSelection(t *testing.T) {
+	current := []library.Entry{{Path: "old.mp4"}, {Path: "http://nas/video", DeviceID: "dlna-nas"}}
+	incoming := []library.Entry{{Name: "Episode 10.mp4", Path: "10.mp4"}, {Name: "Episode 2.mp4", Path: "2.mp4"}, {Name: "Episode 2.mp4", Path: "2.mp4"}}
+	queue, selected, play := importedPlaylist(current, incoming, 0, false)
+	if len(queue) != 3 || selected != 2 || !play || queue[0].DeviceID != "dlna-nas" || queue[selected].Path != "2.mp4" {
+		t.Fatalf("open didn't replace and play the requested files: %+v, %d, %v", queue, selected, play)
+	}
+	// The decision depends on selection, never on playing vs paused state.
+	queue, selected, play = importedPlaylist(current, incoming, 0, true)
+	if len(queue) != 4 || selected != 0 || play || queue[0].Path != "old.mp4" {
+		t.Fatalf("append interrupted the selection: %+v, %d, %v", queue, selected, play)
+	}
+	queue, selected, play = importedPlaylist(nil, incoming, -1, true)
+	if len(queue) != 2 || selected != 1 || !play {
+		t.Fatalf("empty queue didn't start its first video: %+v, %d, %v", queue, selected, play)
+	}
 }
