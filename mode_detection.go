@@ -25,7 +25,7 @@ func (a *application) prepareVideoMode(entry library.Entry) float64 {
 	a.mode = projection.Detect(entry.Name, "", "")
 	a.detectMode, a.modeManual = true, false
 	start := 0.0
-	if entry.DeviceID == "" && a.preferences.RecordPlaybackHistory {
+	if (entry.DeviceID == "" || entry.ObjectID != "") && a.preferences.RecordPlaybackHistory {
 		if history, ok := a.stored.History[library.Identity(entry)]; ok {
 			if a.preferences.ResumePlaybackPosition {
 				start = history.Position

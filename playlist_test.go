@@ -10,8 +10,7 @@ import (
 
 func TestPlaylistModelTracksExpansionAndLibraryChanges(t *testing.T) {
 	a := &application{
-		entries:         []library.Entry{{Name: "Episode 10.mp4", Path: "10", Group: "folder", DeviceID: "remote"}, {Name: "Episode 2.mp4", Path: "2", Group: "folder", DeviceID: "remote"}},
-		folders:         []library.Folder{{ID: "folder", Name: "Remote", DeviceID: "remote"}},
+		entries:         []library.Entry{{Name: "Episode 10.mp4", Path: "10", Group: "folder", Root: "."}, {Name: "Episode 2.mp4", Path: "2", Group: "folder", Root: "."}},
 		expandedFolders: map[string]bool{},
 	}
 	ids := func() []string {
@@ -37,7 +36,7 @@ func TestPlaylistModelTracksExpansionAndLibraryChanges(t *testing.T) {
 	if got := ids(); !reflect.DeepEqual(got, []string{"folder", "10"}) {
 		t.Fatal("removed entries survived cache invalidation", got)
 	}
-	a.entries, a.folders = nil, nil
+	a.entries = nil
 	a.invalidatePlaylist()
 	if len(a.visiblePlaylist()) != 0 {
 		t.Fatal("cleared playlist retained old rows")
@@ -65,11 +64,11 @@ func BenchmarkPlaylistModel(b *testing.B) {
 	})
 }
 
-func TestOpenReplacesLocalQueueWhileAppendKeepsSelection(t *testing.T) {
+func TestOpenReplacesQueueWhileAppendKeepsSelection(t *testing.T) {
 	current := []library.Entry{{Path: "old.mp4"}, {Path: "http://nas/video", DeviceID: "dlna-nas"}}
 	incoming := []library.Entry{{Name: "Episode 10.mp4", Path: "10.mp4"}, {Name: "Episode 2.mp4", Path: "2.mp4"}, {Name: "Episode 2.mp4", Path: "2.mp4"}}
 	queue, selected, play := importedPlaylist(current, incoming, 0, false)
-	if len(queue) != 3 || selected != 2 || !play || queue[0].DeviceID != "dlna-nas" || queue[selected].Path != "2.mp4" {
+	if len(queue) != 2 || selected != 1 || !play || queue[selected].Path != "2.mp4" {
 		t.Fatalf("open didn't replace and play the requested files: %+v, %d, %v", queue, selected, play)
 	}
 	// The decision depends on selection, never on playing vs paused state.

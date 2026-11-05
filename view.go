@@ -34,6 +34,9 @@ func (a *application) render(c *ui.Context) {
 		a.endedGeneration = 0
 	}
 	if state.Ended && !a.exporting && a.endedGeneration != state.Generation {
+		if a.selected >= 0 && a.selected < len(a.entries) {
+			a.recordPlaybackHistory(a.entries[a.selected], state)
+		}
 		a.endedGeneration = state.Generation
 		a.next(true)
 	}
@@ -78,7 +81,7 @@ func (a *application) render(c *ui.Context) {
 		}
 		if visible {
 			a.topControls(c)
-			if len(a.entries) > 0 || len(a.folders) > 0 {
+			if len(a.entries) > 0 {
 				a.playlist(c, state)
 			}
 			if state.URL != "" {
@@ -120,12 +123,12 @@ func topContentInset(c *ui.Context) float32 {
 func (a *application) topControls(c *ui.Context) {
 	inset := topContentMargin + topControlPadding
 	ui.Row(c.Key("top-actions")).Absolute().Top(topContentInset(c) + topControlPadding).Left(inset).Right(inset).Height(topControlSize).Gap(topControlPadding).AlignItems(ui.Center).PassThrough().Children(func() {
-		if !a.playlistExpanded && (len(a.entries) > 0 || len(a.folders) > 0) {
+		if !a.playlistExpanded && len(a.entries) > 0 {
 			a.iconButton(c, "playlist", a.t("playlist.open"), topControlSize, false, func() { a.playlistExpanded = true })
 		}
 		ui.Spacer(c).Grow(1)
-		a.iconButton(c, "file-video", a.t("media.openFiles"), topControlSize, false, func() { a.choose(false, false) })
 		if a.selected >= 0 {
+			a.iconButton(c, "file-video", a.t("media.openFiles"), topControlSize, false, func() { a.choose(false, false) })
 			a.iconButton(c, "x", a.t("media.closeVideo"), topControlSize, false, a.closeVideo)
 		}
 		if a.mode.IsVR() && (a.manuallyPaused || c.Now().Before(a.manualUntil)) {
@@ -641,7 +644,8 @@ func (a *application) playlist(c *ui.Context, state media.State) {
 	panel.Children(func() {
 		ui.Row(c).FillWidth().Height(topControlSize + 2*topControlPadding).Padding(topControlPadding).Gap(topControlPadding).Children(func() {
 			a.iconButton(c, "playlist", a.t("playlist.close"), topControlSize, true, func() { a.playlistExpanded = false })
-			ui.Text(c, a.t("playlist.title")).FontSize(14).FontWeight(600).Grow(1)
+			ui.Text(c, a.t("playlist.title")).FontSize(14).FontWeight(600).Grow(1).MinWidth(0).SingleLine()
+			a.iconButton(c, "library", a.t("library.title"), 32, false, a.openCatalog)
 			name := "play-once"
 			if a.preferences.RepeatMode == "file" {
 				name = "repeat-once"
@@ -659,8 +663,7 @@ func (a *application) playlist(c *ui.Context, state media.State) {
 				}
 				a.persist()
 			})
-			a.iconButton(c, "dlna-scan", a.t("playlist.scanDlna"), 32, a.scanning, a.scanDLNA)
-			a.iconControl(c, "trash", a.t("playlist.clear"), iconStyle{32, 14, floatingIcon}, false, a.clearLocalPlaylist)
+			a.iconControl(c, "trash", a.t("playlist.clear"), iconStyle{32, 14, floatingIcon}, false, a.clearPlaylist)
 		})
 		rows := a.visiblePlaylist()
 		a.playlistList.Key = func(i int) any { return rows[i].node.ID }

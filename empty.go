@@ -37,6 +37,7 @@ func (a *application) empty(c *ui.Context) {
 	if a.height < 560 {
 		heroW, heroH, logoSize = 280, 112, 96
 	}
+	actionsWidth := min(mediaOpenWidth, a.width-40)
 	ui.Box(c.Key("empty")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Draw(func(p *ui.Painter, r ui.Rect) { ocean.Draw(p, r, shader.Options{Uniforms: map[string]any{"Time": t}}) }).Children(func() {
 		driftTime := math.Mod(t, 72) / 36
 		if driftTime > 1 {
@@ -56,14 +57,9 @@ func (a *application) empty(c *ui.Context) {
 			})
 			ui.Column(c).AlignItems(ui.Center).Gap(24).Children(func() {
 				ui.RichText(c, ui.Span{Text: a.t("common.tagline"), Italic: true, Size: 11, Weight: 500, LetterSpacing: 2.1, Color: ui.RGBA(245, 255, 252, .42)})
-				a.pickers(c, 288, false)
-				label := a.t("playlist.scanDlna")
-				if a.scanning {
-					label = a.t("playlist.scanningDlna")
-				}
-				ui.Button(c, label).FontSize(11).Background(ui.Transparent).Border(0, ui.Transparent).Disabled(a.scanning).OnClick(a.scanDLNA)
+				a.pickers(c, actionsWidth, false)
 				if a.preferences.RecentFilesEnabled && a.height >= 640 && len(a.stored.RecentFiles) > 0 {
-					ui.Column(c.Key("recent")).Width(288).Gap(4).Children(func() {
+					ui.Column(c.Key("recent")).Width(actionsWidth).Gap(4).Children(func() {
 						smallText(c, a.t("media.recentFiles"), .42).Padding(4, 8)
 						for _, path := range a.stored.RecentFiles[:min(3, len(a.stored.RecentFiles))] {
 							ui.Button(c.Key(path), "").FillWidth().Height(30).Padding(0, 8).Background(ui.Transparent).Border(0, ui.Transparent).Radius(8).Label(filepath.Base(path)).Children(func() {

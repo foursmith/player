@@ -55,6 +55,10 @@ func paintGlass(p *ui.Painter, r ui.Rect, radius float32, active, hover bool) {
 	if hover {
 		p.Fill(r, white(.07), radius)
 	}
+	paintGlassRim(p, r, radius, .075)
+}
+
+func paintGlassRim(p *ui.Painter, r ui.Rect, radius, alpha float32) {
 	// Fade the upper reflection into the sides instead of clipping a full
 	// outline at half height, which leaves abrupt ends on pill controls.
 	x, y, width := r.X+.5, r.Y+.5, max(0, r.W-1)
@@ -67,9 +71,9 @@ func paintGlass(p *ui.Painter, r ui.Rect, radius float32, active, hover bool) {
 		CubeTo(x+width-corner+k, y, x+width, y+corner-k, x+width, y+corner)
 	p.StrokePathGradient(&highlight, .75, ui.LinearGradient{Angle: 90, Stops: []ui.GradientStop{
 		{Color: ui.Transparent, At: 0},
-		{Color: white(.04), At: .25},
-		{Color: white(.075), At: .5},
-		{Color: white(.04), At: .75},
+		{Color: white(alpha * 8 / 15), At: .25},
+		{Color: white(alpha), At: .5},
+		{Color: white(alpha * 8 / 15), At: .75},
 		{Color: ui.Transparent, At: 1},
 	}})
 }
@@ -139,40 +143,7 @@ func (a *application) iconControl(c *ui.Context, name, label string, style iconS
 	button.OnClick(action)
 	return button
 }
-func (a *application) pickers(c *ui.Context, width float32, appendOnly bool) {
-	glass(c, 999).Width(width).Height(40).Children(func() {
-		ui.Row(c).Fill().Children(func() {
-			for i, item := range []struct {
-				icon, label string
-				folder      bool
-			}{{"file-video", "media.openFiles", false}, {"folder", "media.openFolder", true}} {
-				if appendOnly {
-					item.label = "media.addFiles"
-					if item.folder {
-						item.label = "media.addFolder"
-					}
-				}
-				if i > 0 {
-					ui.Box(c).Width(1).Height(16).Background(white(.12))
-				}
-				button := ui.Button(c, "").Grow(1).Height(40).Padding(0).Radius(20).Background(ui.Transparent).Border(0, ui.Transparent).Label(a.t(item.label))
-				button.Draw(func(p *ui.Painter, r ui.Rect) {
-					if button.Hovered() || button.FocusVisible() {
-						p.Fill(r, white(.07), 20)
-					}
-					text := ui.Span{Text: a.t(item.label), Size: 12, Weight: 600, Color: white(.82)}
-					w, h := p.MeasureText(0, text)
-					x := r.X + (r.W-w-20)/2
-					p.Icon(icons[item.icon], ui.Rect{X: x, Y: r.Y + 13, W: 14, H: 14}, white(.82))
-					p.RichText(x+20, r.Y+(r.H-h)/2, 0, text)
-				})
-				if button.Clicked() {
-					a.choose(item.folder, appendOnly)
-				}
-			}
-		})
-	})
-}
+
 func formatTime(seconds float64) string {
 	seconds = math.Max(0, seconds)
 	total := int(seconds)

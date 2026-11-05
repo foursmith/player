@@ -22,7 +22,7 @@ func TestDescribeEmbeddedMediaServerAndURLBase(t *testing.T) {
 	}))
 	defer server.Close()
 	d, err := describe(context.Background(), server.URL+"/device.xml")
-	if err != nil || d.Name != "My NAS" || d.ControlURL != "http://192.0.2.1:8200/base/browse" || !strings.HasPrefix(d.ID, "dlna-") || !strings.HasSuffix(d.ServiceType, ":2") {
+	if err != nil || d.Name != "My NAS" || d.Location != server.URL+"/device.xml" || d.ControlURL != "http://192.0.2.1:8200/base/browse" || !strings.HasPrefix(d.ID, "dlna-") || !strings.HasSuffix(d.ServiceType, ":2") {
 		t.Fatalf("device description: %+v, %v", d, err)
 	}
 	// Rediscovery through a new address must retain the device identity.
@@ -168,5 +168,66 @@ func TestBrowseRejectsFaultInsteadOfTreatingItAsEmptyFolder(t *testing.T) {
 	d := Device{ControlURL: server.URL, ServiceType: "urn:schemas-upnp-org:service:ContentDirectory:1"}
 	if _, err := d.Browse(context.Background(), "missing"); err == nil {
 		t.Fatal("SOAP fault was accepted as an empty folder")
+	}
+}
+
+func TestConnectUsesStableIdentityAndRecoversChangedAddress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<root><device><friendlyName>NAS</friendlyName><UDN>uuid:stable</UDN><serviceList><service><serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType><controlURL>/control</controlURL></service></serviceList></device></root>`)
+	}))
+	defer server.Close()
+	device, err := describe(context.Background(), server.URL+"/device.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, err := connect(context.Background(), device.ID, device.Location, func(context.Context) ([]Device, error) {
+		t.Fatal("reachable saved device triggered SSDP discovery")
+		return nil, nil
+	})
+	if err != nil || known.ID != device.ID || known.Location != device.Location {
+		t.Fatal("saved device did not reconnect", known, err)
+	}
+	moved, err := connect(context.Background(), device.ID, "http://127.0.0.1:1/old.xml", func(context.Context) ([]Device, error) {
+		return []Device{{ID: "different-nas", Location: "http://other/"}, device}, nil
+	})
+	if err != nil || moved.Location != device.Location || moved.ID != device.ID {
+		t.Fatal("changed address lost the saved device", moved, err)
+	}
+	_, err = connect(context.Background(), "missing-device", device.Location, func(context.Context) ([]Device, error) {
+		return []Device{device}, nil
+	})
+	if err == nil {
+		t.Fatal("another NAS was substituted for a saved device")
+	}
+}
+
+func TestDLNADurationParsing(t *testing.T) {
+	for input, want := range map[string]float64{"01:02:03.5": 3723.5, "0:10:00": 600, "00:00:00": 0, "NOT_IMPLEMENTED": 0, "00:60:00": 0, "00:00:NaN": 0, "00:00:Inf": 0, "00:00:-1": 0} {
+		if got := parseDuration(input); got != want {
+			t.Fatalf("duration %q: got %v want %v", input, got, want)
+		}
+	}
+}
+
+func TestDiscoveryCombinesLANResponsesDespiteAnotherInterfaceFailure(t *testing.T) {
+	links := []discoveryLink{{name: "ethernet"}, {name: "wifi"}, {name: "unavailable"}}
+	locations, err := collectLocations(context.Background(), links, func(link discoveryLink) ([]string, error) {
+		switch link.name {
+		case "ethernet":
+			return []string{"http://nas/device.xml"}, nil
+		case "wifi":
+			return []string{"http://nas/device.xml", "http://second/device.xml"}, nil
+		default:
+			return nil, errors.New("interface unavailable")
+		}
+	})
+	if err != nil || !reflect.DeepEqual(locations, []string{"http://nas/device.xml", "http://second/device.xml"}) {
+		t.Fatal("an interface failure hid valid LAN devices or duplicates survived", locations, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = collectLocations(ctx, links, func(discoveryLink) ([]string, error) { return []string{"http://nas/device.xml"}, nil })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled discovery returned network results", err)
 	}
 }

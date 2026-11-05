@@ -370,8 +370,8 @@ def main():
         previous = json.loads(config_path.read_text())
         # Append new numbered cases without regenerating existing clips or
         # changing the files the user may already have loaded in the player.
-        if previous.get("version") not in [1, VERSION] or previous["sources"] != sources or previous["clips"] != items[:len(previous["clips"])]:
-            raise ValueError("Use a new output directory for changed fixture settings")
+        if previous.get("version") != VERSION or previous["sources"] != sources or previous["clips"] != items[:len(previous["clips"])]:
+            raise ValueError("Fixture settings changed; remove stale generated samples before regenerating")
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n")
     panoramas = {r["id"]: Image.open(args.data / "panoramas" / (r["id"] + ".jpg")).convert("RGB") for r in sources}
     for item in items:

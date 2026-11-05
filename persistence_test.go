@@ -16,20 +16,23 @@ func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
 	w := newStateWriter(path, nil)
 	state := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{}}
 	state.RecentFiles = []string{filepath.Join(t.TempDir(), "original.mp4")}
+	state.Libraries = []library.Saved{{ID: "collection", Name: "Original", Paths: []string{state.RecentFiles[0]}}}
 	state.Preferences.Shortcuts = map[string]keyChord{"playPause": {Key: ui.KeyP}}
 	originalRecent := state.RecentFiles[0]
 	for i := range 100 {
-		state.History[library.HashedIdentity("video")] = videoHistory{Position: float64(i)}
+		state.History[library.Identity(library.Entry{Path: "video"})] = videoHistory{Position: float64(i)}
 		w.Submit(state)
 	}
 	// Mutating UI state after submission cannot change the saved snapshot.
-	state.History[library.HashedIdentity("video")] = videoHistory{Position: 999}
+	state.History[library.Identity(library.Entry{Path: "video"})] = videoHistory{Position: 999}
 	state.RecentFiles[0] = filepath.Join(t.TempDir(), "mutated.mp4")
+	state.Libraries[0].Name = "Mutated"
+	state.Libraries[0].Paths[0] = state.RecentFiles[0]
 	state.Preferences.Shortcuts["playPause"] = keyChord{Key: ui.KeyJ}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadState(path).History[library.HashedIdentity("video")].Position; got != 99 {
+	if got := loadState(path).History[library.Identity(library.Entry{Path: "video"})].Position; got != 99 {
 		t.Fatalf("final snapshot was lost or shared mutable UI state: %v", got)
 	}
 	if got := loadState(path).Preferences.Shortcuts["playPause"]; got.Key != ui.KeyP {
@@ -37,6 +40,9 @@ func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
 	}
 	if got := loadState(path).RecentFiles; len(got) != 1 || got[0] != originalRecent {
 		t.Fatalf("recent files shared mutable UI state: %v", got)
+	}
+	if got := loadState(path).Libraries; len(got) != 1 || got[0].Name != "Original" || len(got[0].Paths) != 1 || got[0].Paths[0] != originalRecent {
+		t.Fatalf("library records shared mutable UI state: %+v", got)
 	}
 }
 

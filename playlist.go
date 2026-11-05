@@ -19,7 +19,7 @@ func (a *application) invalidatePlaylist() {
 
 func (a *application) playlistModel() []library.Node {
 	if !a.playlistTreeValid {
-		a.playlistTree = library.Tree(a.entries, a.folders)
+		a.playlistTree = library.Tree(a.entries)
 		a.playlistTreeValid = true
 	}
 	return a.playlistTree
@@ -34,7 +34,7 @@ func (a *application) visiblePlaylist() []playlistRow {
 		appendRows = func(nodes []library.Node, depth int) {
 			for _, node := range nodes {
 				a.playlistRows = append(a.playlistRows, playlistRow{node, depth})
-				if node.Folder != nil && a.expandedFolders[node.ID] {
+				if node.Folder && a.expandedFolders[node.ID] {
 					appendRows(node.Children, depth+1)
 				}
 			}
@@ -48,7 +48,7 @@ func (a *application) visiblePlaylist() []playlistRow {
 func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 	node, depth := item.node, item.depth
 	ui.Box(c.Key(node.ID)).FillWidth().Children(func() {
-		selected := node.Folder == nil && node.Index == a.selected
+		selected := !node.Folder && node.Index == a.selected
 		row := ui.Button(c, "").FillWidth().Height(36).Padding(0).Background(ui.Transparent).Border(0, ui.Transparent).Radius(10).Label(node.Name)
 		if selected {
 			row.Background(white(.08))
@@ -57,13 +57,10 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 			ui.Row(c).Fill().Padding(0, 8+float32(depth)*14).Gap(8).Children(func() {
 				name := "file-video"
 				color := white(.66)
-				if node.Folder != nil {
+				if node.Folder {
 					name = "folder"
 					if a.expandedFolders[node.ID] {
 						name = "folder-open"
-					}
-					if depth == 0 && node.Folder.DeviceID != "" {
-						name = "source-dlna"
 					}
 				}
 				if selected {
@@ -71,7 +68,7 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 				}
 				ui.Icon(c, icons[name]).Size(14, 14).TextColor(color)
 				ui.Text(c, node.Name).FontSize(11).TextColor(color).SingleLine().Grow(1).MinWidth(0)
-				if node.Folder != nil {
+				if node.Folder {
 					ui.Icon(c, icons["caret-down"]).Size(10, 10).TextColor(white(.4))
 				} else if a.entries[node.Index].Subtitle != "" {
 					ui.Icon(c, icons["subtitles"]).Size(12, 12).TextColor(white(.4))
@@ -79,14 +76,11 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 			})
 		})
 		row.OnClick(func() {
-			if node.Folder == nil {
+			if !node.Folder {
 				a.openEntry(node.Index)
 			} else {
 				a.expandedFolders[node.ID] = !a.expandedFolders[node.ID]
 				a.playlistRowsValid = false
-				if a.expandedFolders[node.ID] && node.Folder.DeviceID != "" {
-					a.loadDLNAFolder(*node.Folder)
-				}
 			}
 		})
 	})
@@ -97,33 +91,13 @@ func (a *application) cancelImports() {
 	a.openFilesAt = time.Time{}
 }
 
-func (a *application) clearLocalPlaylist() {
+func (a *application) clearPlaylist() {
 	a.cancelImports()
-	selectedDLNA := a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].DeviceID != ""
-	if !selectedDLNA {
-		a.resetPlayback()
-	}
-	entries := dlnaEntries(a.entries)
-	selected := -1
-	for i, e := range entries {
-		if selectedDLNA && e.Path == a.entries[a.selected].Path {
-			selected = i
-		}
-	}
-	a.entries = entries
+	a.resetPlayback()
+	a.entries = nil
 	a.subtitlePaths = nil
 	a.invalidatePlaylist()
-	a.selected = selected
-}
-
-func dlnaEntries(entries []library.Entry) []library.Entry {
-	var out []library.Entry
-	for _, entry := range entries {
-		if entry.DeviceID != "" {
-			out = append(out, entry)
-		}
-	}
-	return out
+	a.playlistList = ui.ListState{}
 }
 
 func mergeEntries(current, incoming []library.Entry) []library.Entry {
@@ -131,8 +105,9 @@ func mergeEntries(current, incoming []library.Entry) []library.Entry {
 	out := make([]library.Entry, 0, len(current)+len(incoming))
 	for _, entries := range [][]library.Entry{current, incoming} {
 		for _, entry := range entries {
-			if !seen[entry.Path] {
-				seen[entry.Path] = true
+			key := entry.Key()
+			if !seen[key] {
+				seen[key] = true
 				out = append(out, entry)
 			}
 		}
@@ -142,14 +117,14 @@ func mergeEntries(current, incoming []library.Entry) []library.Entry {
 
 func importedPlaylist(current, incoming []library.Entry, selected int, appendOnly bool) ([]library.Entry, int, bool) {
 	if !appendOnly {
-		current = dlnaEntries(current)
+		current = nil
 		selected = -1
 	}
 	queue := mergeEntries(current, incoming)
 	if selected >= 0 && selected < len(current) {
 		return queue, selected, false
 	}
-	first := library.FirstVideo(library.Tree(incoming, nil))
+	first := library.FirstVideo(library.Tree(incoming))
 	if first >= 0 {
 		for i, entry := range queue {
 			if entry.Path == incoming[first].Path {
@@ -158,6 +133,37 @@ func importedPlaylist(current, incoming []library.Entry, selected int, appendOnl
 		}
 	}
 	return queue, -1, false
+}
+
+func (a *application) applyImportedEntries(entries []library.Entry, subtitles []string, appendOnly bool, startPath string) {
+	queue, selected, play := importedPlaylist(a.entries, entries, a.selected, appendOnly)
+	if !appendOnly {
+		for i, entry := range queue {
+			if startPath != "" && entry.Path == startPath {
+				selected, play = i, true
+				break
+			}
+		}
+		a.resetPlayback()
+		a.subtitlePaths = nil
+		a.expandedFolders = map[string]bool{}
+	}
+	a.subtitlePaths = append(a.subtitlePaths, subtitles...)
+	a.entries = queue
+	a.invalidatePlaylist()
+	var expand func([]library.Node)
+	expand = func(nodes []library.Node) {
+		for _, node := range nodes {
+			if node.Folder {
+				a.expandedFolders[node.ID] = true
+				expand(node.Children)
+			}
+		}
+	}
+	expand(a.playlistModel())
+	if play {
+		a.playEntry(selected)
+	}
 }
 
 func (a *application) closeVideo() {

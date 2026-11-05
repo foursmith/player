@@ -5,18 +5,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/projection"
 )
 
-func TestRetainedPlaybackCacheIsHashedWithoutLosingResumeOrType(t *testing.T) {
+func TestPlaybackHistoryRetainsOnlyCurrentOpaqueIdentities(t *testing.T) {
 	entry := library.Entry{Name: "private-video.mp4", Path: "/private/media/private-video.mp4", Size: 12345, Modified: 67890}
-	seed := fmt.Sprintf("%s:%d:%d", entry.Path, entry.Size, entry.Modified)
+	key := library.Identity(entry)
 	saved := videoHistory{Position: 42.5, Projection: projection.Mono360, ProjectionManual: true, AutoProjection: "sbs_180_eqr", UpdatedAt: 123}
 	state := storedState{
-		Preferences: defaultPreferences(), History: map[string]videoHistory{seed: saved},
+		Preferences: defaultPreferences(), History: map[string]videoHistory{
+			key: saved,
+			fmt.Sprintf("%s:%d:%d", entry.Path, entry.Size, entry.Modified): {Position: 99},
+			strings.Repeat("z", 64): {Position: 100},
+		},
 		LastFile: entry.Path, RecentFiles: []string{entry.Path},
 	}
 	path := filepath.Join(t.TempDir(), "state.json")
@@ -24,9 +29,8 @@ func TestRetainedPlaybackCacheIsHashedWithoutLosingResumeOrType(t *testing.T) {
 		t.Fatal(err)
 	}
 	normalized := loadState(path)
-	key := library.Identity(entry)
 	if len(normalized.History) != 1 || normalized.History[key] != saved {
-		t.Fatal("hashing lost or changed the existing playback cache")
+		t.Fatal("history retained an invalid key or changed a current entry")
 	}
 	if normalized.LastFile != "" {
 		t.Fatal("startup restoration is disabled but its plaintext path was retained")

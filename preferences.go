@@ -26,6 +26,9 @@ type preferences struct {
 	ResumePlaybackPosition bool                `json:"resumePlaybackPosition"`
 	RecordPlaybackHistory  bool                `json:"recordPlaybackHistory"`
 	RecentFilesEnabled     bool                `json:"recentFilesEnabled"`
+	LibraryAutoRefresh     bool                `json:"libraryAutoRefresh"`
+	LibrarySort            int                 `json:"librarySort"`
+	LibraryFilter          int                 `json:"libraryFilter"`
 	SubtitlesEnabled       bool                `json:"subtitlesEnabled"`
 	RepeatMode             string              `json:"repeatMode"`
 	Locale                 string              `json:"locale"`
@@ -36,7 +39,10 @@ type videoHistory struct {
 	AutoProjection   string          `json:",omitempty"`
 	Position         float64
 	UpdatedAt        int64
-	ProjectionManual bool `json:",omitempty"`
+	Duration         float64 `json:",omitempty"`
+	Watched          bool    `json:",omitempty"`
+	WatchOverride    string  `json:",omitempty"`
+	ProjectionManual bool    `json:",omitempty"`
 }
 
 func (h videoHistory) automaticProjection() (projection.Mode, bool) {
@@ -51,6 +57,7 @@ type storedState struct {
 	History     map[string]videoHistory
 	LastFile    string
 	RecentFiles []string
+	Libraries   []library.Saved
 }
 
 func defaultPreferences() preferences {
@@ -59,7 +66,7 @@ func defaultPreferences() preferences {
 		SplitCount: 2, PreferredSplitAspect: "1:1", FaceAutoCenter: true, ResumeAfterMovement: true,
 		VRDragSensitivity: 1, CenteringResumeDelay: 1, ProjectionAI: true,
 		ResumePlaybackPosition: true, RecordPlaybackHistory: true, RecentFilesEnabled: true,
-		SubtitlesEnabled: true, RepeatMode: "file", Locale: "en",
+		SubtitlesEnabled: true, RepeatMode: "file", Locale: "en", LibraryAutoRefresh: true,
 	}
 }
 func loadState(path string) storedState {
@@ -79,6 +86,8 @@ func loadState(path string) storedState {
 	p.SplitCount = max(1, min(3, p.SplitCount))
 	p.VRDragSensitivity = projection.Clamp(p.VRDragSensitivity, .25, 3)
 	p.CenteringResumeDelay = projection.Clamp(p.CenteringResumeDelay, .25, 5)
+	p.LibrarySort = max(0, min(catalogSortCount-1, p.LibrarySort))
+	p.LibraryFilter = max(0, min(catalogFilterCount-1, p.LibraryFilter))
 	p.normalizeShortcuts()
 	if p.PreferredSplitAspect != "9:16" {
 		p.PreferredSplitAspect = "1:1"
@@ -89,20 +98,25 @@ func loadState(path string) storedState {
 	if p.RepeatMode != "file" && p.RepeatMode != "folder" {
 		p.RepeatMode = "off"
 	}
-	cache := make(map[string]videoHistory, len(state.History))
+	if state.History == nil {
+		state.History = map[string]videoHistory{}
+	}
 	for key, history := range state.History {
-		if history.Projection < 0 || history.Projection > projection.Flat || history.Position < 0 {
+		if !library.ValidIdentity(key) || history.Projection < 0 || history.Projection > projection.Flat || history.Position < 0 {
+			delete(state.History, key)
 			continue
 		}
 		if _, valid := history.automaticProjection(); history.AutoProjection != "" && !valid {
 			history.AutoProjection = ""
 		}
-		cacheKey := library.HashedIdentity(key)
-		if previous, exists := cache[cacheKey]; !exists || history.UpdatedAt > previous.UpdatedAt || history.UpdatedAt == previous.UpdatedAt && key == cacheKey {
-			cache[cacheKey] = history
+		if history.Duration < 0 {
+			history.Duration = 0
 		}
+		if history.WatchOverride != "watched" && history.WatchOverride != "unwatched" {
+			history.WatchOverride = ""
+		}
+		state.History[key] = history
 	}
-	state.History = cache
 	if !p.RecordPlaybackHistory || !p.AutoResume {
 		state.LastFile = ""
 	}
@@ -113,6 +127,7 @@ func loadState(path string) storedState {
 		}
 	}
 	state.RecentFiles = recent
+	state.Libraries = library.NormalizeSaved(state.Libraries)
 	return state
 }
 

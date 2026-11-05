@@ -18,7 +18,7 @@ func TestStoredStateRoundTripAndDefaults(t *testing.T) {
 	if !reflect.DeepEqual(state.Preferences, defaultPreferences()) {
 		t.Fatal(state)
 	}
-	state.History[library.HashedIdentity("file:example")] = videoHistory{AutoProjection: "mono_360_eqr", Position: 12.5, UpdatedAt: 100}
+	state.History[library.Identity(library.Entry{Path: "file:example"})] = videoHistory{AutoProjection: "mono_360_eqr", Position: 12.5, UpdatedAt: 100}
 	state.Preferences.Locale = "zh-CN"
 	if err := saveState(path, state); err != nil {
 		t.Fatal(err)
@@ -39,14 +39,21 @@ func TestStoredStateRejectsCorruptionAndInvalidHistory(t *testing.T) {
 	if got := loadState(path).Preferences; !reflect.DeepEqual(got, defaultPreferences()) {
 		t.Fatal(got)
 	}
-	if err := os.WriteFile(path, []byte(`{"Preferences":{"volume":2,"qualityId":100,"splitCount":0,"locale":"unknown"},"History":{"bad":{"Projection":42,"Position":10},"good":{"AutoProjection":"sbs_180_eqr","Position":3},"invalid-auto":{"Projection":6,"ProjectionManual":true,"AutoProjection":"unknown","Position":5}}}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"History":null}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadState(path); got.History == nil {
+		t.Fatal("empty history must remain writable after loading")
+	}
+	data := fmt.Sprintf(`{"Preferences":{"volume":2,"qualityId":100,"splitCount":0,"locale":"unknown"},"History":{"%s":{"Projection":42,"Position":10},"%s":{"AutoProjection":"sbs_180_eqr","Position":3},"%s":{"Projection":6,"ProjectionManual":true,"AutoProjection":"unknown","Position":5}}}`, library.Identity(library.Entry{Path: "bad"}), library.Identity(library.Entry{Path: "good"}), library.Identity(library.Entry{Path: "invalid-auto"}))
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
 	got := loadState(path)
 	if got.Preferences.Volume != 1 || got.Preferences.QualityID != 3 || got.Preferences.SplitCount != 1 || got.Preferences.Locale != "en" || len(got.History) != 2 {
 		t.Fatal(got)
 	}
-	if history := got.History[library.HashedIdentity("invalid-auto")]; history.AutoProjection != "" || history.Projection != projection.Flat || !history.ProjectionManual || history.Position != 5 {
+	if history := got.History[library.Identity(library.Entry{Path: "invalid-auto"})]; history.AutoProjection != "" || history.Projection != projection.Flat || !history.ProjectionManual || history.Position != 5 {
 		t.Fatalf("invalid automatic cache affected the manual choice or position: %+v", history)
 	}
 }

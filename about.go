@@ -3,15 +3,15 @@ package main
 import "github.com/egoist/mygo/ui"
 
 func (a *application) about(c *ui.Context) {
-	ui.Row(c).FillWidth().Padding(12).Gap(12).Children(func() {
+	ui.Row(c).FillWidth().Padding(14, 12).Gap(12).Children(func() {
 		ui.Image(c, logo).Size(40, 40)
 		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
 			ui.Text(c, appInfo.Name).FontSize(12).FontWeight(600).SingleLine()
-			smallText(c, a.t("common.tagline"), .48).SingleLine()
+			smallText(c, a.t("common.tagline"), .4).FontSize(10).FillWidth().Wrap()
 		})
-		ui.Text(c, "v"+appInfo.Version).FontSize(8).TextColor(white(.68)).Background(ui.Hex("#34383c")).Padding(0, 6).Radius(3)
+		ui.Text(c, "v"+appInfo.Version).FontSize(9).TextColor(white(.45)).Background(white(.04)).Padding(3, 6).Radius(8)
 	})
-	ui.Divider(c).Background(white(.07))
+	ui.Divider(c).Background(white(.045))
 	ui.Row(c).FillWidth().Padding(10, 12).Gap(4).Children(func() {
 		smallText(c, a.t("settings.by"), .42)
 		smallText(c, "ourongxing", .68)
@@ -23,19 +23,9 @@ func (a *application) about(c *ui.Context) {
 	})
 }
 func (a *application) aboutAction(c *ui.Context, icon, label string, pressed bool, action func()) {
-	button := ui.Button(c, "").Height(24).Padding(4, 7).Radius(12).Border(0, ui.Transparent).Background(ui.Transparent).Label(label)
-	color := white(.42)
+	button := glassAction(c, icon, label).Height(24)
 	if pressed {
-		button.Background(accent.Alpha(.1))
-		color = accent
+		button.Background(accent.Alpha(.1)).TextColor(accent)
 	}
-	button.Children(func() {
-		ui.Row(c).Gap(6).Children(func() {
-			ui.Icon(c, icons[icon]).Size(14, 14).TextColor(color)
-			ui.Text(c, label).FontSize(10).TextColor(color)
-		})
-	})
-	if button.Clicked() {
-		action()
-	}
+	button.OnClick(action)
 }

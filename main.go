@@ -13,7 +13,6 @@ import (
 	_ "github.com/egoist/mygo/locales/ja"
 	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/dlna"
 	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
@@ -35,13 +34,10 @@ type application struct {
 	exportFormat                              string
 	presentation                              [2]presentationState
 	controlsVisible                           bool
-	dlnaDevices                               map[string]dlna.Device
 	scanning                                  bool
-	loadingFolders                            map[string]bool
 	importGeneration                          uint64
 	menuLocale                                string
 	dialogOpen                                bool
-	folders                                   []library.Folder
 	expandedFolders                           map[string]bool
 	playlistTree                              []library.Node
 	playlistRows                              []playlistRow
@@ -65,6 +61,8 @@ type application struct {
 	pipWindow                                 *mygo.Window
 	pipSurface                                video.Surface
 	settingsWindow                            *mygo.Window
+	catalogWindow                             *mygo.Window
+	catalog                                   catalogState
 	preferences                               preferences
 	stored                                    storedState
 	entries                                   []library.Entry
@@ -139,8 +137,6 @@ func main() {
 		log.Print("[recognition-test] enabled: saved video types bypassed; history types preserved")
 	}
 	a.expandedFolders = map[string]bool{}
-	a.dlnaDevices = map[string]dlna.Device{}
-	a.loadingFolders = map[string]bool{}
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
@@ -205,6 +201,8 @@ func main() {
 		a.persist()
 		a.shutdown = true
 		a.cancel()
+		a.cancelCatalogRead()
+		a.stopCatalogThumbnails()
 		a.cancelModeDetection()
 		a.cancelSubtitle()
 		a.cancelExport()
@@ -270,7 +268,7 @@ func (a *application) showWindow() {
 
 func (a *application) activity(delay time.Duration) { a.controlsUntil = time.Now().Add(delay) }
 
-// Opening replaces the local queue and always plays the requested selection.
+// Opening replaces the queue and always plays the requested selection.
 // Appending leaves the current selection alone, including when it is paused.
 func (a *application) importPaths(paths []string, appendOnly bool) {
 	if !appendOnly {
@@ -279,7 +277,7 @@ func (a *application) importPaths(paths []string, appendOnly bool) {
 	generation := a.importGeneration
 	window, ctx := a.window, a.ctx
 	go func() {
-		entries, subtitles, err := library.FromPaths(paths)
+		entries, subtitles, err := library.FromPaths(ctx, paths)
 		window.Update(func() {
 			if ctx.Err() != nil || generation != a.importGeneration {
 				return
@@ -297,28 +295,7 @@ func (a *application) importPaths(paths []string, appendOnly bool) {
 				}
 				return
 			}
-			queue, selected, play := importedPlaylist(a.entries, entries, a.selected, appendOnly)
-			if !appendOnly {
-				a.resetPlayback()
-				a.subtitlePaths = nil
-				a.expandedFolders = map[string]bool{}
-			}
-			a.subtitlePaths = append(a.subtitlePaths, subtitles...)
-			a.entries = queue
-			a.invalidatePlaylist()
-			var expand func([]library.Node)
-			expand = func(nodes []library.Node) {
-				for _, node := range nodes {
-					if node.Folder != nil && node.Folder.DeviceID == "" {
-						a.expandedFolders[node.ID] = true
-						expand(node.Children)
-					}
-				}
-			}
-			expand(a.playlistModel())
-			if play {
-				a.playEntry(selected)
-			}
+			a.applyImportedEntries(entries, subtitles, appendOnly, "")
 		})
 	}()
 }

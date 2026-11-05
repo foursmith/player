@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"mime"
@@ -31,14 +32,14 @@ func TestImportTopologyMatchingAndNaturalOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	entries, _, err := FromPaths([]string{filepath.Join(dir, "Show")})
+	entries, _, err := FromPaths(context.Background(), []string{filepath.Join(dir, "Show")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(entries) != 3 {
 		t.Fatalf("entries: %+v", entries)
 	}
-	tree := Tree(entries, nil)
+	tree := Tree(entries)
 	if first := FirstVideo(tree); first < 0 || entries[first].Name != "extra.mov" {
 		t.Fatal("first video must follow folder-first tree order", first)
 	}
@@ -67,9 +68,12 @@ func TestSubtitleAssignment(t *testing.T) {
 		}
 	}
 }
-func TestRootPlaybackIncludesDLNAFolders(t *testing.T) {
-	entries := []Entry{{Name: "root.mp4", Path: "r"}, {Name: "inside.mp4", Path: "v", Group: "folder", DeviceID: "dlna-nas"}}
-	tree := Tree(entries, []Folder{{ID: "folder", Name: "F", DeviceID: "dlna-nas"}})
+func TestRootPlaybackIncludesRemoteVideosWithStableRowKeys(t *testing.T) {
+	entries := []Entry{{Name: "root.mp4", Path: "r"}, {Name: "inside.mp4", Path: "v", DeviceID: "dlna-nas", ObjectID: "video"}}
+	tree := Tree(entries)
+	if len(tree) != 2 || tree[0].Folder || tree[0].ID != Identity(entries[1]) {
+		t.Fatal("remote videos must be queue rows with stable identities", tree)
+	}
 	if got := PlaybackOrder(tree, 0); !reflect.DeepEqual(got, []int{1, 0}) {
 		t.Fatal(got)
 	}
@@ -116,8 +120,5 @@ func TestHistoryIdentityUsesSHA256OfPathSizeAndModificationTime(t *testing.T) {
 	got := Identity(entry)
 	if got != hex.EncodeToString(sum[:]) || len(got) != 64 || strings.Contains(got, entry.Name) {
 		t.Fatalf("unexpected cache identity: %s", got)
-	}
-	if HashedIdentity(got) != got {
-		t.Fatal("normalizing an existing digest hashed it again")
 	}
 }

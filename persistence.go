@@ -36,6 +36,7 @@ func newStateWriter(path string, failed func(error)) *stateWriter {
 func (w *stateWriter) Submit(state storedState) {
 	state.History = maps.Clone(state.History)
 	state.RecentFiles = slices.Clone(state.RecentFiles)
+	state.Libraries = library.CloneSaved(state.Libraries)
 	state.Preferences.Shortcuts = maps.Clone(state.Preferences.Shortcuts)
 	select {
 	case <-w.pending:
@@ -58,7 +59,7 @@ func (a *application) persist() {
 	if !a.preferences.RecordPlaybackHistory || !a.preferences.AutoResume {
 		a.stored.LastFile = ""
 	}
-	if a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].DeviceID == "" {
+	if a.selected >= 0 && a.selected < len(a.entries) {
 		a.recordPlaybackHistory(a.entries[a.selected], a.player.Snapshot())
 	}
 	if len(a.stored.History) > 10000 {
@@ -71,11 +72,15 @@ func (a *application) persist() {
 			delete(a.stored.History, key)
 		}
 	}
+	a.filterCatalog()
 	a.stored.Preferences = a.preferences
 	if a.window != nil && a.menuLocale != a.preferences.Locale {
 		a.refreshMenu()
 		if a.settingsWindow != nil {
 			a.settingsWindow.SetTitle(a.t("common.settings"))
+		}
+		if a.catalogWindow != nil {
+			a.catalogWindow.SetTitle(a.t("library.title"))
 		}
 	}
 	a.refreshWindows()
@@ -84,7 +89,7 @@ func (a *application) persist() {
 }
 
 func (a *application) recordPlaybackHistory(entry library.Entry, state media.State) {
-	if !a.preferences.RecordPlaybackHistory || entry.DeviceID != "" || state.URL != entry.Path || state.Loading || state.Error != "" {
+	if !a.preferences.RecordPlaybackHistory || entry.DeviceID != "" && entry.ObjectID == "" || state.URL != entry.Path || state.Loading || state.Error != "" {
 		return
 	}
 	key := library.Identity(entry)
@@ -101,5 +106,11 @@ func (a *application) recordPlaybackHistory(entry library.Entry, state media.Sta
 		}
 	}
 	history.Position, history.UpdatedAt = state.Position, time.Now().UnixMilli()
+	if state.Metadata.Duration > 0 {
+		history.Duration = state.Metadata.Duration
+		if state.Ended || state.Position >= state.Metadata.Duration*.95 {
+			history.Watched = true
+		}
+	}
 	a.stored.History[key] = history
 }

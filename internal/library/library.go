@@ -1,7 +1,8 @@
-// Package library owns playlist topology, ordering and subtitle matching.
+// Package library owns saved sources, playlist topology and subtitle matching.
 package library
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -21,20 +22,14 @@ import (
 )
 
 type Entry struct {
-	Name, Path, Group, Root, Subtitle, DeviceID string
-	Size, Modified                              int64
+	Name, Path, Group, Root, Subtitle, DeviceID, ObjectID string
+	Size, Modified                                        int64
 }
 
-// Local folders are derived from entry ancestry; DLNA records also represent
-// unloaded folders. The UI derives its tree instead of maintaining another copy.
-type Folder struct {
-	ID, Parent, Name, DeviceID, ObjectID string
-	Loaded                               bool
-}
 type Node struct {
 	ID, Name string
 	Index    int
-	Folder   *Folder
+	Folder   bool
 	Children []Node
 }
 
@@ -59,7 +54,7 @@ func IsAppleDouble(path string) bool {
 	}
 	return false
 }
-func FromPaths(paths []string) ([]Entry, []string, error) {
+func FromPaths(ctx context.Context, paths []string) ([]Entry, []string, error) {
 	var entries []Entry
 	var subtitles []string
 	add := func(path, root string, info fs.FileInfo) {
@@ -77,6 +72,9 @@ func FromPaths(paths []string) ([]Entry, []string, error) {
 		}
 	}
 	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
 		path, err := filepath.Abs(path)
 		if err != nil {
 			return nil, nil, err
@@ -90,6 +88,9 @@ func FromPaths(paths []string) ([]Entry, []string, error) {
 			continue
 		}
 		err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+			if canceled := ctx.Err(); canceled != nil {
+				return canceled
+			}
 			if err != nil {
 				return err
 			}
@@ -135,25 +136,34 @@ func FromPaths(paths []string) ([]Entry, []string, error) {
 	return entries, subtitles, nil
 }
 func Identity(e Entry) string {
-	return HashedIdentity(fmt.Sprintf("%s:%d:%d", e.Path, e.Size, e.Modified))
-}
-
-// HashedIdentity keeps cache keys opaque and leaves an existing SHA-256
-// key unchanged, so rewriting a retained cache never hashes it twice.
-func HashedIdentity(identity string) string {
-	if len(identity) == sha256.Size*2 {
-		if decoded, err := hex.DecodeString(identity); err == nil {
-			return hex.EncodeToString(decoded)
-		}
+	identity := fmt.Sprintf("%s:%d:%d", e.Path, e.Size, e.Modified)
+	if e.DeviceID != "" && e.ObjectID != "" {
+		identity = "dlna:" + e.DeviceID + ":" + e.ObjectID
 	}
 	sum := sha256.Sum256([]byte(identity))
 	return hex.EncodeToString(sum[:])
 }
-func Tree(entries []Entry, dlnaFolders []Folder) []Node {
-	folders := map[string]Folder{}
-	for _, f := range dlnaFolders {
-		folders[f.ID] = f
+
+func ValidIdentity(key string) bool {
+	if len(key) != sha256.Size*2 || strings.ToLower(key) != key {
+		return false
 	}
+	_, err := hex.DecodeString(key)
+	return err == nil
+}
+
+// Key identifies a queue row. Local rows follow paths; remote rows keep the
+// same identity when a server renews a temporary playback URL.
+func (e Entry) Key() string {
+	if e.DeviceID != "" && e.ObjectID != "" {
+		return Identity(e)
+	}
+	return e.Path
+}
+
+func Tree(entries []Entry) []Node {
+	type folder struct{ parent, name string }
+	folders := map[string]folder{}
 	for _, e := range entries {
 		if e.DeviceID != "" || e.Group == "" {
 			continue
@@ -166,32 +176,31 @@ func Tree(entries []Entry, dlnaFolders []Folder) []Node {
 			if parent == e.Root {
 				parent = ""
 			}
-			folders[p] = Folder{ID: p, Parent: parent, Name: filepath.Base(p), Loaded: true}
+			folders[p] = folder{parent: parent, name: filepath.Base(p)}
 			if parent == "" {
 				break
 			}
 		}
 	}
 	children := map[string][]Node{}
-	for _, f := range folders {
-		copy := f
-		children[f.Parent] = append(children[f.Parent], Node{ID: f.ID, Name: f.Name, Index: -1, Folder: &copy})
+	for id, f := range folders {
+		children[f.parent] = append(children[f.parent], Node{ID: id, Name: f.name, Index: -1, Folder: true})
 	}
 	for i, e := range entries {
-		children[e.Group] = append(children[e.Group], Node{ID: e.Path, Name: e.Name, Index: i})
+		children[e.Group] = append(children[e.Group], Node{ID: e.Key(), Name: e.Name, Index: i})
 	}
 	comparator := collate.New(language.Und, collate.Numeric, collate.IgnoreCase, collate.IgnoreDiacritics)
 	var build func(string) []Node
 	build = func(parent string) []Node {
 		nodes := children[parent]
 		sort.SliceStable(nodes, func(i, j int) bool {
-			if (nodes[i].Folder != nil) != (nodes[j].Folder != nil) {
-				return nodes[i].Folder != nil
+			if nodes[i].Folder != nodes[j].Folder {
+				return nodes[i].Folder
 			}
 			return comparator.CompareString(nodes[i].Name, nodes[j].Name) < 0
 		})
 		for i := range nodes {
-			if nodes[i].Folder != nil {
+			if nodes[i].Folder {
 				nodes[i].Children = build(nodes[i].ID)
 			}
 		}
@@ -204,7 +213,7 @@ func PlaybackOrder(nodes []Node, selected int) []int {
 	collect = func(items []Node) []int {
 		var out []int
 		for _, n := range items {
-			if n.Folder == nil {
+			if !n.Folder {
 				out = append(out, n.Index)
 			} else {
 				out = append(out, collect(n.Children)...)
@@ -215,10 +224,10 @@ func PlaybackOrder(nodes []Node, selected int) []int {
 	var find func([]Node) ([]int, bool)
 	find = func(items []Node) ([]int, bool) {
 		for _, n := range items {
-			if n.Folder == nil && n.Index == selected {
+			if !n.Folder && n.Index == selected {
 				return collect(items), true
 			}
-			if n.Folder != nil {
+			if n.Folder {
 				if out, ok := find(n.Children); ok {
 					return out, true
 				}
@@ -232,7 +241,7 @@ func PlaybackOrder(nodes []Node, selected int) []int {
 
 func FirstVideo(nodes []Node) int {
 	for _, n := range nodes {
-		if n.Folder == nil {
+		if !n.Folder {
 			return n.Index
 		}
 		if index := FirstVideo(n.Children); index >= 0 {

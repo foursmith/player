@@ -11,7 +11,7 @@ func (p preferences) centeringDelay() time.Duration {
 }
 
 func (a *application) refreshWindows() {
-	for _, window := range []*mygo.Window{a.window, a.pipWindow, a.settingsWindow} {
+	for _, window := range []*mygo.Window{a.window, a.pipWindow, a.settingsWindow, a.catalogWindow} {
 		if window != nil {
 			window.Invalidate()
 		}

@@ -10,14 +10,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/ipv4"
 )
 
 const searchTarget = "urn:schemas-upnp-org:device:MediaServer:1"
@@ -25,12 +29,14 @@ const searchTarget = "urn:schemas-upnp-org:device:MediaServer:1"
 var httpClient = &http.Client{Timeout: 8 * time.Second}
 
 type Device struct {
-	ID, Name, ControlURL, ServiceType string
+	ID, Name, Location, ControlURL, ServiceType string
 }
 
 type Item struct {
 	ID, Name, URL, Subtitle string
 	Folder, SubtitleFile    bool
+	Duration                float64
+	Size, Modified          int64
 }
 
 type descriptionDevice struct {
@@ -87,16 +93,112 @@ func discoverLocations(ctx context.Context, address string, duration time.Durati
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	conn, err := net.ListenPacket("udp4", "0.0.0.0:0")
+	remote, err := net.ResolveUDPAddr("udp4", address)
+	if err != nil {
+		return nil, err
+	}
+	links := []discoveryLink{{name: "default", ip: net.IPv4zero}}
+	if remote.IP.IsMulticast() {
+		links, err = discoveryLinks()
+		if err != nil {
+			return nil, err
+		}
+		if len(links) == 0 {
+			return nil, errors.New("no active IPv4 multicast network interface")
+		}
+	}
+	return collectLocations(ctx, links, func(link discoveryLink) ([]string, error) {
+		locations, err := discoverOnLink(ctx, remote, duration, link)
+		log.Printf("[dlna] discovery interface=%s locations=%d error=%v", link.name, len(locations), err)
+		return locations, err
+	})
+}
+
+type discoveryLink struct {
+	name  string
+	iface *net.Interface
+	ip    net.IP
+}
+
+// Each LAN gets its own source address and multicast socket. A VPN's default
+// multicast route must not capture requests intended for Wi-Fi or Ethernet.
+func discoveryLinks() ([]discoveryLink, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var links []discoveryLink
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagMulticast == 0 || iface.Flags&(net.FlagLoopback|net.FlagPointToPoint) != 0 {
+			continue
+		}
+		addresses, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, address := range addresses {
+			ip, _, err := net.ParseCIDR(address.String())
+			if err == nil && ip.To4() != nil && !ip.IsUnspecified() && !ip.IsLoopback() {
+				links = append(links, discoveryLink{name: iface.Name, iface: &iface, ip: ip.To4()})
+				break
+			}
+		}
+	}
+	return links, nil
+}
+
+func collectLocations(ctx context.Context, links []discoveryLink, search func(discoveryLink) ([]string, error)) ([]string, error) {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	var failures []error
+	for _, link := range links {
+		wg.Go(func() {
+			locations, err := search(link)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				failures = append(failures, fmt.Errorf("%s: %w", link.name, err))
+			}
+			for _, location := range locations {
+				seen[location] = true
+			}
+		})
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var locations []string
+	for location := range seen {
+		locations = append(locations, location)
+	}
+	sort.Strings(locations)
+	if len(locations) == 0 && len(failures) > 0 {
+		return nil, errors.Join(failures...)
+	}
+	return locations, nil
+}
+
+func discoverOnLink(ctx context.Context, remote *net.UDPAddr, duration time.Duration, link discoveryLink) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	conn, err := net.ListenPacket("udp4", net.JoinHostPort(link.ip.String(), "0"))
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
-	remote, err := net.ResolveUDPAddr("udp4", address)
-	if err != nil {
-		return nil, err
+	if remote.IP.IsMulticast() && link.iface != nil {
+		packet := ipv4.NewPacketConn(conn)
+		if err := packet.SetMulticastInterface(link.iface); err != nil {
+			return nil, err
+		}
+		if err := packet.SetMulticastTTL(2); err != nil {
+			return nil, err
+		}
 	}
 	request := "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: " + searchTarget + "\r\n\r\n"
 	if _, err = conn.WriteTo([]byte(request), remote); err != nil {
@@ -215,7 +317,7 @@ func describe(ctx context.Context, location string) (Device, error) {
 				if name == "" {
 					name = "DLNA Media Server"
 				}
-				return Device{ID: fmt.Sprintf("dlna-%x", sha256.Sum256([]byte(identity))), Name: name, ControlURL: control, ServiceType: s.Type}, true
+				return Device{ID: fmt.Sprintf("dlna-%x", sha256.Sum256([]byte(identity))), Name: name, Location: location, ControlURL: control, ServiceType: s.Type}, true
 			}
 		}
 		for _, child := range d.Devices {
@@ -236,9 +338,12 @@ type didlObject struct {
 	Name      string `xml:"title"`
 	Class     string `xml:"class"`
 	Caption   string `xml:"CaptionInfoEx"`
+	Date      string `xml:"date"`
 	Resources []struct {
 		Protocol string `xml:"protocolInfo,attr"`
 		URL      string `xml:",chardata"`
+		Duration string `xml:"duration,attr"`
+		Size     int64  `xml:"size,attr"`
 	} `xml:"res"`
 }
 
@@ -295,6 +400,9 @@ func (d Device) Browse(ctx context.Context, objectID string) ([]Item, error) {
 				}
 				seen[object.ID] = true
 				item := Item{ID: object.ID, Name: object.Name, Folder: group.folder, Subtitle: resolveURL(d.ControlURL, object.Caption)}
+				if at, err := time.Parse(time.RFC3339, object.Date); err == nil {
+					item.Modified = at.UnixMilli()
+				}
 				if item.Folder {
 					out = append(out, item)
 					continue
@@ -316,10 +424,12 @@ func (d Device) Browse(ctx context.Context, objectID string) ([]Item, error) {
 					}
 					if strings.HasPrefix(parts[2], "video/") {
 						item.URL, item.SubtitleFile = address, false
+						item.Duration, item.Size = parseDuration(resource.Duration), max(0, resource.Size)
 						break
 					}
 					if item.URL == "" && strings.Contains(object.Class, "videoItem") && !strings.HasPrefix(parts[2], "image/") && !strings.HasPrefix(parts[2], "audio/") {
 						item.URL = address
+						item.Duration, item.Size = parseDuration(resource.Duration), max(0, resource.Size)
 					}
 				}
 				if item.URL != "" {
@@ -336,6 +446,45 @@ func (d Device) Browse(ctx context.Context, objectID string) ([]Item, error) {
 		start += response.Returned
 	}
 	return nil, fmt.Errorf("DLNA directory exceeds 100000 entries")
+}
+
+func parseDuration(value string) float64 {
+	parts := strings.Split(value, ":")
+	if len(parts) != 3 {
+		return 0
+	}
+	hours, hErr := strconv.ParseUint(parts[0], 10, 32)
+	minutes, mErr := strconv.ParseUint(parts[1], 10, 8)
+	seconds, sErr := strconv.ParseFloat(parts[2], 64)
+	if hErr != nil || mErr != nil || sErr != nil || minutes >= 60 || !(seconds >= 0 && seconds < 60) {
+		return 0
+	}
+	return float64(hours)*3600 + float64(minutes)*60 + seconds
+}
+
+// Connect refreshes the description at a known location, rediscovering the
+// same device identity if its address changed. It never substitutes another NAS.
+func Connect(ctx context.Context, id, location string) (Device, error) {
+	return connect(ctx, id, location, Discover)
+}
+
+func connect(ctx context.Context, id, location string, discover func(context.Context) ([]Device, error)) (Device, error) {
+	if device, err := describe(ctx, location); err == nil && device.ID == id {
+		return device, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return Device{}, err
+	}
+	devices, err := discover(ctx)
+	if err != nil {
+		return Device{}, err
+	}
+	for _, device := range devices {
+		if device.ID == id {
+			return device, nil
+		}
+	}
+	return Device{}, fmt.Errorf("DLNA device is offline or unavailable")
 }
 
 func ReadSubtitle(ctx context.Context, address string) ([]byte, error) {

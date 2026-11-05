@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"image/png"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -97,6 +100,31 @@ func TestHistorySettingsDependenciesAcrossLocales(t *testing.T) {
 			if !a.preferences.RecentFilesEnabled {
 				t.Fatal("recent-file switch did not turn on")
 			}
+			if dir := os.Getenv("FSVR_UI_SNAPSHOT_DIR"); dir != "" {
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				preview := modeTestApplication(t)
+				preview.preferences.Locale = locale
+				for tab := range settingsTabs {
+					preview.settingsTab = tab
+					for _, size := range [][2]int{{720, 420}, {760, 560}} {
+						preview.settingsScroll[tab] = ui.ScrollState{}
+						view := ui.NewTester(preview.settings, size[0], size[1])
+						view.SetScale(2)
+						name := fmt.Sprintf("settings-%s-%d-%d.png", locale, tab, size[0])
+						file, err := os.Create(filepath.Join(dir, name))
+						if err != nil {
+							t.Fatal(err)
+						}
+						err = png.Encode(file, view.Image())
+						file.Close()
+						if err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
 		})
 	}
 }
@@ -108,7 +136,7 @@ func TestClearingHistoryAlsoRemovesPreservedRecentFilesAcrossRestart(t *testing.
 	a.preferences.RecentFilesEnabled = false
 	a.stored.RecentFiles = []string{filepath.Join(t.TempDir(), "old.mp4")}
 	a.stored.LastFile = a.stored.RecentFiles[0]
-	cacheKey := library.HashedIdentity("old")
+	cacheKey := library.Identity(library.Entry{Path: "old"})
 	saved := videoHistory{Position: 42, AutoProjection: "sbs_180_eqr"}
 	a.stored.History[cacheKey] = saved
 	a.clearRecentFiles()

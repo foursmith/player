@@ -35,6 +35,9 @@ func (a *application) refreshMenu() {
 	}
 	file = append(file,
 		mygo.Separator(),
+		action("library.title", "", a.openCatalog),
+		action("library.savePlaylist", "", a.savePlaylistCollection),
+		mygo.Separator(),
 		action("media.addFiles", "CmdOrCtrl+Shift+A", func() { a.choose(false, true) }),
 		action("media.addFolder", "", func() { a.choose(true, true) }),
 		action("playlist.scanDlna", "CmdOrCtrl+Shift+D", a.scanDLNA),

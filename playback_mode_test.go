@@ -126,8 +126,8 @@ func TestFlatAndVRPlaybackParametersAreIndependent(t *testing.T) {
 func TestPlaybackHistoryKeepsBothVideoTypes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	state := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{
-		library.HashedIdentity("flat"): {Projection: projection.Flat, AutoProjection: "sbs_180_eqr", Position: 12, ProjectionManual: true},
-		library.HashedIdentity("vr"):   {AutoProjection: "sbs_180_fe", Position: 34},
+		library.Identity(library.Entry{Path: "flat"}): {Projection: projection.Flat, AutoProjection: "sbs_180_eqr", Position: 12, ProjectionManual: true},
+		library.Identity(library.Entry{Path: "vr"}):   {AutoProjection: "sbs_180_fe", Position: 34},
 	}}
 	if err := saveState(path, state); err != nil {
 		t.Fatal(err)
