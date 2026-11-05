@@ -79,6 +79,18 @@ func TestRootPlaybackIncludesRemoteVideosWithStableRowKeys(t *testing.T) {
 	}
 }
 
+func TestPlaylistTreeKeepsVideosAtVolumeRoot(t *testing.T) {
+	volume := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+	entries := []Entry{
+		{Name: "root.mp4", Path: filepath.Join(volume, "root.mp4"), Group: volume, Root: volume},
+		{Name: "nested.mp4", Path: filepath.Join(volume, "Shows", "nested.mp4"), Group: filepath.Join(volume, "Shows"), Root: volume},
+	}
+	tree := Tree(entries)
+	if len(tree) != 2 || !tree[0].Folder || tree[0].Children[0].Index != 1 || tree[1].Index != 0 {
+		t.Fatal("volume-root playback lost a direct or nested video", tree)
+	}
+}
+
 func TestHistoryIdentityDistinguishesPathsAndReplacedFiles(t *testing.T) {
 	first := Entry{Name: "video.mp4", Path: filepath.Join(t.TempDir(), "video.mp4"), Size: 100, Modified: 123}
 	second := first

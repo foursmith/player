@@ -61,6 +61,50 @@ static int video_fail(FsvrDecoder *d, int code, char *error, int size) {
 static int interrupt_cb(void *opaque) {
     FsvrDecoder *d=opaque;return d->cancel&&atomic_load(&d->cancel->value);
 }
+static int probe_interrupt(void *opaque) {
+    FsvrCancel *cancel = opaque;
+    return cancel && atomic_load(&cancel->value);
+}
+static AVStream *probe_video(AVFormatContext *format) {
+    AVStream *best = NULL;
+    for (unsigned i = 0; i < format->nb_streams; i++) {
+        AVStream *stream = format->streams[i];
+        if (stream->codecpar->codec_type != AVMEDIA_TYPE_VIDEO || (stream->disposition & AV_DISPOSITION_ATTACHED_PIC)) continue;
+        if (!best || (int64_t)stream->codecpar->width * stream->codecpar->height > (int64_t)best->codecpar->width * best->codecpar->height) best = stream;
+    }
+    return best;
+}
+int fsvr_probe(const char *url, FsvrCancel *cancel, FsvrInfo *info, char *error, int error_size) {
+    AVFormatContext *format = avformat_alloc_context();
+    if (!format) return fail(AVERROR(ENOMEM), error, error_size);
+    format->interrupt_callback = (AVIOInterruptCB){probe_interrupt, cancel};
+    AVDictionary *options = NULL;
+    av_dict_set(&options, "rw_timeout", "2000000", 0);
+    av_dict_set(&options, "probesize", "131072", 0);
+    av_dict_set(&options, "analyzeduration", "500000", 0);
+    av_dict_set(&options, "max_probe_packets", "32", 0);
+    int ret = avformat_open_input(&format, url, NULL, &options);
+    av_dict_free(&options);
+    if (ret < 0) goto done;
+    AVStream *video = probe_video(format);
+    // MP4/MKV headers usually contain everything. Avoid opening decoders or
+    // reading packets (especially 8K frames and malformed cover-art streams).
+    if (!video || video->codecpar->width <= 0 || video->codecpar->height <= 0 || format->duration == AV_NOPTS_VALUE) {
+        ret = avformat_find_stream_info(format, NULL);
+        if (ret < 0) goto done;
+        video = probe_video(format);
+    }
+    if (!video) { ret = AVERROR_STREAM_NOT_FOUND; goto done; }
+    info->width = video->codecpar->width;
+    info->height = video->codecpar->height;
+    info->duration = format->duration != AV_NOPTS_VALUE ? (double)format->duration / AV_TIME_BASE :
+        video->duration != AV_NOPTS_VALUE ? video->duration * av_q2d(video->time_base) : 0;
+    info->bit_rate = format->bit_rate;
+    ret = 0;
+done:
+    avformat_close_input(&format);
+    return ret < 0 ? fail(ret, error, error_size) : ret;
+}
 static enum AVPixelFormat hw_format(AVCodecContext *ctx, const enum AVPixelFormat *formats) {
     FsvrDecoder *d = ctx->opaque;
     for (const enum AVPixelFormat *p = formats; *p != AV_PIX_FMT_NONE; p++)

@@ -121,13 +121,47 @@ func (a *application) filterCatalog() {
 	if !a.preferences.RecordPlaybackHistory && filter >= catalogUnwatched && filter <= catalogWatched {
 		filter, a.preferences.LibraryFilter = catalogAll, catalogAll
 	}
+	allItems := a.catalog.items
+	if a.catalog.sourceItems != nil {
+		// Search and status filters include descendants of the current directory.
+		allItems = a.catalogDirectoryItems(true)
+		a.catalog.items = allItems
+		if query == "" && filter == catalogAll {
+			a.catalog.items = a.catalogDirectoryItems(false)
+		}
+	}
+	a.catalog.total = 0
+	for _, item := range allItems {
+		if !item.Folder {
+			a.catalog.total++
+		}
+	}
+	a.catalog.visible = a.catalogFilteredIndices(a.catalog.items, query, filter)
+	items, indices := a.catalog.items, a.catalog.visible
+	if a.catalog.sourceItems != nil && query == "" && filter == catalogAll {
+		items = allItems
+		indices = a.catalogFilteredIndices(items, query, filter)
+	}
+	a.catalog.playable = make([]library.Entry, 0, len(indices))
+	for _, i := range indices {
+		if item := items[i]; !item.Folder && item.Error == nil {
+			a.catalog.playable = append(a.catalog.playable, item.Entry)
+		}
+	}
+}
+
+func (a *application) catalogFilteredIndices(items []library.SavedItem, query string, filter int) []int {
 	// Keep row snapshots independent of a filter changed by a row action.
-	visible := make([]int, 0, len(a.catalog.items))
-	for i, item := range a.catalog.items {
+	visible := make([]int, 0, len(items))
+	for i, item := range items {
 		if query != "" && !strings.Contains(strings.ToLower(item.Name()+" "+item.Path), query) {
 			continue
 		}
-		if !item.Folder && filter == catalogUnavailable {
+		if item.Folder && a.catalog.sourceItems != nil && filter != catalogAll {
+			if filter != catalogUnavailable || item.Error == nil {
+				continue
+			}
+		} else if !item.Folder && filter == catalogUnavailable {
 			if item.Error == nil {
 				continue
 			}
@@ -138,7 +172,7 @@ func (a *application) filterCatalog() {
 	}
 	comparator := collate.New(language.Und, collate.Numeric, collate.IgnoreCase, collate.IgnoreDiacritics)
 	sort.SliceStable(visible, func(i, j int) bool {
-		left, right := a.catalog.items[visible[i]], a.catalog.items[visible[j]]
+		left, right := items[visible[i]], items[visible[j]]
 		if left.Folder != right.Folder {
 			return left.Folder
 		}
@@ -166,7 +200,7 @@ func (a *application) filterCatalog() {
 		}
 		return order < 0
 	})
-	a.catalog.visible = visible
+	return visible
 }
 
 func (a *application) setCatalogWatch(item library.SavedItem, override string) {

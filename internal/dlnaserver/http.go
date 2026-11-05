@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -226,12 +227,12 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, service string)
 	var response string
 	s.mu.RLock()
 	objects, updateID := s.objects, s.updateID
-	s.mu.RUnlock()
 	switch action.XMLName.Local {
 	case "Browse":
 		var code int
-		response, code = browse(objects, updateID, args, requestBase(r))
+		response, code = browse(objects, updateID, args, requestBase(r), s.prioritizeMetadata)
 		if code != 0 {
+			s.mu.RUnlock()
 			s.fault(w, code, map[int]string{402: "Invalid Args", 701: "No Such Object", 709: "Unsupported or invalid sort criteria", 710: "No such container"}[code])
 			return
 		}
@@ -247,11 +248,13 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, service string)
 		response = tag("ConnectionIDs", "0")
 	case "GetCurrentConnectionInfo":
 		if args["ConnectionID"] != "0" {
+			s.mu.RUnlock()
 			s.fault(w, 706, "Invalid connection reference")
 			return
 		}
 		response = `<RcsID>-1</RcsID><AVTransportID>-1</AVTransportID><ProtocolInfo></ProtocolInfo><PeerConnectionManager></PeerConnectionManager><PeerConnectionID>-1</PeerConnectionID><Direction>Output</Direction><Status>OK</Status>`
 	}
+	s.mu.RUnlock()
 	writeXML(w, http.StatusOK, `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:`+action.XMLName.Local+`Response xmlns:u="`+service+`">`+response+`</u:`+action.XMLName.Local+`Response></s:Body></s:Envelope>`)
 }
 
@@ -259,7 +262,7 @@ func (s *Server) fault(w http.ResponseWriter, code int, description string) {
 	writeXML(w, http.StatusInternalServerError, `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0">`+tag("errorCode", strconv.Itoa(code))+tag("errorDescription", description)+`</UPnPError></detail></s:Fault></s:Body></s:Envelope>`)
 }
 
-func browse(objects catalog, updateID uint32, args map[string]string, base string) (string, int) {
+func browse(objects catalog, updateID uint32, args map[string]string, base string, prioritize func([]object)) (string, int) {
 	item, found := objects[args["ObjectID"]]
 	if !found {
 		return "", 701
@@ -269,10 +272,12 @@ func browse(objects catalog, updateID uint32, args map[string]string, base strin
 	if e1 != nil || e2 != nil {
 		return "", 402
 	}
-	if sort := args["SortCriteria"]; sort != "" && sort != "+dc:title" && sort != "-dc:title" {
+	criteria := args["SortCriteria"]
+	if criteria != "" && criteria != "+dc:title" && criteria != "-dc:title" {
 		return "", 709
 	}
 	var items []object
+	total := 1
 	switch args["BrowseFlag"] {
 	case "BrowseMetadata":
 		if start != 0 {
@@ -283,31 +288,37 @@ func browse(objects catalog, updateID uint32, args map[string]string, base strin
 		if !item.Container {
 			return "", 710
 		}
-		for _, id := range item.Children {
-			items = append(items, objects[id])
-		}
-	default:
-		return "", 402
-	}
-	total := len(items)
-	if args["BrowseFlag"] != "BrowseMetadata" {
-		if sort := args["SortCriteria"]; sort != "" {
-			comparator := collate.New(language.Und, collate.Numeric, collate.IgnoreCase)
-			slices.SortStableFunc(items, func(a, b object) int {
-				order := comparator.CompareString(a.Name, b.Name)
-				if sort[0] == '-' {
-					return -order
-				}
-				return order
-			})
-		}
+		total = len(item.Children)
 		from := min(start, uint64(total))
 		to := uint64(total)
 		if count > 0 {
 			to = min(to, from+count)
 		}
-		items = items[from:to]
+		children := item.Children
+		if criteria == "" {
+			// The catalog already stores natural folder-first order. Page IDs
+			// before materializing objects, so one page costs only its own rows.
+			children = children[from:to]
+		}
+		items = make([]object, 0, len(children))
+		for _, id := range children {
+			items = append(items, objects[id])
+		}
+		if criteria != "" {
+			comparator := collate.New(language.Und, collate.Numeric, collate.IgnoreCase)
+			slices.SortStableFunc(items, func(a, b object) int {
+				order := comparator.CompareString(a.Name, b.Name)
+				if criteria[0] == '-' {
+					return -order
+				}
+				return order
+			})
+			items = items[from:to]
+		}
+	default:
+		return "", 402
 	}
+	prioritize(items)
 	var result strings.Builder
 	result.WriteString(`<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:sec="http://www.sec.co.kr/">`)
 	for _, item := range items {
@@ -320,7 +331,8 @@ func browse(objects catalog, updateID uint32, args map[string]string, base strin
 func (o object) didl(base, filter string) string {
 	requested := func(property string) bool {
 		for _, value := range strings.Split(filter, ",") {
-			if value == "*" || value == property {
+			value = strings.TrimSpace(value)
+			if value == "*" || value == property || strings.Contains(property, "@") && value == strings.SplitN(property, "@", 2)[0]+"@*" {
 				return true
 			}
 		}
@@ -340,10 +352,33 @@ func (o object) didl(base, filter string) string {
 	if o.Subtitle != "" && requested("sec:CaptionInfoEx") {
 		body += `<sec:CaptionInfoEx sec:type="` + escaped(strings.TrimPrefix(filepath.Ext(o.Subtitle), ".")) + `">` + escaped(resourceURL(base, "subtitle", o)) + `</sec:CaptionInfoEx>`
 	}
-	if requested("res") || requested("res@size") || requested("res@protocolInfo") {
+	resource := false
+	for _, value := range strings.Split(filter, ",") {
+		value = strings.TrimSpace(value)
+		if value == "*" || value == "res" || strings.HasPrefix(value, "res@") {
+			resource = true
+		}
+	}
+	if resource {
 		attributes := ` protocolInfo="` + escaped("http-get:*:"+o.MIME+":"+contentFeatures) + `"`
 		if requested("res@size") {
 			attributes += fmt.Sprintf(` size="%d"`, o.Size)
+		}
+		if requested("res@duration") && o.Info.Duration > 0 {
+			milliseconds := int64(math.Round(min(o.Info.Duration, 1e9) * 1000))
+			attributes += fmt.Sprintf(` duration="%d:%02d:%02d.%03d"`, milliseconds/3600000, milliseconds/60000%60, milliseconds/1000%60, milliseconds%1000)
+		}
+		if requested("res@resolution") && o.Info.Width > 0 && o.Info.Height > 0 {
+			attributes += fmt.Sprintf(` resolution="%dx%d"`, o.Info.Width, o.Info.Height)
+		}
+		if requested("res@bitrate") {
+			bitrate := o.Info.BitRate / 8
+			if bitrate <= 0 && o.Info.Duration > 0 {
+				bitrate = int64(float64(o.Size) / o.Info.Duration)
+			}
+			if bitrate > 0 {
+				attributes += fmt.Sprintf(` bitrate="%d"`, bitrate)
+			}
 		}
 		body += `<res` + attributes + `>` + escaped(resourceURL(base, "media", o)) + `</res>`
 	}

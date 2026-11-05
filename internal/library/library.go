@@ -173,7 +173,7 @@ func Tree(entries []Entry) []Node {
 				break
 			}
 			parent := filepath.Dir(p)
-			if parent == e.Root {
+			if parent == e.Root || parent == p {
 				parent = ""
 			}
 			folders[p] = folder{parent: parent, name: filepath.Base(p)}
@@ -187,8 +187,16 @@ func Tree(entries []Entry) []Node {
 		children[f.parent] = append(children[f.parent], Node{ID: id, Name: f.name, Index: -1, Folder: true})
 	}
 	for i, e := range entries {
-		children[e.Group] = append(children[e.Group], Node{ID: e.Key(), Name: e.Name, Index: i})
+		group := e.Group
+		if group == e.Root {
+			group = ""
+		}
+		children[group] = append(children[group], Node{ID: e.Key(), Name: e.Name, Index: i})
 	}
+	return buildTree(children)
+}
+
+func buildTree(children map[string][]Node) []Node {
 	comparator := collate.New(language.Und, collate.Numeric, collate.IgnoreCase, collate.IgnoreDiacritics)
 	var build func(string) []Node
 	build = func(parent string) []Node {
@@ -197,7 +205,10 @@ func Tree(entries []Entry) []Node {
 			if nodes[i].Folder != nodes[j].Folder {
 				return nodes[i].Folder
 			}
-			return comparator.CompareString(nodes[i].Name, nodes[j].Name) < 0
+			if order := comparator.CompareString(nodes[i].Name, nodes[j].Name); order != 0 {
+				return order < 0
+			}
+			return nodes[i].ID < nodes[j].ID
 		})
 		for i := range nodes {
 			if nodes[i].Folder {

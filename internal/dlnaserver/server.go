@@ -20,6 +20,7 @@ import (
 type Options struct {
 	UUID, Name string
 	Sources    []library.Saved
+	Metadata   func(context.Context, library.Entry) (library.MediaInfo, error)
 }
 
 // NewUUID returns a persistent device identity, independent of its LAN address.
@@ -56,6 +57,7 @@ type Server struct {
 	revision   uint64
 	objects    catalog
 	updateID   uint32
+	metadata   *metadataIndex
 	subs       map[string]*subscription
 	transfers  map[*http.Request]transfer
 }
@@ -97,6 +99,7 @@ func Start(parent context.Context, options Options) (*Server, error) {
 		return nil, err
 	}
 	s.http = &http.Server{Handler: s, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return ctx }}
+	s.startMetadata(options.Metadata)
 	s.wg.Go(func() {
 		if err := s.http.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("[dlna-server] HTTP stopped: %v", err)
@@ -168,10 +171,12 @@ func (s *Server) SetSources(sources []library.Saved) {
 	}
 	s.revision++
 	s.objects = objects
+	s.indexMetadata(objects)
 	s.updateID++
 	s.mu.Unlock()
 	s.Refresh()
 	s.queueEvents()
+	s.scheduleMetadata()
 }
 
 func (s *Server) Refresh() {
@@ -200,6 +205,9 @@ func (s *Server) refreshLoop() {
 		cancel()
 		s.mu.Lock()
 		s.scanCancel = nil
+		if err == nil && revision == s.revision {
+			s.indexMetadata(objects)
+		}
 		changed := err == nil && revision == s.revision && !reflect.DeepEqual(objects, s.objects)
 		if changed {
 			s.objects = objects
@@ -208,6 +216,9 @@ func (s *Server) refreshLoop() {
 		s.mu.Unlock()
 		if changed {
 			s.queueEvents()
+		}
+		if err == nil {
+			s.scheduleMetadata()
 		}
 	}
 }

@@ -6,6 +6,8 @@
 typedef struct FsvrDecoder FsvrDecoder;
 typedef struct FsvrFrame FsvrFrame;
 typedef struct FsvrCancel FsvrCancel;
+typedef struct FsvrInfo { double duration; int width, height; int64_t bit_rate; } FsvrInfo;
+int fsvr_probe(const char *url, FsvrCancel *cancel, FsvrInfo *info, char *error, int error_size);
 FsvrCancel *fsvr_cancel_new(void);
 void fsvr_cancel_set(FsvrCancel *cancel);
 void fsvr_cancel_free(FsvrCancel *cancel);

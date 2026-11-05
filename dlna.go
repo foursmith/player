@@ -4,15 +4,11 @@ import (
 	"context"
 	"log"
 	"slices"
-	"strings"
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/dlna"
 	"github.com/foursmith/player/internal/library"
 )
-
-type catalogFolder struct{ id, name string }
 
 func rememberDLNALibraries(saved []library.Saved, devices []dlna.Device) ([]library.Saved, string) {
 	out := library.CloneSaved(saved)
@@ -99,46 +95,4 @@ func readDLNACatalog(parent context.Context, saved library.Saved, objectID strin
 		})
 	}()
 	return cancel
-}
-
-func (a *application) enterCatalogFolder(item library.SavedItem) {
-	if !item.Folder || item.Error != nil {
-		return
-	}
-	a.catalog.remotePath = append(a.catalog.remotePath, catalogFolder{item.Entry.ObjectID, item.Name()})
-	a.changeCatalogDirectory()
-}
-
-func (a *application) catalogParent() {
-	if len(a.catalog.remotePath) <= 1 {
-		return
-	}
-	a.catalog.remotePath = a.catalog.remotePath[:len(a.catalog.remotePath)-1]
-	a.changeCatalogDirectory()
-}
-
-func (a *application) catalogRoot() {
-	if len(a.catalog.remotePath) <= 1 {
-		return
-	}
-	a.catalog.remotePath = a.catalog.remotePath[:1]
-	a.changeCatalogDirectory()
-}
-
-func (a *application) changeCatalogDirectory() {
-	a.catalog.items, a.catalog.visible, a.catalog.search = nil, nil, ""
-	a.catalog.list = ui.ListState{}
-	a.startCatalogThumbnails()
-	a.refreshCatalog()
-}
-
-func (a *application) catalogDirectoryName() string {
-	var names []string
-	if saved := a.selectedCatalog(); saved != nil {
-		names = append(names, saved.Name)
-	}
-	for _, folder := range a.catalog.remotePath[min(1, len(a.catalog.remotePath)):] {
-		names = append(names, folder.name)
-	}
-	return strings.Join(names, " / ")
 }

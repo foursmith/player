@@ -6,13 +6,51 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/net/ipv4"
 )
 
-func TestSSDPResponderUsesReceivingInterfaceAddress(t *testing.T) {
+func TestSSDPCompatibilityAndBoundedResponseWindows(t *testing.T) {
+	targets := []string{mediaServerType}
+	for _, test := range []struct {
+		name, line, host, mx string
+		window               time.Duration
+	}{
+		{"standard multicast", "M-SEARCH * HTTP/1.1", multicast, "2", 2 * time.Second},
+		{"trailing request whitespace", "M-SEARCH * HTTP/1.1 \t", multicast, "1", time.Second},
+		{"unicast without MX", "M-SEARCH * HTTP/1.1", "192.0.2.1:1900", "", time.Second},
+		{"legacy zero MX", "M-SEARCH * HTTP/1.1", multicast, "0", time.Second},
+		{"bounded excessive MX", "M-SEARCH * HTTP/1.1", multicast, "999999", 5 * time.Second},
+		{"negative MX", "M-SEARCH * HTTP/1.1", multicast, "-1", 0},
+		{"malformed MX", "M-SEARCH * HTTP/1.1", multicast, "bad", 0},
+		{"invalid HTTP version", "M-SEARCH * HTTP/nope", multicast, "1", 0},
+		{"wrong method", "GET * HTTP/1.1", multicast, "1", 0},
+		{"wrong target URI", "M-SEARCH / HTTP/1.1", multicast, "1", 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			headers := "HOST: " + test.host + "\r\nMAN: \"ssdp:discover\"\r\nST: " + mediaServerType + "\r\n"
+			if test.mx != "" {
+				headers += "MX: " + test.mx + "\r\n"
+			}
+			matched, window := searchTargets([]byte(test.line+"\r\n"+headers+"\r\n"), targets)
+			if window != test.window || (len(matched) == 1) != (test.window > 0) {
+				t.Fatal("incorrect compatibility handling", matched, window)
+			}
+		})
+	}
+	packet := "M-SEARCH * HTTP/1.1\r\nMAN: \"ssdp:discover\"\r\nST: " + mediaServerType + "\r\nMX: 1\r\nBrokenHeader\r\n\r\n"
+	if matched, _ := searchTargets([]byte(packet), targets); len(matched) != 0 {
+		t.Fatal("malformed headers bypassed HTTP validation")
+	}
+	if matched, _ := searchTargets([]byte(strings.ReplaceAll(packet, "\r\n", "")), targets); len(matched) != 0 {
+		t.Fatal("truncated request was accepted")
+	}
+}
+
+func TestSSDPResponderUsesReceivingInterfaceAfterAnnouncementDeadline(t *testing.T) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		t.Fatal(err)
@@ -37,6 +75,11 @@ func TestSSDPResponderUsesReceivingInterfaceAddress(t *testing.T) {
 		return socket
 	}
 	listener, sender, peer := listen(), listen(), listen()
+	// An earlier announcement leaves this deadline on the shared UDP socket.
+	// Later searches must still receive replies, on the receiving interface.
+	if err := sender.SetWriteDeadline(time.Now().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	packet := ipv4.NewPacketConn(listener)
 	if err := packet.SetControlMessage(ipv4.FlagInterface, true); err != nil {
 		t.Fatal(err)

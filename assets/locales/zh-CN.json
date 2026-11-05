@@ -138,7 +138,7 @@
   "library.noItems": "还没有视频",
   "library.noResults": "没有匹配的视频",
   "library.itemCount": "%d 个可用 · 共 %d 个",
-  "library.unavailable": "文件不可用",
+  "library.unavailable": "不可用",
   "library.readFailed": "无法读取视频库，请检查硬盘连接或重新定位文件夹",
   "library.duplicateFolder": "此文件夹已在视频库中。",
   "library.noLocalVideos": "当前播放列表中没有可保存的本地视频。",

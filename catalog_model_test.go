@@ -3,10 +3,8 @@ package main
 import (
 	"image"
 	"image/color"
-	"image/png"
 	"math"
 	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -185,10 +183,7 @@ func TestCatalogWatchMenusFiltersAndLayoutAcrossLocales(t *testing.T) {
 				}
 			}
 			// Optional diagnostic captures use neutral fixtures, never user videos.
-			if dir := os.Getenv("FSVR_UI_SNAPSHOT_DIR"); dir != "" {
-				if err := os.MkdirAll(dir, 0700); err != nil {
-					t.Fatal(err)
-				}
+			if os.Getenv("FSVR_UI_SNAPSHOT_DIR") != "" {
 				for _, size := range [][2]int{{800, 460}, {920, 600}} {
 					a.catalog.list = ui.ListState{}
 					a.catalog.sidebar = ui.ScrollState{}
@@ -197,15 +192,7 @@ func TestCatalogWatchMenusFiltersAndLayoutAcrossLocales(t *testing.T) {
 					if size[0] == 920 {
 						suffix = "-regular.png"
 					}
-					file, err := os.Create(filepath.Join(dir, locale+suffix))
-					if err != nil {
-						t.Fatal(err)
-					}
-					err = png.Encode(file, v.Image())
-					file.Close()
-					if err != nil {
-						t.Fatal(err)
-					}
+					writeUISnapshot(t, locale+suffix, v)
 				}
 			}
 		})

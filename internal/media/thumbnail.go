@@ -6,11 +6,13 @@ import (
 	"image"
 	"io"
 	"math"
+
+	"github.com/foursmith/player/internal/library"
 )
 
 type Preview struct {
-	Image    image.Image
-	Duration float64
+	Image image.Image
+	library.MediaInfo
 }
 
 // Thumbnail reads duration and a small still through an independent silent decoder. It
@@ -22,7 +24,7 @@ func Thumbnail(ctx context.Context, source string) (Preview, error) {
 	}
 	defer d.Close()
 	m := d.Metadata()
-	preview := Preview{Duration: m.Duration}
+	preview := Preview{MediaInfo: library.MediaInfo{Duration: m.Duration, Width: m.Width, Height: m.Height}}
 	scale := min(240/float64(max(1, m.Width)), 135/float64(max(1, m.Height)))
 	w, h := max(1, int(math.Round(float64(m.Width)*scale))), max(1, int(math.Round(float64(m.Height)*scale)))
 	var result *image.RGBA

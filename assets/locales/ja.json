@@ -138,7 +138,7 @@
   "library.noItems": "動画がありません",
   "library.noResults": "一致する動画がありません",
   "library.itemCount": "利用可能 %d 件 · 全 %d 件",
-  "library.unavailable": "ファイルを利用できません",
+  "library.unavailable": "利用不可",
   "library.readFailed": "ライブラリを読み込めません。ディスクの接続を確認するか、場所を指定し直してください",
   "library.duplicateFolder": "このフォルダーはすでに登録されています。",
   "library.noLocalVideos": "保存できるローカル動画が再生リストにありません。",

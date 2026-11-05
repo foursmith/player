@@ -6,6 +6,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,12 +14,79 @@ import (
 	"github.com/foursmith/player/internal/media"
 )
 
+func TestMetadataCacheReusesPreviewInfoAndInvalidatesReplacement(t *testing.T) {
+	var calls atomic.Int32
+	dir := t.TempDir()
+	entry := library.Entry{Path: filepath.Join(t.TempDir(), "clip.mp4"), Size: 100, Modified: 1}
+	want := library.MediaInfo{Duration: 125.5, Width: 8192, Height: 4096, BitRate: 80000000}
+	cache := &Cache{Dir: dir, probe: func(context.Context, string) (library.MediaInfo, error) { calls.Add(1); return want, nil }}
+	for range 2 {
+		if info, err := cache.Metadata(context.Background(), entry); err != nil || info != want {
+			t.Fatal("metadata cache lost fields", info, err)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatal("metadata was probed again", calls.Load())
+	}
+	reopened := &Cache{Dir: dir, probe: func(context.Context, string) (library.MediaInfo, error) {
+		t.Fatal("cached metadata was probed after reopening")
+		return library.MediaInfo{}, nil
+	}}
+	if info, err := reopened.Metadata(context.Background(), entry); err != nil || info != want {
+		t.Fatal("persistent metadata cache was not reused", info, err)
+	}
+	entry.Modified++
+	if _, err := cache.Metadata(context.Background(), entry); err != nil || calls.Load() != 2 {
+		t.Fatal("replacement reused stale metadata", calls.Load(), err)
+	}
+	files, _ := os.ReadDir(dir)
+	for _, file := range files {
+		if len(file.Name()) != 69 {
+			t.Fatal("metadata cache exposed a filename or decoded a thumbnail", file.Name())
+		}
+	}
+	cache.prune(1)
+	files, _ = os.ReadDir(dir)
+	if len(files) != 1 {
+		t.Fatal("metadata-only cache entries were not bounded", len(files))
+	}
+	// Thumbnail generation writes the same sidecar, including resolution.
+	previewCache := &Cache{Dir: t.TempDir(), render: func(context.Context, string) (media.Preview, error) {
+		return media.Preview{Image: image.NewRGBA(image.Rect(0, 0, 16, 8)), MediaInfo: want}, nil
+	}}
+	if _, err := previewCache.Load(context.Background(), entry); err != nil {
+		t.Fatal(err)
+	}
+	previewCache.probe = func(context.Context, string) (library.MediaInfo, error) {
+		t.Fatal("thumbnail metadata was not reused")
+		return library.MediaInfo{}, nil
+	}
+	if info, err := previewCache.Metadata(context.Background(), entry); err != nil || info != want {
+		t.Fatal("thumbnail sidecar did not supply metadata", info, err)
+	}
+}
+
+func TestCanceledMetadataDoesNotPopulateCache(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cache := &Cache{Dir: t.TempDir(), probe: func(context.Context, string) (library.MediaInfo, error) {
+		cancel()
+		return library.MediaInfo{Duration: 5, Width: 320, Height: 160}, nil
+	}}
+	if _, err := cache.Metadata(ctx, library.Entry{Path: "private.mp4"}); !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled metadata was published", err)
+	}
+	files, _ := os.ReadDir(cache.Dir)
+	if len(files) != 0 {
+		t.Fatal("canceled metadata was written to disk")
+	}
+}
+
 func TestPreviewCacheReusesOpaquePrivateFilesAndInvalidatesReplacedVideos(t *testing.T) {
 	dir := t.TempDir()
 	calls := 0
 	cache := &Cache{Dir: dir, render: func(context.Context, string) (media.Preview, error) {
 		calls++
-		return media.Preview{Image: image.NewRGBA(image.Rect(0, 0, 16, 8)), Duration: 123.5}, nil
+		return media.Preview{Image: image.NewRGBA(image.Rect(0, 0, 16, 8)), MediaInfo: library.MediaInfo{Duration: 123.5, Width: 320, Height: 160}}, nil
 	}}
 	entry := library.Entry{Path: filepath.Join(t.TempDir(), "private-title.mp4"), Size: 100, Modified: 1}
 	for range 2 {
@@ -35,14 +103,20 @@ func TestPreviewCacheReusesOpaquePrivateFilesAndInvalidatesReplacedVideos(t *tes
 	if err != nil || info.Mode().Perm()&0077 != 0 {
 		t.Fatal("preview is missing or accessible to other users", err)
 	}
-	if err := os.WriteFile(path, []byte("corrupt preview"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, library.Identity(entry)+".json"), []byte(`{}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := cache.Load(context.Background(), entry); err != nil || calls != 2 {
+		t.Fatal("incomplete metadata did not regenerate", err, calls)
+	}
+	if err := os.WriteFile(path, []byte("corrupt preview"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.Load(context.Background(), entry); err != nil || calls != 3 {
 		t.Fatal("corrupt preview did not regenerate", err, calls)
 	}
 	entry.Modified++
-	if _, err := cache.Load(context.Background(), entry); err != nil || calls != 3 {
+	if _, err := cache.Load(context.Background(), entry); err != nil || calls != 4 {
 		t.Fatal("a replaced file reused a stale preview", err, calls)
 	}
 	files, _ := os.ReadDir(dir)
@@ -64,7 +138,7 @@ func TestPreviewCachePrunesOnlyItsOldestImages(t *testing.T) {
 		if err := os.WriteFile(path, nil, 0600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, key+".json"), []byte(`{"Duration":100}`), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, key+".json"), []byte(`{"Duration":100,"Width":320,"Height":160}`), 0600); err != nil {
 			t.Fatal(err)
 		}
 		at := time.Unix(int64(i+1), 0)
@@ -96,7 +170,7 @@ func TestPreviewCancellationDoesNotWriteAnAbandonedResult(t *testing.T) {
 	dir := t.TempDir()
 	cache := &Cache{Dir: dir, render: func(context.Context, string) (media.Preview, error) {
 		cancel()
-		return media.Preview{Image: image.NewRGBA(image.Rect(0, 0, 16, 8)), Duration: 100}, nil
+		return media.Preview{Image: image.NewRGBA(image.Rect(0, 0, 16, 8)), MediaInfo: library.MediaInfo{Duration: 100, Width: 320, Height: 160}}, nil
 	}}
 	_, err := cache.Load(ctx, library.Entry{Path: "/media/clip.mp4"})
 	if !errors.Is(err, context.Canceled) {
@@ -111,7 +185,7 @@ func TestDurationSurvivesThumbnailDecodeFailure(t *testing.T) {
 	dir := t.TempDir()
 	failed := errors.New("thumbnail decoding failed")
 	cache := &Cache{Dir: dir, render: func(context.Context, string) (media.Preview, error) {
-		return media.Preview{Duration: 90}, failed
+		return media.Preview{MediaInfo: library.MediaInfo{Duration: 90}}, failed
 	}}
 	preview, err := cache.Load(context.Background(), library.Entry{Path: "/Media/video.mp4"})
 	if !errors.Is(err, failed) || preview.Duration != 90 || preview.Image != nil {

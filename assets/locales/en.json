@@ -138,7 +138,7 @@
   "library.noItems": "No videos yet",
   "library.noResults": "No matching videos",
   "library.itemCount": "%d available · %d total",
-  "library.unavailable": "File unavailable",
+  "library.unavailable": "Unavailable",
   "library.readFailed": "Unable to read library. Check the disk or locate the folder again",
   "library.duplicateFolder": "This folder is already in the library.",
   "library.noLocalVideos": "The playlist has no local videos to save.",

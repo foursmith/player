@@ -5,26 +5,60 @@ import (
 	"context"
 	"encoding/json"
 	"image/jpeg"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 )
 
-// Cache has one owner, the thumbnail worker. A file replacement gets a new key.
+// Cache shares atomic metadata sidecars with DLNA indexing. Replacements get new keys.
 type Cache struct {
 	Dir    string
-	writes int
+	writes atomic.Uint64
 	render func(context.Context, string) (media.Preview, error)
+	probe  func(context.Context, string) (library.MediaInfo, error)
 }
 
-type previewMetadata struct {
-	Duration float64
+func (c *Cache) readMetadata(entry library.Entry) (library.MediaInfo, bool) {
+	if c.Dir == "" {
+		return library.MediaInfo{}, false
+	}
+	var info library.MediaInfo
+	data, err := os.ReadFile(filepath.Join(c.Dir, library.Identity(entry)+".json"))
+	if err != nil || json.Unmarshal(data, &info) != nil {
+		return library.MediaInfo{}, false
+	}
+	info = info.Normalized()
+	return info, info.Width > 0 && info.Height > 0
+}
+
+// Metadata does no frame decoding and can run on the sharing workers while
+// the library's thumbnail worker uses the same cache directory.
+func (c *Cache) Metadata(ctx context.Context, entry library.Entry) (library.MediaInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return library.MediaInfo{}, err
+	}
+	if info, ok := c.readMetadata(entry); ok {
+		return info, nil
+	}
+	probe := c.probe
+	if probe == nil {
+		probe = media.Probe
+	}
+	info, err := probe(ctx, entry.Path)
+	if ctx.Err() != nil {
+		return library.MediaInfo{}, ctx.Err()
+	}
+	info = info.Normalized()
+	if err == nil && c.Dir != "" {
+		c.storeMetadata(filepath.Join(c.Dir, library.Identity(entry)+".json"), info)
+	}
+	return info, err
 }
 
 func (c *Cache) Load(ctx context.Context, entry library.Entry) (media.Preview, error) {
@@ -32,22 +66,18 @@ func (c *Cache) Load(ctx context.Context, entry library.Entry) (media.Preview, e
 		return media.Preview{}, err
 	}
 	path := filepath.Join(c.Dir, library.Identity(entry)+".jpg")
-	metadataPath := strings.TrimSuffix(path, ".jpg") + ".json"
 	if c.Dir != "" {
 		if file, err := os.Open(path); err == nil {
 			img, err := jpeg.Decode(file)
 			file.Close()
 			if err == nil {
-				var metadata previewMetadata
-				data, err := os.ReadFile(metadataPath)
-				if err == nil && json.Unmarshal(data, &metadata) == nil {
+				if info, ok := c.readMetadata(entry); ok {
 					now := time.Now()
 					os.Chtimes(path, now, now)
-					return media.Preview{Image: img, Duration: validDuration(metadata.Duration)}, nil
+					return media.Preview{Image: img, MediaInfo: info}, nil
 				}
 			}
 			os.Remove(path)
-			os.Remove(metadataPath)
 		}
 	}
 	render := c.render
@@ -55,7 +85,7 @@ func (c *Cache) Load(ctx context.Context, entry library.Entry) (media.Preview, e
 		render = media.Thumbnail
 	}
 	preview, err := render(ctx, entry.Path)
-	preview.Duration = validDuration(preview.Duration)
+	preview.MediaInfo = preview.MediaInfo.Normalized()
 	if err != nil {
 		return preview, err
 	}
@@ -66,13 +96,6 @@ func (c *Cache) Load(ctx context.Context, entry library.Entry) (media.Preview, e
 		c.store(path, preview)
 	}
 	return preview, nil
-}
-
-func validDuration(duration float64) float64 {
-	if duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
-		return 0
-	}
-	return duration
 }
 
 func (c *Cache) store(path string, preview media.Preview) {
@@ -89,12 +112,28 @@ func (c *Cache) store(path string, preview media.Preview) {
 	if err != nil || closeErr != nil || os.Rename(file.Name(), path) != nil {
 		return
 	}
-	metadata, err := json.Marshal(previewMetadata{Duration: preview.Duration})
-	if err != nil || os.WriteFile(strings.TrimSuffix(path, ".jpg")+".json", metadata, 0600) != nil {
+	c.storeMetadata(strings.TrimSuffix(path, ".jpg")+".json", preview.MediaInfo)
+}
+
+func (c *Cache) storeMetadata(path string, info library.MediaInfo) {
+	if info.Width <= 0 || info.Height <= 0 {
 		return
 	}
-	c.writes++
-	if c.writes == 1 || c.writes%32 == 0 {
+	metadata, err := json.Marshal(info)
+	if err != nil || os.MkdirAll(c.Dir, 0700) != nil {
+		return
+	}
+	file, err := os.CreateTemp(c.Dir, ".metadata-*")
+	if err != nil {
+		return
+	}
+	defer os.Remove(file.Name())
+	_, err = file.Write(metadata)
+	closeErr := file.Close()
+	if err != nil || closeErr != nil || os.Rename(file.Name(), path) != nil {
+		return
+	}
+	if writes := c.writes.Add(1); writes == 1 || writes%32 == 0 {
 		c.prune(512)
 	}
 }
@@ -105,22 +144,30 @@ func (c *Cache) prune(limit int) {
 		return
 	}
 	type cached struct {
-		name string
-		at   time.Time
+		name  string
+		at    time.Time
+		image bool
 	}
-	var previews []cached
+	entries := map[string]cached{}
 	for _, file := range files {
-		name := strings.TrimSuffix(file.Name(), ".jpg")
-		if file.IsDir() || !library.ValidIdentity(name) || !strings.HasSuffix(file.Name(), ".jpg") {
+		ext := filepath.Ext(file.Name())
+		name := strings.TrimSuffix(file.Name(), ext)
+		if file.IsDir() || !library.ValidIdentity(name) || (ext != ".jpg" && ext != ".json") {
 			continue
 		}
 		if info, err := file.Info(); err == nil {
-			previews = append(previews, cached{file.Name(), info.ModTime()})
+			if previous := entries[name]; !previous.image {
+				entries[name] = cached{name: name, at: info.ModTime(), image: ext == ".jpg"}
+			}
 		}
+	}
+	var previews []cached
+	for _, entry := range entries {
+		previews = append(previews, entry)
 	}
 	sort.Slice(previews, func(i, j int) bool { return previews[i].at.Before(previews[j].at) })
 	for _, preview := range previews[:max(0, len(previews)-limit)] {
-		os.Remove(filepath.Join(c.Dir, preview.name))
-		os.Remove(filepath.Join(c.Dir, strings.TrimSuffix(preview.name, ".jpg")+".json"))
+		os.Remove(filepath.Join(c.Dir, preview.name+".jpg"))
+		os.Remove(filepath.Join(c.Dir, preview.name+".json"))
 	}
 }

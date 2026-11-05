@@ -16,6 +16,7 @@ type Saved struct {
 	ID, Name  string
 	Folder    string   `json:",omitempty"`
 	Paths     []string `json:",omitempty"`
+	Folders   []string `json:",omitempty"`
 	DeviceID  string   `json:",omitempty"`
 	Location  string   `json:",omitempty"`
 	ShareDLNA bool     `json:",omitempty"`
@@ -41,6 +42,7 @@ func CloneSaved(saved []Saved) []Saved {
 	out := slices.Clone(saved)
 	for i := range out {
 		out[i].Paths = slices.Clone(out[i].Paths)
+		out[i].Folders = slices.Clone(out[i].Folders)
 	}
 	return out
 }
@@ -65,6 +67,7 @@ func NormalizeSaved(saved []Saved) []Saved {
 			}
 			devices[item.DeviceID] = true
 			item.Folder, item.Paths = "", nil
+			item.Folders = nil
 			item.ShareDLNA = false
 		} else if item.Folder != "" {
 			if !filepath.IsAbs(item.Folder) {
@@ -76,8 +79,10 @@ func NormalizeSaved(saved []Saved) []Saved {
 			}
 			folders[item.Folder] = true
 			item.Paths = nil
+			item.Folders = nil
 		} else {
 			item.Paths = MergePaths(nil, item.Paths)
+			item.Folders = MergeFolders(nil, item.Folders)
 		}
 		ids[item.ID] = true
 		out = append(out, item)
@@ -86,11 +91,20 @@ func NormalizeSaved(saved []Saved) []Saved {
 }
 
 func MergePaths(current, incoming []string) []string {
+	return mergeLocalPaths(current, incoming, true)
+}
+
+// MergeFolders preserves offline locations without filesystem IO.
+func MergeFolders(current, incoming []string) []string {
+	return mergeLocalPaths(current, incoming, false)
+}
+
+func mergeLocalPaths(current, incoming []string, videosOnly bool) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, paths := range [][]string{current, incoming} {
 		for _, path := range paths {
-			if !filepath.IsAbs(path) || !IsVideo(path) || IsAppleDouble(path) {
+			if !filepath.IsAbs(path) || videosOnly && !IsVideo(path) || IsAppleDouble(path) {
 				continue
 			}
 			path = filepath.Clean(path)
@@ -123,36 +137,26 @@ func ReadSaved(ctx context.Context, saved Saved) ([]SavedItem, error) {
 		return nil, errors.New("DLNA libraries require network browsing")
 	}
 	if saved.Folder != "" {
-		info, err := os.Stat(saved.Folder)
-		if err != nil {
-			return nil, err
-		}
-		if !info.IsDir() {
-			return nil, errors.New("library source is no longer a folder")
-		}
-		entries, _, err := FromPaths(ctx, []string{saved.Folder})
-		if err != nil {
-			return nil, err
-		}
-		var items []SavedItem
-		var visit func([]Node)
-		visit = func(nodes []Node) {
-			for _, node := range nodes {
-				if node.Folder {
-					visit(node.Children)
-				} else {
-					entry := entries[node.Index]
-					items = append(items, SavedItem{Entry: entry})
-				}
-			}
-		}
-		visit(Tree(entries))
-		return items, nil
+		return readSavedFolder(ctx, saved.Folder)
 	}
 	items := make([]SavedItem, 0, len(saved.Paths))
+	seen := map[string]int{}
+	addVideo := func(item SavedItem) {
+		if index, found := seen[item.Path]; found {
+			if item.Error == nil {
+				items[index] = item
+			}
+			return
+		}
+		seen[item.Path] = len(items)
+		items = append(items, item)
+	}
 	for _, path := range saved.Paths {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if slices.Contains(saved.Folders, path) {
+			continue
 		}
 		item := SavedItem{Entry: Entry{Path: path}}
 		info, err := os.Stat(path)
@@ -163,7 +167,53 @@ func ReadSaved(ctx context.Context, saved Saved) ([]SavedItem, error) {
 			item.Entry = Entry{Name: filepath.Base(path), Path: path, Size: info.Size(), Modified: info.ModTime().UnixMilli()}
 		}
 		item.Error = err
-		items = append(items, item)
+		addVideo(item)
+	}
+	for _, folder := range saved.Folders {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		children, err := readSavedFolder(ctx, folder)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		items = append(items, SavedItem{Entry: Entry{Name: filepath.Base(folder), Path: folder}, Folder: true, Error: err})
+		for _, item := range children {
+			addVideo(item)
+		}
+	}
+	if len(saved.Folders) > 0 {
+		// Overlapping scans must not assign different playlist roots to siblings.
+		root := savedTreeRoot(saved, items)
+		for i := range items {
+			entry := &items[i].Entry
+			entry.Group, entry.Root = filepath.Dir(entry.Path), root
+			if !containsPath(root, entry.Group) {
+				entry.Root = filepath.VolumeName(entry.Path) + string(filepath.Separator)
+			}
+			if entry.Group == entry.Root {
+				entry.Group = ""
+			}
+		}
+	}
+	return items, nil
+}
+
+func readSavedFolder(ctx context.Context, path string) ([]SavedItem, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, errors.New("library source is no longer a folder")
+	}
+	entries, _, err := FromPaths(ctx, []string{path})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]SavedItem, len(entries))
+	for i, entry := range entries {
+		items[i] = SavedItem{Entry: entry}
 	}
 	return items, nil
 }

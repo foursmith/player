@@ -20,6 +20,8 @@ import (
 type object struct {
 	ID, Parent, Name, Source string
 	File, Subtitle           string
+	MetadataPath             string
+	Info                     library.MediaInfo
 	MIME                     string
 	Size, Modified           int64
 	Container                bool
@@ -80,15 +82,52 @@ func readCatalog(ctx context.Context, name string, sources []library.Saved) (cat
 				continue
 			}
 		}
-		for _, item := range items {
+		folderRoots := map[string]string{}
+		explicitFiles := map[string]bool{}
+		for _, path := range source.Paths {
+			explicitFiles[path] = true
+		}
+		for _, folder := range source.Folders {
+			if resolved, err := filepath.EvalSymlinks(folder); err == nil {
+				folderRoots[folder] = resolved
+			}
+		}
+		// Use the same hierarchy as the local browser. Create containers only
+		// when they lead to a publishable file, so offline-only branches stay out.
+		folders := map[int][]library.Node{}
+		var visit func([]library.Node, []library.Node)
+		visit = func(nodes, parents []library.Node) {
+			for _, node := range nodes {
+				if node.Folder {
+					visit(node.Children, append(slices.Clone(parents), node))
+				} else {
+					folders[node.Index] = parents
+				}
+			}
+		}
+		visit(library.SavedTree(source, items), nil)
+		for index, item := range items {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 			if item.Error != nil || item.Folder || !library.IsVideo(item.Path) {
 				continue
 			}
+			itemRoot := root
+			if source.Collection() && !explicitFiles[item.Path] {
+				matched := 0
+				for folder, resolved := range folderRoots {
+					if len(folder) > matched && within(folder, item.Path) {
+						itemRoot = resolved
+						matched = len(folder)
+					}
+				}
+				if itemRoot == "" {
+					continue
+				}
+			}
 			file, err := filepath.EvalSymlinks(item.Path)
-			if err != nil || root != "" && !within(root, file) {
+			if err != nil || itemRoot != "" && !within(itemRoot, file) {
 				continue
 			}
 			info, err := os.Stat(file)
@@ -96,20 +135,10 @@ func readCatalog(ctx context.Context, name string, sources []library.Saved) (cat
 				continue
 			}
 			parent := objectID(source.ID)
-			if source.Folder != "" {
-				relative, err := filepath.Rel(source.Folder, filepath.Dir(item.Path))
-				if err != nil {
-					continue
-				}
-				var path string
-				if relative != "." {
-					for _, part := range strings.Split(relative, string(filepath.Separator)) {
-						path = filepath.Join(path, part)
-						id := objectID(source.ID, "folder", path)
-						out.add(object{ID: id, Parent: parent, Name: part, Source: source.ID, Container: true})
-						parent = id
-					}
-				}
+			for _, folder := range folders[index] {
+				id := objectID(source.ID, "folder", folder.ID)
+				out.add(object{ID: id, Parent: parent, Name: folder.Name, Source: source.ID, Container: true})
+				parent = id
 			}
 			subtitle := item.Subtitle
 			if subtitle == "" {
@@ -123,7 +152,7 @@ func readCatalog(ctx context.Context, name string, sources []library.Saved) (cat
 			}
 			if subtitle != "" {
 				resolved, err := filepath.EvalSymlinks(subtitle)
-				if err != nil || root != "" && !within(root, resolved) {
+				if err != nil || itemRoot != "" && !within(itemRoot, resolved) {
 					subtitle = ""
 				} else if info, err := os.Stat(resolved); err != nil || !info.Mode().IsRegular() {
 					subtitle = ""
@@ -131,7 +160,7 @@ func readCatalog(ctx context.Context, name string, sources []library.Saved) (cat
 					subtitle = resolved
 				}
 			}
-			out.add(object{ID: objectID(source.ID, "file", item.Path), Parent: parent, Name: item.Name(), Source: source.ID, File: file, Subtitle: subtitle, MIME: mediaType(item.Path), Size: info.Size(), Modified: info.ModTime().UnixMilli()})
+			out.add(object{ID: objectID(source.ID, "file", item.Path), Parent: parent, Name: item.Name(), Source: source.ID, File: file, MetadataPath: item.Path, Subtitle: subtitle, MIME: mediaType(item.Path), Size: info.Size(), Modified: info.ModTime().UnixMilli()})
 		}
 	}
 	comparator := collate.New(language.Und, collate.Numeric, collate.IgnoreCase)

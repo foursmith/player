@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"math/rand/v2"
 	"net"
@@ -29,6 +30,16 @@ type networkLink struct {
 	ip     net.IP
 	index  int
 	socket *net.UDPConn
+}
+
+func (link networkLink) send(data []byte, remote net.Addr) error {
+	// UDP deadlines apply to future writes too. Renew it for every packet,
+	// including search replies sent long after the last alive announcement.
+	if err := link.socket.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		return err
+	}
+	_, err := link.socket.WriteTo(data, remote)
+	return err
 }
 
 type discovery struct {
@@ -125,7 +136,14 @@ func (d *discovery) run() {
 }
 
 func searchTargets(data []byte, targets []string) ([]string, time.Duration) {
-	request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data)))
+	line, headers, ok := bytes.Cut(data, []byte("\n"))
+	if !ok {
+		return nil, 0
+	}
+	// Some UPnP clients append whitespace to the request line. Normalize only
+	// that line, retaining net/http's header and request validation.
+	input := io.MultiReader(strings.NewReader(strings.TrimSpace(string(line))+"\r\n"), bytes.NewReader(headers))
+	request, err := http.ReadRequest(bufio.NewReader(input))
 	if err != nil {
 		return nil, 0
 	}
@@ -133,9 +151,14 @@ func searchTargets(data []byte, targets []string) ([]string, time.Duration) {
 	if request.Method != "M-SEARCH" || request.RequestURI != "*" || !strings.EqualFold(request.Header.Get("MAN"), `"ssdp:discover"`) {
 		return nil, 0
 	}
-	mx, err := strconv.Atoi(request.Header.Get("MX"))
-	if err != nil || mx < 1 {
-		return nil, 0
+	// Like dms, give zero-MX clients a bounded response window. Unicast
+	// searches also commonly omit MX entirely.
+	mx := 1
+	if value := strings.TrimSpace(request.Header.Get("MX")); value != "" {
+		mx, err = strconv.Atoi(value)
+		if err != nil || mx < 0 {
+			return nil, 0
+		}
 	}
 	var matched []string
 	for _, target := range targets {
@@ -143,7 +166,7 @@ func searchTargets(data []byte, targets []string) ([]string, time.Duration) {
 			matched = append(matched, target)
 		}
 	}
-	return matched, time.Duration(min(mx, 5)) * time.Second
+	return matched, time.Duration(max(1, min(mx, 5))) * time.Second
 }
 
 func (d *discovery) listen() {
@@ -183,7 +206,9 @@ func (d *discovery) listen() {
 				}
 				for _, target := range targets {
 					response := fmt.Sprintf("HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=600\r\nDATE: %s\r\nEXT:\r\nLOCATION: %s/device.xml\r\nSERVER: %s\r\nST: %s\r\nUSN: %s\r\n\r\n", time.Now().UTC().Format(http.TimeFormat), d.server.baseURL(link.ip), serverHeader, target, d.usn(target))
-					link.socket.WriteTo([]byte(response), remote)
+					if err := link.send([]byte(response), remote); err != nil && d.server.ctx.Err() == nil {
+						log.Printf("[dlna-server] SSDP reply interface=%d peer=%s failed: %v", link.index, remote, err)
+					}
 				}
 			})
 		}
@@ -198,8 +223,9 @@ func (d *discovery) announce(kind string) {
 			if kind == "ssdp:alive" {
 				message += fmt.Sprintf("CACHE-CONTROL: max-age=600\r\nLOCATION: %s/device.xml\r\nSERVER: %s\r\n", d.server.baseURL(link.ip), serverHeader)
 			}
-			link.socket.SetWriteDeadline(time.Now().Add(time.Second))
-			link.socket.WriteToUDP([]byte(message+"\r\n"), group)
+			if err := link.send([]byte(message+"\r\n"), group); err != nil && kind == "ssdp:alive" {
+				log.Printf("[dlna-server] SSDP announce interface=%d failed: %v", link.index, err)
+			}
 		}
 	}
 }

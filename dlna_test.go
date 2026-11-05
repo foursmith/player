@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/xml"
 	"fmt"
-	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -165,7 +164,7 @@ func TestDLNALibraryLayoutAcrossLocales(t *testing.T) {
 			a.preferences.Locale = locale
 			a.stored.Libraries, _ = rememberDLNALibraries(nil, []dlna.Device{device})
 			a.catalog.selected, a.catalog.name = device.ID, device.Name
-			a.catalog.remotePath = []catalogFolder{{id: "0", name: device.Name}}
+			a.catalog.directoryPath = []catalogFolder{{id: "0"}}
 			a.catalog.items = items
 			a.filterCatalog()
 			view := ui.NewTester(a.catalogView, 800, 460)
@@ -177,20 +176,7 @@ func TestDLNALibraryLayoutAcrossLocales(t *testing.T) {
 			if _, ok := view.Find(a.t("media.addFiles")); ok {
 				t.Fatal("DLNA source exposed local collection editing")
 			}
-			if dir := os.Getenv("FSVR_UI_SNAPSHOT_DIR"); dir != "" {
-				if err := os.MkdirAll(dir, 0700); err != nil {
-					t.Fatal(err)
-				}
-				file, err := os.Create(filepath.Join(dir, "dlna-"+locale+".png"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				err = png.Encode(file, view.Image())
-				file.Close()
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
+			writeUISnapshot(t, "dlna-"+locale+".png", view)
 		})
 	}
 }

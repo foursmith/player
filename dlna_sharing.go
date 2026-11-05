@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/dlnaserver"
 	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/thumbnail"
 )
 
 type dlnaSharingState struct {
@@ -67,6 +70,11 @@ func (a *application) syncDLNASharing() {
 	state.cancel = cancel
 	generation, window := state.generation, a.window
 	options := dlnaserver.Options{UUID: a.stored.DLNAUUID, Name: name, Sources: state.sources}
+	cache := &thumbnail.Cache{}
+	if dir, err := mygo.App.Path(mygo.PathUserData); err == nil && dir != "" {
+		cache.Dir = filepath.Join(dir, "thumbnails")
+	}
+	options.Metadata = cache.Metadata
 	go func() {
 		server, err := dlnaserver.Start(ctx, options)
 		window.Update(func() {

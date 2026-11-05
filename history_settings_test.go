@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -100,10 +99,7 @@ func TestHistorySettingsDependenciesAcrossLocales(t *testing.T) {
 			if !a.preferences.RecentFilesEnabled {
 				t.Fatal("recent-file switch did not turn on")
 			}
-			if dir := os.Getenv("FSVR_UI_SNAPSHOT_DIR"); dir != "" {
-				if err := os.MkdirAll(dir, 0700); err != nil {
-					t.Fatal(err)
-				}
+			if os.Getenv("FSVR_UI_SNAPSHOT_DIR") != "" {
 				preview := modeTestApplication(t)
 				preview.preferences.Locale = locale
 				for tab := range settingsTabs {
@@ -113,15 +109,7 @@ func TestHistorySettingsDependenciesAcrossLocales(t *testing.T) {
 						view := ui.NewTester(preview.settings, size[0], size[1])
 						view.SetScale(2)
 						name := fmt.Sprintf("settings-%s-%d-%d.png", locale, tab, size[0])
-						file, err := os.Create(filepath.Join(dir, name))
-						if err != nil {
-							t.Fatal(err)
-						}
-						err = png.Encode(file, view.Image())
-						file.Close()
-						if err != nil {
-							t.Fatal(err)
-						}
+						writeUISnapshot(t, name, view)
 					}
 				}
 			}

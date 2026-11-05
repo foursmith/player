@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -146,18 +147,10 @@ func (a *application) catalogSource(c *ui.Context, saved library.Saved) {
 }
 
 func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
-	available, total, folders := 0, 0, 0
+	available, total, folders := len(a.catalog.playable), a.catalog.total, 0
 	for _, item := range a.catalog.items {
 		if item.Folder {
 			folders++
-		} else {
-			total++
-		}
-	}
-	for _, index := range a.catalog.visible {
-		item := a.catalog.items[index]
-		if item.Error == nil && !item.Folder {
-			available++
 		}
 	}
 	ui.Column(c.Key(saved.ID)).FillWidth().Grow(1).MinHeight(0).Children(func() {
@@ -205,23 +198,33 @@ func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
 
 func (a *application) catalogLocation(c *ui.Context, saved library.Saved) {
 	ui.Row(c).FillWidth().Height(28).Padding(0, 20).Gap(6).Children(func() {
-		if saved.DeviceID != "" {
-			quietIcon(c, "caret-down", a.t("library.parent")).Rotate(90).Size(24, 24).Disabled(len(a.catalog.remotePath) <= 1).OnClick(a.catalogParent)
-			ui.Text(c, a.catalogDirectoryName()).FontSize(10).TextColor(white(.4)).SingleLine().Grow(1).MinWidth(0)
-			quietIcon(c, "folder", a.t("library.root")).Size(24, 24).Disabled(len(a.catalog.remotePath) <= 1).OnClick(a.catalogRoot)
-		} else if saved.Folder != "" {
-			ui.Icon(c, icons["folder-open"]).Size(12, 12).TextColor(white(.3)).Shrink(0)
-			ui.Text(c, saved.Folder).FontSize(10).TextColor(white(.4)).SingleLine().Grow(1).MinWidth(0)
+		quietIcon(c, "caret-down", a.t("library.parent")).Rotate(90).Size(24, 24).Disabled(len(a.catalog.directoryPath) <= 1).OnClick(a.catalogParent)
+		location := a.catalogDirectoryName()
+		if saved.Folder != "" {
+			location = saved.Folder
+			if path := a.catalog.directoryPath; len(path) > 1 {
+				location = path[len(path)-1].id
+			}
+		}
+		ui.Text(c, location).FontSize(10).TextColor(white(.4)).SingleLine().Grow(1).MinWidth(0)
+		quietIcon(c, "folder", a.t("library.root")).Size(24, 24).Disabled(len(a.catalog.directoryPath) <= 1).OnClick(a.catalogRoot)
+		if saved.Folder != "" {
 			quietIcon(c, "folder-open", a.t("library.relocate")).Size(24, 24).Disabled(a.dialogOpen).OnClick(func() { a.relocateCatalogFolder(saved.ID) })
-		} else {
+		}
+	})
+	if saved.Collection() {
+		ui.Row(c).FillWidth().Height(28).Padding(0, 20).Gap(6).Children(func() {
 			glassAction(c, "plus", a.t("media.addFiles")).Height(24).Disabled(a.dialogOpen).OnClick(func() {
 				a.chooseCatalogPaths(false, "media.addFiles", func(paths []string) { a.appendCatalogPaths(saved.ID, paths) })
+			})
+			glassAction(c, "folder", a.t("media.addFolder")).Height(24).Disabled(a.dialogOpen).OnClick(func() {
+				a.chooseCatalogPaths(true, "media.addFolder", func(paths []string) { a.appendCatalogFolders(saved.ID, paths) })
 			})
 			glassAction(c, "playlist-add", a.t("library.addPlaylist")).Height(24).Disabled(len(library.LocalPaths(a.entries)) == 0).OnClick(func() {
 				a.appendCatalogPaths(saved.ID, library.LocalPaths(a.entries))
 			})
-		}
-	})
+		})
+	}
 }
 
 func (a *application) catalogToolbar(c *ui.Context, available, total, folders int) {
@@ -265,7 +268,7 @@ func (a *application) catalogToolbar(c *ui.Context, available, total, folders in
 
 func (a *application) catalogItem(c *ui.Context, saved library.Saved, item library.SavedItem) {
 	if item.Folder {
-		a.catalogFolderItem(c, item)
+		a.catalogFolderItem(c, saved, item)
 		return
 	}
 	history := a.catalogHistory(item)
@@ -338,27 +341,45 @@ func (a *application) catalogItem(c *ui.Context, saved library.Saved, item libra
 				})
 			}).Menu(func(m *ui.Menu) { a.catalogWatchMenu(m, item) })
 		}
-		if item.Error != nil && saved.Collection() {
+		if item.Error != nil && saved.Collection() && slices.Contains(saved.Paths, item.Path) {
 			quietIcon(c, "folder-open", a.t("library.relocateItem", name)).Disabled(a.dialogOpen).OnClick(func() { a.relocateCatalogPath(saved.ID, item.Path) })
 		}
-		if saved.Collection() {
+		if saved.Collection() && slices.Contains(saved.Paths, item.Path) {
 			quietIcon(c, "x", a.t("library.removeItem", name)).OnClick(func() { a.removeCatalogPath(saved.ID, item.Path) })
 		}
 	})
 }
 
-func (a *application) catalogFolderItem(c *ui.Context, item library.SavedItem) {
-	button := ui.Button(c.Key(item.Key()), "").FillWidth().Height(50).Padding(5, 8).Background(ui.Transparent).Border(0, ui.Transparent).Radius(10).Label(a.t("library.openFolder", item.Name())).Disabled(item.Error != nil)
-	if button.Hovered() {
-		button.Background(white(.04))
-	}
-	button.Children(func() {
-		ui.Row(c).Fill().Gap(12).Children(func() {
-			glass(c, 8).Size(36, 32).Center().Children(func() { ui.Icon(c, icons["folder"]).Size(17, 17).TextColor(accent.Alpha(.65)) })
-			ui.Text(c, item.Name()).FontSize(12).TextColor(white(.8)).SingleLine().Grow(1).MinWidth(0)
-			ui.Icon(c, icons["caret-down"]).Size(10, 10).Rotate(-90).TextColor(white(.3))
-		})
-	}).OnClick(func() { a.enterCatalogFolder(item) })
+func (a *application) catalogFolderItem(c *ui.Context, saved library.Saved, item library.SavedItem) {
+	member := saved.Collection() && slices.Contains(saved.Folders, item.Path)
+	ui.Row(c.Key(item.Key())).FillWidth().Height(50).Gap(4).Children(func() {
+		button := ui.Button(c, "").Grow(1).MinWidth(0).Height(50).Padding(5, 8).Background(ui.Transparent).Border(0, ui.Transparent).Radius(10).Label(a.t("library.openFolder", item.Name())).Disabled(item.Error != nil)
+		if button.Hovered() {
+			button.Background(white(.04))
+		}
+		button.Children(func() {
+			ui.Row(c).Fill().Gap(12).Children(func() {
+				glass(c, 8).Size(36, 32).Center().Children(func() { ui.Icon(c, icons["folder"]).Size(17, 17).TextColor(accent.Alpha(.65)) })
+				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+					ui.Text(c, item.Name()).FontSize(12).TextColor(white(.8)).SingleLine().FillWidth().MinWidth(0)
+					if member {
+						detail := item.Path
+						if item.Error != nil {
+							detail = a.t("library.unavailable") + " · " + detail
+						}
+						ui.Text(c, detail).FontSize(9).TextColor(white(.3)).SingleLine().FillWidth().MinWidth(0)
+					}
+				})
+				ui.Icon(c, icons["caret-down"]).Size(10, 10).Rotate(-90).TextColor(white(.3))
+			})
+		}).OnClick(func() { a.enterCatalogFolder(item) })
+		if member && item.Error != nil {
+			quietIcon(c, "folder-open", a.t("library.relocateItem", item.Name())).Disabled(a.dialogOpen).OnClick(func() { a.relocateCatalogPath(saved.ID, item.Path) })
+		}
+		if member {
+			quietIcon(c, "x", a.t("library.removeItem", item.Name())).OnClick(func() { a.removeCatalogPath(saved.ID, item.Path) })
+		}
+	})
 }
 
 func (a *application) catalogWatchMenu(m *ui.Menu, item library.SavedItem) {

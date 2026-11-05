@@ -120,7 +120,7 @@ func TestClientBrowseHierarchyPlaybackAndSubtitles(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "private.txt"), "not shared")
 	s, base := fixture(t, []library.Saved{
 		{ID: "folder", Name: "Movies & <TV>", Folder: dir, ShareDLNA: true},
-		{ID: "collection", Name: "Favorites", Paths: []string{file, filepath.Join(dir, "missing.mp4")}, ShareDLNA: true},
+		{ID: "collection", Name: "Favorites", Paths: []string{file, filepath.Join(dir, "missing.mp4")}, Folders: []string{filepath.Join(dir, "Season & 2")}, ShareDLNA: true},
 		{ID: "remote", Name: "Other DLNA", DeviceID: "remote", Location: "http://127.0.0.1/remote"},
 	})
 	identity := fmt.Sprintf("dlna-%x", sha256.Sum256([]byte(s.udn)))
@@ -155,8 +155,12 @@ func TestClientBrowseHierarchyPlaybackAndSubtitles(t *testing.T) {
 		t.Fatal("subtitle did not round trip")
 	}
 	collection, err := device.Browse(context.Background(), objectID("collection"))
-	if err != nil || len(collection) != 1 || collection[0].Name != items[0].Name {
-		t.Fatalf("missing collection members should be omitted: %+v %v", collection, err)
+	if err != nil || len(collection) != 1 || !collection[0].Folder || collection[0].Name != "Season & 2" {
+		t.Fatalf("collection hierarchy or missing member handling was lost: %+v %v", collection, err)
+	}
+	collection, err = device.Browse(context.Background(), collection[0].ID)
+	if err != nil || len(collection) != 1 || collection[0].Folder || collection[0].Name != items[0].Name {
+		t.Fatalf("collection video could not be browsed: %+v %v", collection, err)
 	}
 }
 
@@ -303,7 +307,9 @@ func TestSSDPRequestsAndServerClose(t *testing.T) {
 		{"M-SEARCH", `"ssdp:discover"`, mediaServerType, "30", 1},
 		{"NOTIFY", `"ssdp:discover"`, mediaServerType, "1", 0},
 		{"M-SEARCH", "invalid", mediaServerType, "1", 0},
-		{"M-SEARCH", `"ssdp:discover"`, mediaServerType, "0", 0},
+		{"M-SEARCH", `"ssdp:discover"`, mediaServerType, "0", 1},
+		{"M-SEARCH", `"ssdp:discover"`, mediaServerType, "-1", 0},
+		{"M-SEARCH", `"ssdp:discover"`, mediaServerType, "invalid", 0},
 		{"M-SEARCH", `"ssdp:discover"`, "other", "1", 0},
 	} {
 		data := fmt.Sprintf("%s * HTTP/1.1\r\nMAN: %s\r\nST: %s\r\nMX: %s\r\n\r\n", test.method, test.man, test.target, test.mx)
@@ -328,4 +334,61 @@ func TestSSDPRequestsAndServerClose(t *testing.T) {
 	default:
 		t.Fatal("server did not cancel workers")
 	}
+}
+
+func TestCollectionFolderSharingRefreshAndContainment(t *testing.T) {
+	dir := t.TempDir()
+	folder, empty := filepath.Join(dir, "Shows"), filepath.Join(dir, "Empty")
+	file := filepath.Join(folder, "Season 2", "clip.mp4")
+	writeFile(t, file, "video")
+	writeFile(t, filepath.Join(filepath.Dir(file), "clip.srt"), "Caption")
+	if err := os.MkdirAll(empty, 0700); err != nil {
+		t.Fatal(err)
+	}
+	source := library.Saved{ID: "collection", Name: "Shows", Folders: []string{folder, empty, filepath.Join(dir, "Offline")}, ShareDLNA: true}
+	s, base := fixture(t, []library.Saved{source})
+	resolvedFile, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := objectID(source.ID, "file", file)
+	s.mu.RLock()
+	item := s.objects[id]
+	children := s.objects[objectID(source.ID)].Children
+	s.mu.RUnlock()
+	if item.File != resolvedFile || item.Subtitle == "" || len(children) != 1 {
+		t.Fatal("folder collection did not share its video and subtitle or published empty branches", item, children)
+	}
+	address := resourceURL(base, "media", item)
+	fetch(t, "GET", address, "bytes=0-2", 206)
+	added := filepath.Join(filepath.Dir(file), "new.mp4")
+	writeFile(t, added, "new video")
+	outside := filepath.Join(t.TempDir(), "new.srt")
+	writeFile(t, outside, "private caption")
+	if err := os.Symlink(outside, filepath.Join(filepath.Dir(file), "new.srt")); err != nil {
+		t.Fatal(err)
+	}
+	addedID := objectID(source.ID, "file", added)
+	resolvedAdded, err := filepath.EvalSymlinks(added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Refresh()
+	awaitCatalog(t, s, func(c catalog) bool { return c[addedID].File == resolvedAdded })
+	s.mu.RLock()
+	addedItem := s.objects[addedID]
+	s.mu.RUnlock()
+	if addedItem.Subtitle != "" {
+		t.Fatal("collection folder shared a subtitle symlink outside its root", addedItem)
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	s.Refresh()
+	awaitCatalog(t, s, func(c catalog) bool { _, exists := c[id]; return !exists && c[addedID].File != "" })
+	fetch(t, "GET", address, "", 404)
+	source.Folders = source.Folders[1:]
+	s.SetSources([]library.Saved{source})
+	fetch(t, "GET", resourceURL(base, "media", addedItem), "", 404)
+	awaitCatalog(t, s, func(c catalog) bool { return len(c[objectID(source.ID)].Children) == 0 })
 }
