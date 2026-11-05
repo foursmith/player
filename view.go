@@ -126,7 +126,6 @@ func (a *application) topControls(c *ui.Context) {
 		}
 		ui.Spacer(c).Grow(1)
 		if a.selected >= 0 {
-			a.iconButton(c, "file-video", a.t("media.openFiles"), topControlSize, false, func() { a.choose(false, false) })
 			a.iconButton(c, "x", a.t("media.closeVideo"), topControlSize, false, a.closeVideo)
 		}
 		if a.mode.IsVR() && (a.manuallyPaused || c.Now().Before(a.manualUntil)) {
