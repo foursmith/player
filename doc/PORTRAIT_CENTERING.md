@@ -274,6 +274,8 @@ Changes to any of the following must update this document in the same change:
 
 ## Native implementation
 
+Native portrait centering applies only to the six VR projections. Flat 2D uses a separate aspect-fit image path with bounded 2D zoom and pan; playback and export do not schedule face inference or change the VR camera while in 2D mode. Switching video type resets the tracking epoch so in-flight VR results cannot apply to the flat image. VR split/layout and centering preferences are retained when changing video type.
+
 The numerical rules above are ported from `../../web/src/features/vr/`. The native application uses the same short-range 128x128 and full-range 192x192 BlazeFace model files, with TensorFlow Lite C 2.17.1 on a dedicated worker. Input is RGB float32 in [-1, 1], with zero-pixel letterboxing normalized to -1. Weighted NMS uses IoU 0.45 and confidence 0.6; output bounds are quantized to source-image pixels, sorted by area, and limited to eight faces, matching the Web worker adapter. Inference is off the UI thread; no model download occurs during playback.
 
 Perspective readback is 320 pixels wide, with height max(120, round(320/aspect)). Visible rendering and inference captures use the same projection shader and captured camera pose. Each request carries a media generation and a tracking epoch; seek, media switch and manual override invalidate old responses. The configured rate caps ordinary video presentation, while camera and size changes present immediately. A bounded audio/video decode queue is independent of inference scheduling. Native window repainting replaces browser visibility callbacks; the Web-specific lifecycle described above remains the comparison reference rather than a browser embedded in the native application.

@@ -28,7 +28,7 @@ func New(window uintptr) (Surface, error) {
 	}
 	return &metal{ptr: p}, nil
 }
-func parameters(p Parameters) C.FsvrParameters {
+func parameters(p Parameters, aspect, sourceAspect float64) C.FsvrParameters {
 	portrait := 0
 	if p.Portrait {
 		portrait = 1
@@ -37,7 +37,8 @@ func parameters(p Parameters) C.FsvrParameters {
 	if fov <= 0 {
 		fov = 80
 	}
-	return C.FsvrParameters{yaw: C.float(p.View.Yaw), pitch: C.float(p.View.Pitch), zoom: C.float(p.View.Zoom), forward: C.float(p.View.Forward), mode: C.int(p.Mode), split: C.int(max(1, p.SplitCount)), portrait: C.int(portrait), fov: C.float(fov)}
+	flat := p.FlatView.Constrain(aspect, sourceAspect)
+	return C.FsvrParameters{yaw: C.float(p.View.Yaw), pitch: C.float(p.View.Pitch), zoom: C.float(p.View.Zoom), forward: C.float(p.View.Forward), mode: C.int(p.Mode), split: C.int(max(1, p.SplitCount)), portrait: C.int(portrait), fov: C.float(fov), flat_x: C.float(flat.X), flat_y: C.float(flat.Y), flat_zoom: C.float(flat.Zoom)}
 }
 func source(f *media.Frame) (unsafe.Pointer, *image.RGBA, error) {
 	if p := f.Native(); p != nil {
@@ -62,7 +63,7 @@ func (r *metal) Present(f *media.Frame, p Parameters, w, h, scale float64) error
 		bytes = (*C.uchar)(unsafe.Pointer(&img.Pix[0]))
 	}
 	sw, sh := f.Size()
-	if code := C.fsvr_metal_present(r.ptr, native, bytes, C.int(sw), C.int(sh), parameters(p), C.double(w), C.double(h), C.double(scale)); code < 0 {
+	if code := C.fsvr_metal_present(r.ptr, native, bytes, C.int(sw), C.int(sh), parameters(p, w/h, float64(sw)/float64(sh)), C.double(w), C.double(h), C.double(scale)); code < 0 {
 		return fmt.Errorf("Metal presentation: %d", code)
 	}
 	return nil
@@ -83,7 +84,7 @@ func (r *metal) Capture(f *media.Frame, p Parameters, w, h int) (*image.RGBA, er
 	}
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	sw, sh := f.Size()
-	if code := C.fsvr_metal_capture(r.ptr, native, bytes, C.int(sw), C.int(sh), parameters(p), C.int(w), C.int(h), (*C.uchar)(unsafe.Pointer(&out.Pix[0]))); code < 0 {
+	if code := C.fsvr_metal_capture(r.ptr, native, bytes, C.int(sw), C.int(sh), parameters(p, float64(w)/float64(h), float64(sw)/float64(sh)), C.int(w), C.int(h), (*C.uchar)(unsafe.Pointer(&out.Pix[0]))); code < 0 {
 		return nil, fmt.Errorf("Metal capture: %d", code)
 	}
 	for i := 0; i < len(out.Pix); i += 4 {

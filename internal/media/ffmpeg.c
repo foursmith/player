@@ -4,6 +4,9 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
+#include <libavutil/spherical.h>
+#include <libavutil/stereo3d.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersrc.h>
 #include <libavfilter/buffersink.h>
@@ -12,6 +15,7 @@
 #include <stdatomic.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 typedef struct FsvrPacket {
     AVPacket *packet;
@@ -46,6 +50,14 @@ static int fail(int code, char *error, int size) {
     if (error && size > 0) av_strerror(code, error, size);
     return code;
 }
+static int video_fail(FsvrDecoder *d, int code, char *error, int size) {
+    const char *detail = fsvr_video_error(d->video_pipeline);
+    if (detail[0]) {
+        if (error && size > 0) snprintf(error, size, "%s", detail);
+        return code;
+    }
+    return fail(code, error, size);
+}
 static int interrupt_cb(void *opaque) {
     FsvrDecoder *d=opaque;return d->cancel&&atomic_load(&d->cancel->value);
 }
@@ -53,7 +65,14 @@ static enum AVPixelFormat hw_format(AVCodecContext *ctx, const enum AVPixelForma
     FsvrDecoder *d = ctx->opaque;
     for (const enum AVPixelFormat *p = formats; *p != AV_PIX_FMT_NONE; p++)
         if (*p == d->hardware_format) return *p;
-    return formats[0];
+    // FFmpeg calls us again without the rejected hardware format after an
+    // initialization failure. Keep software selected across subsequent seeks.
+    d->hardware_format = AV_PIX_FMT_NONE;
+    for (const enum AVPixelFormat *p = formats; *p != AV_PIX_FMT_NONE; p++) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
+        if (desc && !(desc->flags & AV_PIX_FMT_FLAG_HWACCEL)) return *p;
+    }
+    return AV_PIX_FMT_NONE;
 }
 static int codec_open(FsvrDecoder *d, int index, AVCodecContext **out, int hardware) {
     AVStream *s = d->format->streams[index];
@@ -112,10 +131,11 @@ static int audio_filter(FsvrDecoder *d) {
     if (ret < 0) return ret;
     return avfilter_graph_config(d->filter, NULL);
 }
-FsvrDecoder *fsvr_open(const char *url, FsvrCancel *cancel, int output_audio, char *error, int error_size) {
+FsvrDecoder *fsvr_open(const char *url, FsvrCancel *cancel, int output_audio, int analysis, char *error, int error_size) {
     FsvrDecoder *d = av_mallocz(sizeof(*d));
     if (!d) { fail(AVERROR(ENOMEM), error, error_size); return NULL; }
     d->video_stream = d->audio_stream = -1;
+    d->hardware_format = AV_PIX_FMT_NONE;
     d->cancel=cancel;
     d->rate = 1; d->audio_start = NAN;
     d->format = avformat_alloc_context();
@@ -130,8 +150,22 @@ FsvrDecoder *fsvr_open(const char *url, FsvrCancel *cancel, int output_audio, ch
     d->start_time=d->format->start_time==AV_NOPTS_VALUE?0:(double)d->format->start_time/AV_TIME_BASE;
     d->video_stream = av_find_best_stream(d->format, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
     if (d->video_stream < 0) { ret = d->video_stream; goto failed; }
-    if ((ret = codec_open(d, d->video_stream, &d->video, 1)) < 0) goto failed;
+    // AVC analysis needs only a few pictures and may exceed VideoToolbox's
+    // supported profiles/dimensions. Keep HEVC and other formats accelerated.
+    int hardware = !analysis || d->format->streams[d->video_stream]->codecpar->codec_id != AV_CODEC_ID_H264;
+    if ((ret = codec_open(d, d->video_stream, &d->video, hardware)) < 0) goto failed;
     if (output_audio) d->video_pipeline = fsvr_video_open(d->format->streams[d->video_stream], d->hardware, interrupt_cb, d);
+#if defined(__APPLE__)
+    if (output_audio && d->hardware && !d->video_pipeline &&
+        (d->video->codec_id == AV_CODEC_ID_H264 || d->video->codec_id == AV_CODEC_ID_HEVC)) {
+        // A rejected native session (e.g. 8K AVC) will not become supported
+        // by retrying VideoToolbox through libavcodec. Open software once.
+        avcodec_free_context(&d->video);
+        av_buffer_unref(&d->hardware);
+        d->hardware_format = AV_PIX_FMT_NONE;
+        if ((ret = codec_open(d, d->video_stream, &d->video, 0)) < 0) goto failed;
+    }
+#endif
     d->audio_stream = output_audio ? av_find_best_stream(d->format, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0) : -1;
     if (d->audio_stream >= 0) {
         if ((ret = codec_open(d, d->audio_stream, &d->audio, 0)) < 0) goto failed;
@@ -277,7 +311,7 @@ int fsvr_next(FsvrDecoder *d, FsvrFrame **out, char *error, int error_size) {
             av_frame_move_ref(f->image, d->decoded); f->pts = pts; f->serial=atomic_fetch_add(&frame_serial,1)+1; *out = f; return 1;
         }
         if (ret == AVERROR_EOF) return 0;
-        if (ret != AVERROR(EAGAIN)) return fail(ret, error, error_size);
+        if (ret != AVERROR(EAGAIN)) return video_fail(d, ret, error, error_size);
         if (d->draining) return 0;
         ret = read_packet(d);
         if (ret == AVERROR_EOF) {
@@ -289,24 +323,27 @@ int fsvr_next(FsvrDecoder *d, FsvrFrame **out, char *error, int error_size) {
             continue;
         }
         if (ret < 0) return fail(ret, error, error_size);
-        if (d->packet->stream_index == d->video_stream) ret = d->video_pipeline ? fsvr_video_send(d->video_pipeline, d->packet) : avcodec_send_packet(d->video, d->packet);
+        if (d->packet->stream_index == d->video_stream) {
+            ret = d->video_pipeline ? fsvr_video_send(d->video_pipeline, d->packet) : avcodec_send_packet(d->video, d->packet);
+            if (ret < 0 && ret != AVERROR(EAGAIN)) { av_packet_unref(d->packet); return video_fail(d, ret, error, error_size); }
+        }
         else if (d->packet->stream_index == d->audio_stream) { ret = avcodec_send_packet(d->audio, d->packet); if (ret >= 0) ret = sound(d); }
         else ret = 0;
         av_packet_unref(d->packet);
         if (ret < 0 && ret != AVERROR(EAGAIN)) return fail(ret, error, error_size);
     }
 }
-int fsvr_seek(FsvrDecoder *d, double seconds, char *error, int error_size) {
+int fsvr_seek(FsvrDecoder *d, double seconds, int precise, char *error, int error_size) {
     int64_t target=(int64_t)((seconds+d->start_time)*AV_TIME_BASE);
     int ret = avformat_seek_file(d->format, -1, INT64_MIN, target, target, 0);
     if (ret < 0) return fail(ret, error, error_size);
     clear_packets(d);
     av_packet_unref(d->packet);
     avcodec_flush_buffers(d->video);
-    if (d->video_pipeline && (ret = fsvr_video_reset(d->video_pipeline)) < 0) return fail(ret, error, error_size);
+    if (d->video_pipeline && (ret = fsvr_video_reset(d->video_pipeline)) < 0) return video_fail(d, ret, error, error_size);
     if (d->audio) avcodec_flush_buffers(d->audio);
     if (d->output) SDL_ClearAudioStream(d->output);
-    d->audio_samples = 0; d->audio_start = NAN; d->seek_target = seconds; d->draining = 0;
+    d->audio_samples = 0; d->audio_start = NAN; d->seek_target = precise ? seconds : 0; d->draining = 0;
     d->input_eof = d->audio_eof = 0;
     ret = audio_filter(d);
     return ret < 0 ? fail(ret, error, error_size) : 0;
@@ -320,11 +357,41 @@ double fsvr_audio_clock(FsvrDecoder *d) {
     if(d->input_eof&&queued<=0)return NAN;
     return d->audio_start + (d->audio_samples - (queued > 0 ? queued / 8.0 : 0)) / 48000.0 * d->rate;
 }
+double fsvr_audio_end(FsvrDecoder *d) {
+    if (!d->output || isnan(d->audio_start)) return NAN;
+    return d->audio_start + d->audio_samples / 48000.0 * d->rate;
+}
 double fsvr_duration(FsvrDecoder *d) { return d->format->duration == AV_NOPTS_VALUE ? 0 : (double)d->format->duration / AV_TIME_BASE; }
 double fsvr_fps(FsvrDecoder *d) { AVRational fps = av_guess_frame_rate(d->format, d->format->streams[d->video_stream], NULL); return fps.num && fps.den ? av_q2d(fps) : 30; }
 int fsvr_width(FsvrDecoder *d) { return d->video->width; }
 int fsvr_height(FsvrDecoder *d) { return d->video->height; }
-const char *fsvr_decoder_name(FsvrDecoder *d) { return d->video_pipeline ? "videotoolbox-async" : d->hardware ? av_hwdevice_get_type_name(((AVHWDeviceContext *)d->hardware->data)->type) : d->video->codec->name; }
+const char *fsvr_spherical(FsvrDecoder *d) {
+    AVCodecParameters *p=d->format->streams[d->video_stream]->codecpar;
+    const AVPacketSideData *sd=av_packet_side_data_get(p->coded_side_data,p->nb_coded_side_data,AV_PKT_DATA_SPHERICAL);
+    if(!sd||sd->size<sizeof(AVSphericalMapping))return "";
+    const AVSphericalMapping *map=(const AVSphericalMapping *)sd->data;
+    switch(map->projection){
+        case AV_SPHERICAL_EQUIRECTANGULAR:return "equirectangular";
+        case AV_SPHERICAL_EQUIRECTANGULAR_TILE:
+            // A centered, full-height half-sphere is the supported 180 EQR
+            // layout; arbitrary spherical tiles need their own UV transform.
+            if(!map->bound_top&&!map->bound_bottom&&
+               llabs((int64_t)map->bound_left-0x40000000LL)<=16&&
+               llabs((int64_t)map->bound_right-0x40000000LL)<=16)return "half-equirectangular";
+            return "unsupported";
+        case AV_SPHERICAL_HALF_EQUIRECTANGULAR:return "half-equirectangular";
+        case AV_SPHERICAL_FISHEYE:return "fisheye";
+        default:return "unsupported";
+    }
+}
+const char *fsvr_stereo(FsvrDecoder *d) {
+    AVCodecParameters *p=d->format->streams[d->video_stream]->codecpar;
+    const AVPacketSideData *sd=av_packet_side_data_get(p->coded_side_data,p->nb_coded_side_data,AV_PKT_DATA_STEREO3D);
+    if(!sd||sd->size<sizeof(AVStereo3D))return "";
+    const AVStereo3D *stereo=(const AVStereo3D *)sd->data;
+    switch(stereo->type){case AV_STEREO3D_2D:return "mono";case AV_STEREO3D_SIDEBYSIDE:return "sbs";case AV_STEREO3D_TOPBOTTOM:return "tb";default:return "unsupported";}
+}
+const char *fsvr_decoder_name(FsvrDecoder *d) { return d->video_pipeline ? "videotoolbox-async" : d->hardware && d->hardware_format != AV_PIX_FMT_NONE ? av_hwdevice_get_type_name(((AVHWDeviceContext *)d->hardware->data)->type) : d->video->codec->name; }
 const char *fsvr_version(void) { return av_version_info(); }
 FsvrFrame *fsvr_frame_ref(FsvrFrame *f) { FsvrFrame *r = av_mallocz(sizeof(*r)); if (r) { r->image = av_frame_clone(f->image); r->pts = f->pts; r->serial=f->serial; if (!r->image) { av_free(r); return NULL; } } return r; }
 uint64_t fsvr_frame_serial(FsvrFrame *f){return f->serial;}

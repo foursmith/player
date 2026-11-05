@@ -25,10 +25,18 @@ func rotate(p vec3)vec3{yaw:=Camera.x*.01745329252;pitch:=Camera.y*.01745329252;
 func Fragment(dst vec4,pos vec2)vec4{
  size:=rectSize();count:=1.0;if size.x>size.y{desired:=1.0;if Portrait!=0{desired=9.0/16};count=min(float(Split),max(1,floor(size.x/(size.y*desired)+.5)))}
  uv:=vec2(fract(pos.x/size.x*count),pos.y/size.y);tanHalf:=tan(FOV*.01745329252/2)/max(.01,Camera.z);ray:=rotate(normalize(vec3((uv.x*2-1)*tanHalf*size.x/count/size.y,(1-uv.y*2)*tanHalf,-1)));origin:=rotate(vec3(0,0,-Camera.w));source:=vec2(0);visible:=true
- if Mode==6{hit:=(-65-origin.z)/ray.z;q:=origin+ray*hit;source=vec2(.5+q.x/(60*image0Size().x/image0Size().y),.5-(q.y-10)/60);visible=ray.z<0&&hit>0&&source.x>=0&&source.x<=1&&source.y>=0&&source.y<=1}else{
  b:=dot(origin,ray);disc:=b*b-dot(origin,origin)+10000;hit:=-b+sqrt(max(0,disc));q:=(origin+ray*hit)/100;visible=disc>=0&&hit>0;if (Mode==0||Mode==1||Mode==3||Mode==4)&&q.z>0{visible=false}
- if Mode==1||Mode==4{r:=1-acos(clamp(q.z,-1,1))/3.14159265359;phi:=atan2(q.y,q.x);source=vec2(.5+r*cos(phi),.5-r*sin(phi));if Mode==1{source.x*=.5}}else{angle:=atan2(-q.x,-q.z);source=vec2(.5-angle/6.28318530718,acos(clamp(q.y,-1,1))/3.14159265359);if Mode==0{source.x=.25-angle/6.28318530718}else if Mode==3{source.x=.5-angle/3.14159265359}else if Mode==5{source.y*=.5}}}
+ if Mode==1||Mode==4{r:=1-acos(clamp(q.z,-1,1))/3.14159265359;phi:=atan2(q.y,q.x);source=vec2(.5+r*cos(phi),.5-r*sin(phi));if Mode==1{source.x*=.5}}else{angle:=atan2(-q.x,-q.z);source=vec2(.5-angle/6.28318530718,acos(clamp(q.y,-1,1))/3.14159265359);if Mode==0{source.x=.25-angle/6.28318530718}else if Mode==3{source.x=.5-angle/3.14159265359}else if Mode==5{source.y*=.5}}
  if !visible{return vec4(.0784314,.0705882,.0588235,1)};return image0Sample(source*image0Size())
+}`)
+
+var flatShader = shader.MustCompile(`package main
+var Flat vec3
+func Fragment(dst vec4,pos vec2)vec4{
+ size:=rectSize();ratio:=(size.x/size.y)/(image0Size().x/image0Size().y)
+ source:=(pos/size-vec2(.5))*vec2(max(1,ratio),max(1,1/ratio))/Flat.z+vec2(.5)-Flat.xy
+ if source.x<0||source.x>1||source.y<0||source.y>1{return vec4(0,0,0,1)}
+ return image0Sample(source*image0Size())
 }`)
 
 // rgbaSurface is used when direct hardware-texture sharing is unavailable.
@@ -37,6 +45,7 @@ type rgbaSurface struct {
 	bitmap *ui.Bitmap
 	serial uint64
 	params Parameters
+	aspect float64
 }
 
 func (r *rgbaSurface) Present(frame *media.Frame, p Parameters, width, height, scale float64) error {
@@ -54,10 +63,17 @@ func (r *rgbaSurface) Present(frame *media.Frame, p Parameters, width, height, s
 		r.serial = frame.ID()
 	}
 	r.params = p
+	w, h := frame.Size()
+	r.aspect = float64(w) / float64(h)
 	return nil
 }
 func (r *rgbaSurface) Paint(p *ui.Painter, rect ui.Rect) {
 	if r.bitmap == nil {
+		return
+	}
+	if r.params.Mode == projection.Flat {
+		v := r.params.FlatView.Constrain(float64(rect.W/rect.H), r.aspect)
+		flatShader.Draw(p, rect, shader.Options{Images: [4]*ui.Bitmap{r.bitmap}, Uniforms: map[string]any{"Flat": [3]float32{float32(v.X), float32(v.Y), float32(v.Zoom)}}})
 		return
 	}
 	fov := r.params.FOV
@@ -79,6 +95,9 @@ func (r *rgbaSurface) Capture(frame *media.Frame, p Parameters, width, height in
 	}
 	out := image.NewRGBA(image.Rect(0, 0, width, height))
 	count := len(projection.Viewports(float64(width), float64(height), max(1, p.SplitCount), p.Portrait))
+	if p.Mode == projection.Flat {
+		count = 1
+	}
 	aspect := float64(width) / float64(count) / float64(height)
 	fov := p.FOV
 	if fov <= 0 {
@@ -88,11 +107,21 @@ func (r *rgbaSurface) Capture(frame *media.Frame, p Parameters, width, height in
 		for x := range width {
 			localX := (float64(x) + .5) * float64(count) / float64(width)
 			localX -= float64(int(localX))
-			origin, ray := projection.Ray(localX, (float64(y)+.5)/float64(height), aspect, fov, p.View)
-			u, v, visible := projection.UV(p.Mode, origin, ray, float64(sw)/float64(sh))
+			localY := (float64(y) + .5) / float64(height)
+			var u, v float64
+			var visible bool
+			if p.Mode == projection.Flat {
+				u, v, visible = p.FlatView.UV(localX, localY, aspect, float64(sw)/float64(sh))
+			} else {
+				origin, ray := projection.Ray(localX, localY, aspect, fov, p.View)
+				u, v, visible = projection.UV(p.Mode, origin, ray)
+			}
 			at := y*out.Stride + x*4
 			if !visible {
 				out.Pix[at], out.Pix[at+1], out.Pix[at+2], out.Pix[at+3] = 20, 18, 15, 255
+				if p.Mode == projection.Flat {
+					out.Pix[at], out.Pix[at+1], out.Pix[at+2] = 0, 0, 0
+				}
 				continue
 			}
 			sx, sy := projection.Clamp(u*float64(sw)-.5, 0, float64(sw-1)), projection.Clamp(v*float64(sh)-.5, 0, float64(sh-1))

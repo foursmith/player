@@ -26,8 +26,10 @@ func (a *application) settings(c *ui.Context) {
 				a.sectionTitle(c, "settings.playback")
 				ui.Column(c).FillWidth().Background(white(.04)).Radius(16).Children(func() {
 					a.qualityMatrix(c)
-					a.segmentSetting(c, "settings.portraitLayout", "settings.portraitLayoutDescription", "columns", []string{"1", "2", "3"}, a.preferences.SplitCount-1, func(i int) { a.preferences.SplitCount = i + 1 })
-					a.segmentSetting(c, "settings.preferredSplitAspect", "settings.preferredSplitAspectDescription", "corners-in", []string{"1:1", "9:16"}, map[bool]int{false: 0, true: 1}[a.preferences.PreferredSplitAspect == "9:16"], func(i int) { a.preferences.PreferredSplitAspect = []string{"1:1", "9:16"}[i] })
+					if a.selected < 0 || a.mode.IsVR() {
+						a.segmentSetting(c, "settings.portraitLayout", "settings.portraitLayoutDescription", "columns", []string{"1", "2", "3"}, a.preferences.SplitCount-1, func(i int) { a.preferences.SplitCount = i + 1 })
+						a.segmentSetting(c, "settings.preferredSplitAspect", "settings.preferredSplitAspectDescription", "corners-in", []string{"1:1", "9:16"}, map[bool]int{false: 0, true: 1}[a.preferences.PreferredSplitAspect == "9:16"], func(i int) { a.preferences.PreferredSplitAspect = []string{"1:1", "9:16"}[i] })
+					}
 					a.toggleSetting(c, "settings.resumeLastVideo", "settings.resumeLastVideoDescription", "play", &a.preferences.AutoResume, false)
 					if a.width >= 640 {
 						ui.Divider(c).Background(white(.07))
@@ -50,11 +52,13 @@ func (a *application) settings(c *ui.Context) {
 						}
 					}
 				})
-				a.sectionTitle(c, "settings.centering")
-				ui.Column(c).FillWidth().Radius(16).Background(white(.04)).Children(func() {
-					a.toggleSetting(c, "settings.faceCentering", "settings.faceCenteringDescription", "scan-face", &a.preferences.FaceAutoCenter, false)
-					a.toggleSetting(c, "settings.resumeAfterMovement", "settings.resumeAfterMovementDescription", "rotate-ccw", &a.preferences.ResumeAfterMovement, !a.preferences.FaceAutoCenter)
-				})
+				if a.selected < 0 || a.mode.IsVR() {
+					a.sectionTitle(c, "settings.centering")
+					ui.Column(c).FillWidth().Radius(16).Background(white(.04)).Children(func() {
+						a.toggleSetting(c, "settings.faceCentering", "settings.faceCenteringDescription", "scan-face", &a.preferences.FaceAutoCenter, false)
+						a.toggleSetting(c, "settings.resumeAfterMovement", "settings.resumeAfterMovementDescription", "rotate-ccw", &a.preferences.ResumeAfterMovement, !a.preferences.FaceAutoCenter)
+					})
+				}
 				a.sectionTitle(c, "settings.more")
 				ui.Column(c).FillWidth().Radius(16).Background(white(.04)).Children(func() {
 					selected := map[string]int{"zh-CN": 0, "en": 1, "ja": 2}[a.preferences.Locale]

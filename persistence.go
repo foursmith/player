@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/projection"
 )
 
 // stateWriter serializes disk writes and retains only the latest pending save.
@@ -53,11 +55,7 @@ func (a *application) persist() {
 		return
 	}
 	if a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].DeviceID == "" {
-		state := a.player.Snapshot()
-		entry := a.entries[a.selected]
-		if state.URL == entry.Path && !state.Loading && state.Error == "" {
-			a.stored.History[library.Identity(entry)] = videoHistory{Projection: a.mode, Position: state.Position, UpdatedAt: time.Now().UnixMilli()}
-		}
+		a.recordPlaybackHistory(a.entries[a.selected], a.player.Snapshot())
 	}
 	if len(a.stored.History) > 10000 {
 		keys := make([]string, 0, len(a.stored.History))
@@ -75,4 +73,25 @@ func (a *application) persist() {
 	}
 	a.stateWriter.Submit(a.stored)
 	a.lastSaved = time.Now()
+}
+
+func (a *application) recordPlaybackHistory(entry library.Entry, state media.State) {
+	if entry.DeviceID != "" || state.URL != entry.Path || state.Loading || state.Error != "" {
+		return
+	}
+	key := library.Identity(entry)
+	history := a.stored.History[key]
+	if !a.recognitionTest {
+		history.ProjectionManual = a.modeManual
+		if a.modeManual {
+			history.Projection = a.mode
+		} else {
+			history.Projection = 0
+			if !a.detectMode {
+				history.AutoProjection = projection.IDs[a.mode]
+			}
+		}
+	}
+	history.Position, history.UpdatedAt = state.Position, time.Now().UnixMilli()
+	a.stored.History[key] = history
 }

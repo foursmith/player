@@ -50,7 +50,7 @@ MyGo 用法对照本项目固定版本的 `docs/ui/views.md`、`docs/ui/list.md`
 
 - `just check`：Go vet、MyGo vet、gofmt 全部通过。
 - `just test`：全量 race 测试通过，包含两种原始人脸模型、真实解码/定位/取消、七种投影读回及真实编码。新增覆盖保存快照与最终落盘、目录模型更新、字幕发现与重叠时间、退化检测框、并发关闭预览及迟到帧释放。
-- `just build build/review`：构建、21 个原生动态库打包及临时签名校验通过，产物为 `build/review/darwin-arm64/Foursmith Player.app`。
+- 原生构建、21 个动态库打包及临时签名校验曾通过。当前只在用户明确要求时执行 `just build`，统一输出到 `build/darwin-arm64/Foursmith Player.app`；原有独立验证包已清理。
 - 没有启动、重启或操作正在运行的应用，也没有执行 UI 自动化。
 
 仍需原生窗口人工验收长列表滚动、窗口恢复、PiP、保存对话框期间切换媒体，以及真实远程/DLNA 设备；Windows/Linux 未在本次实机验证。这里的单元测试和构建结果不构成完整界面或 8K 播放性能验收。

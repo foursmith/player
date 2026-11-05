@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,7 @@ type Player struct {
 	seekValue   float64
 	cancelMu    sync.Mutex
 	cancel      context.CancelFunc
+	trace       atomic.Bool
 }
 type State struct {
 	URL                     string
@@ -46,7 +48,8 @@ func NewPlayer(changed func()) *Player {
 	go p.run()
 	return p
 }
-func (p *Player) Snapshot() State { return *p.state.Load() }
+func (p *Player) Snapshot() State       { return *p.state.Load() }
+func (p *Player) SetTrace(enabled bool) { p.trace.Store(enabled) }
 func (p *Player) send(c command) {
 	select {
 	case p.commands <- c:
@@ -108,8 +111,18 @@ func (p *Player) run() {
 	state := p.Snapshot()
 	var decoder *Decoder
 	var queue []*Frame
+	loadingAt := time.Now()
+	reportError := func(stage string, err error) {
+		state.Error = err.Error()
+		name := state.Metadata.Decoder
+		if decoder != nil {
+			name = decoder.Metadata().Decoder
+		}
+		log.Printf("[playback] error stage=%s file=%q decoder=%s position=%.3fs generation=%d detail=%v", stage, state.URL, name, state.Position, state.Generation, err)
+	}
 	first, drained := false, false
 	anchor, anchorAt := 0.0, time.Now()
+	var timeline audioTimeline
 	publish := func() {
 		copy := state
 		p.state.Store(&copy)
@@ -138,12 +151,20 @@ func (p *Player) run() {
 		}
 		if decoder != nil {
 			if t := decoder.Clock(); !math.IsNaN(t) {
-				return t
+				now := time.Now()
+				position := timeline.sample(now, t, decoder.bufferedAudioEnd(), state.Rate)
+				// Continue from the latest audio position if its stream ends
+				// before the remaining video, rather than the original anchor.
+				anchor, anchorAt = position, now
+				return position
 			}
 		}
 		return anchor + time.Since(anchorAt).Seconds()*state.Rate
 	}
-	resetClock := func() { anchor, anchorAt = state.Position, time.Now() }
+	resetClock := func() {
+		anchor, anchorAt = state.Position, time.Now()
+		timeline.reset(state.Position)
+	}
 	seek := func(at float64) error {
 		clearFrames()
 		decoder.Pause(true)
@@ -151,6 +172,11 @@ func (p *Player) run() {
 		state.Position = at
 		state.Ended = false
 		state.Loading = true
+		state.Error = ""
+		loadingAt = time.Now()
+		if p.trace.Load() {
+			log.Printf("[playback] seek file=%q requested=%.3fs decoder=%s generation=%d", state.URL, at, decoder.Metadata().Decoder, state.Generation)
+		}
 		first, drained = true, false
 		resetClock()
 		// The retained display frame still belongs to the previous position.
@@ -210,6 +236,10 @@ func (p *Player) run() {
 				state.Loading = true
 				state.Error = ""
 				state.Metadata = Metadata{}
+				loadingAt = time.Now()
+				if p.trace.Load() {
+					log.Printf("[playback] open file=%q resume=%.3fs generation=%d", state.URL, cmd.source.Start, state.Generation)
+				}
 				publish()
 				var err error
 				decoder, err = OpenContext(cmd.ctx, cmd.source, true)
@@ -217,7 +247,7 @@ func (p *Player) run() {
 					if errors.Is(err, context.Canceled) {
 						continue
 					}
-					state.Error = err.Error()
+					reportError("open", err)
 					state.Loading = false
 					publish()
 					continue
@@ -225,14 +255,14 @@ func (p *Player) run() {
 				state.Metadata = decoder.Metadata()
 				if start := cmd.source.Start; start > 0 && start < state.Metadata.Duration-5 {
 					if err = decoder.Seek(start); err != nil {
-						state.Error = err.Error()
+						reportError("resume_seek", err)
 					} else {
 						state.Position = start
 					}
 				}
 				decoder.Volume(state.Volume)
 				if err = decoder.SetRate(state.Rate); err != nil {
-					state.Error = err.Error()
+					reportError("initial_rate", err)
 				}
 				first, drained, state.Playing = true, false, true
 				resetClock()
@@ -240,7 +270,7 @@ func (p *Player) run() {
 				if decoder != nil {
 					if state.Ended {
 						if err := seek(0); err != nil {
-							state.Error = err.Error()
+							reportError("replay_seek", err)
 						}
 					}
 					state.Playing = true
@@ -261,7 +291,7 @@ func (p *Player) run() {
 				if decoder != nil {
 					state.Playing = true
 					if err := seek(math.Max(0, math.Min(state.Metadata.Duration, value))); err != nil {
-						state.Error = err.Error()
+						reportError("seek", err)
 					}
 				}
 			case "volume":
@@ -275,9 +305,9 @@ func (p *Player) run() {
 				resetClock()
 				if decoder != nil {
 					if err := decoder.SetRate(cmd.value); err != nil {
-						state.Error = err.Error()
+						reportError("set_rate", err)
 					} else if err = seek(state.Position); err != nil {
-						state.Error = err.Error()
+						reportError("rate_seek", err)
 					}
 				}
 			}
@@ -289,7 +319,7 @@ func (p *Player) run() {
 				if errors.Is(err, context.Canceled) {
 					continue
 				}
-				state.Error = err.Error()
+				reportError("buffer_audio", err)
 				state.Playing = false
 				state.Loading = false
 				decoder.Pause(true)
@@ -306,7 +336,7 @@ func (p *Player) run() {
 					if errors.Is(err, context.Canceled) {
 						continue
 					}
-					state.Error = err.Error()
+					reportError("decode", err)
 					state.Playing = false
 					state.Loading = false
 					decoder.Pause(true)
@@ -331,6 +361,9 @@ func (p *Player) run() {
 				continue
 			}
 			if first {
+				if p.trace.Load() {
+					log.Printf("[playback] ready file=%q requested=%.3fs pts=%.3fs decoder=%s generation=%d elapsed=%.2fms", state.URL, state.Position, queue[0].PTS(), decoder.Metadata().Decoder, state.Generation, float64(time.Since(loadingAt))/float64(time.Millisecond))
+				}
 				state.Position = queue[0].PTS()
 				resetClock()
 				decoder.Pause(!state.Playing)

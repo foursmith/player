@@ -167,6 +167,8 @@ func (a *application) closeVideo() {
 
 func (a *application) resetPlayback() {
 	a.persist()
+	a.cancelModeDetection()
+	a.detectMode = false
 	a.cancelExport()
 	a.cancelSubtitle()
 	a.player.Reset()

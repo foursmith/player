@@ -1,0 +1,242 @@
+[
+  {
+    "id": "horn-koppe_spring",
+    "split": "test",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/horn-koppe_spring"
+  },
+  {
+    "id": "derelict_highway_midday",
+    "split": "test",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/derelict_highway_midday"
+  },
+  {
+    "id": "entrance_hall",
+    "split": "test",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/entrance_hall"
+  },
+  {
+    "id": "interior_construction",
+    "split": "test",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/interior_construction"
+  },
+  {
+    "id": "missile_launch_facility_02",
+    "split": "test",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/missile_launch_facility_02"
+  },
+  {
+    "id": "schadowplatz",
+    "split": "test",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/schadowplatz"
+  },
+  {
+    "id": "en_suite",
+    "split": "validation",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/en_suite"
+  },
+  {
+    "id": "rosendal_plains_2",
+    "split": "validation",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/rosendal_plains_2"
+  },
+  {
+    "id": "clarens_night_01",
+    "split": "validation",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/clarens_night_01"
+  },
+  {
+    "id": "whipple_creek_regional_park_01",
+    "split": "validation",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/whipple_creek_regional_park_01"
+  },
+  {
+    "id": "outdoor_chapel",
+    "split": "validation",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/outdoor_chapel"
+  },
+  {
+    "id": "sunset_jhbcentral",
+    "split": "validation",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/sunset_jhbcentral"
+  },
+  {
+    "id": "flower_hillside",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/flower_hillside"
+  },
+  {
+    "id": "autumn_forest_03",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/autumn_forest_03"
+  },
+  {
+    "id": "dam_wall",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/dam_wall"
+  },
+  {
+    "id": "small_rural_road",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/small_rural_road"
+  },
+  {
+    "id": "kloppenheim_07_puresky",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/kloppenheim_07_puresky"
+  },
+  {
+    "id": "bathroom",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/bathroom"
+  },
+  {
+    "id": "air_museum_playground",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/air_museum_playground"
+  },
+  {
+    "id": "kloofendal_28d_misty",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/kloofendal_28d_misty"
+  },
+  {
+    "id": "citrus_orchard_road",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/citrus_orchard_road"
+  },
+  {
+    "id": "abandoned_slipway",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/abandoned_slipway"
+  },
+  {
+    "id": "concrete_tunnel",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/concrete_tunnel"
+  },
+  {
+    "id": "noga",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/noga"
+  },
+  {
+    "id": "partial_eclipse",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/partial_eclipse"
+  },
+  {
+    "id": "monte_scherbelino",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/monte_scherbelino"
+  },
+  {
+    "id": "rural_asphalt_road",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/rural_asphalt_road"
+  },
+  {
+    "id": "aristea_wreck",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/aristea_wreck"
+  },
+  {
+    "id": "fort_schanskop_morning",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/fort_schanskop_morning"
+  },
+  {
+    "id": "pine_picnic",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/pine_picnic"
+  },
+  {
+    "id": "zawiszy_czarnego",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/zawiszy_czarnego"
+  },
+  {
+    "id": "stuttgart_suburbs",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/stuttgart_suburbs"
+  },
+  {
+    "id": "old_bus_depot",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/old_bus_depot"
+  },
+  {
+    "id": "ferndale_studio_05",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/ferndale_studio_05"
+  },
+  {
+    "id": "drackenstein_quarry_puresky",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/drackenstein_quarry_puresky"
+  },
+  {
+    "id": "wooden_studio_04",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/wooden_studio_04"
+  },
+  {
+    "id": "syferfontein_1d_clear_puresky",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/syferfontein_1d_clear_puresky"
+  },
+  {
+    "id": "pretville_cinema",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/pretville_cinema"
+  },
+  {
+    "id": "wooden_studio_02",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/wooden_studio_02"
+  },
+  {
+    "id": "smelting_tower_interior",
+    "split": "train",
+    "license": "CC0",
+    "source": "https://polyhaven.com/a/smelting_tower_interior"
+  }
+]

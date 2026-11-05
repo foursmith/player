@@ -1,4 +1,4 @@
-// Package video composes the existing VR projections below MyGo's native UI.
+// Package video renders flat videos and VR projections below MyGo's native UI.
 package video
 
 import (
@@ -10,6 +10,7 @@ import (
 type Parameters struct {
 	Mode       projection.Mode
 	View       projection.View
+	FlatView   FlatView
 	SplitCount int
 	Portrait   bool
 	Quality    int

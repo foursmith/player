@@ -1,4 +1,4 @@
-// Package detection runs the unchanged BlazeFace models through LiteRT's C API.
+// Package detection runs local face and image classifiers through LiteRT's C API.
 package detection
 
 /*
@@ -32,15 +32,9 @@ type Detector struct {
 }
 
 func New(library string, model []byte) (*Detector, error) {
-	if len(model) == 0 {
-		return nil, errors.New("empty face model")
-	}
-	path := C.CString(library)
-	defer C.free(unsafe.Pointer(path))
-	var message [1024]C.char
-	ptr := C.fsvr_inference_open(path, (*C.uchar)(unsafe.Pointer(&model[0])), C.size_t(len(model)), &message[0], C.int(len(message)))
-	if ptr == nil {
-		return nil, errors.New(C.GoString(&message[0]))
+	ptr, err := openInference(library, model)
+	if err != nil {
+		return nil, err
 	}
 	d := &Detector{ptr: ptr, Height: int(C.fsvr_inference_size(ptr, 1)), Width: int(C.fsvr_inference_size(ptr, 2))}
 	if d.Width <= 0 || d.Height <= 0 {
@@ -55,6 +49,20 @@ func New(library string, model []byte) (*Detector, error) {
 		d.outputs[i] = make([]float32, size)
 	}
 	return d, nil
+}
+
+func openInference(library string, model []byte) (*C.FsvrInference, error) {
+	if len(model) == 0 {
+		return nil, errors.New("empty inference model")
+	}
+	path := C.CString(library)
+	defer C.free(unsafe.Pointer(path))
+	var message [1024]C.char
+	ptr := C.fsvr_inference_open(path, (*C.uchar)(unsafe.Pointer(&model[0])), C.size_t(len(model)), &message[0], C.int(len(message)))
+	if ptr == nil {
+		return nil, errors.New(C.GoString(&message[0]))
+	}
+	return ptr, nil
 }
 func (d *Detector) Close() {
 	if d != nil && d.ptr != nil {

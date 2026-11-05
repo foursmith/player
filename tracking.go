@@ -141,7 +141,7 @@ func (a *application) trackingAspect() float64 {
 }
 
 func (a *application) canTrack(state media.State) bool {
-	return !a.exporting && a.inference != nil && state.Playing && !state.Loading && a.preferences.FaceAutoCenter && !a.manuallyPaused && !a.dragging && !a.scrubbing && !time.Now().Before(a.manualUntil)
+	return a.mode.IsVR() && !a.exporting && a.inference != nil && state.Playing && !state.Loading && a.preferences.FaceAutoCenter && !a.manuallyPaused && !a.dragging && !a.scrubbing && !time.Now().Before(a.manualUntil)
 }
 
 func (a *application) updateTracking(c *ui.Context, state media.State) {

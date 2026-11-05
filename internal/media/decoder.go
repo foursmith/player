@@ -51,6 +51,7 @@ type Metadata struct {
 	Width, Height       int
 	Duration, FrameRate float64
 	Decoder             string
+	Spherical, Stereo   string
 }
 
 func Version() string { return C.GoString(C.fsvr_version()) }
@@ -58,6 +59,10 @@ func Open(source Source, outputAudio bool) (*Decoder, error) {
 	return OpenContext(context.Background(), source, outputAudio)
 }
 func OpenContext(ctx context.Context, source Source, outputAudio bool) (*Decoder, error) {
+	return openContext(ctx, source, outputAudio, false)
+}
+
+func openContext(ctx context.Context, source Source, outputAudio, analysis bool) (*Decoder, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -69,11 +74,14 @@ func OpenContext(ctx context.Context, source Source, outputAudio bool) (*Decoder
 	name := C.CString(source.URL)
 	defer C.free(unsafe.Pointer(name))
 	var message [1024]C.char
-	var audio C.int
+	var audio, sampling C.int
 	if outputAudio {
 		audio = 1
 	}
-	ptr := C.fsvr_open(name, cancel.ptr, audio, &message[0], C.int(len(message)))
+	if analysis {
+		sampling = 1
+	}
+	ptr := C.fsvr_open(name, cancel.ptr, audio, sampling, &message[0], C.int(len(message)))
 	if ptr == nil {
 		stop()
 		cancel.close()
@@ -97,7 +105,7 @@ func (d *Decoder) failure(message *C.char) error {
 	return errors.New(C.GoString(message))
 }
 func (d *Decoder) Metadata() Metadata {
-	return Metadata{int(C.fsvr_width(d.ptr)), int(C.fsvr_height(d.ptr)), float64(C.fsvr_duration(d.ptr)), float64(C.fsvr_fps(d.ptr)), C.GoString(C.fsvr_decoder_name(d.ptr))}
+	return Metadata{Width: int(C.fsvr_width(d.ptr)), Height: int(C.fsvr_height(d.ptr)), Duration: float64(C.fsvr_duration(d.ptr)), FrameRate: float64(C.fsvr_fps(d.ptr)), Decoder: C.GoString(C.fsvr_decoder_name(d.ptr)), Spherical: C.GoString(C.fsvr_spherical(d.ptr)), Stereo: C.GoString(C.fsvr_stereo(d.ptr))}
 }
 func (d *Decoder) Next() (*Frame, error) {
 	if err := d.ctx.Err(); err != nil {
@@ -115,11 +123,21 @@ func (d *Decoder) Next() (*Frame, error) {
 	return &Frame{ptr}, nil
 }
 func (d *Decoder) Seek(seconds float64) error {
+	return d.seek(seconds, true)
+}
+
+// Inexact seeking is reserved for analysis thumbnails; playback and export
+// always call Seek and decode through the exact requested timestamp.
+func (d *Decoder) seek(seconds float64, precise bool) error {
 	if err := d.ctx.Err(); err != nil {
 		return err
 	}
 	var message [1024]C.char
-	if C.fsvr_seek(d.ptr, C.double(seconds), &message[0], C.int(len(message))) < 0 {
+	exact := C.int(0)
+	if precise {
+		exact = 1
+	}
+	if C.fsvr_seek(d.ptr, C.double(seconds), exact, &message[0], C.int(len(message))) < 0 {
 		return d.failure(&message[0])
 	}
 	return nil
@@ -151,8 +169,9 @@ func (d *Decoder) Pause(paused bool) {
 	}
 	C.fsvr_pause(d.ptr, p)
 }
-func (d *Decoder) Volume(volume float64) { C.fsvr_volume(d.ptr, C.float(volume)) }
-func (d *Decoder) Clock() float64        { return float64(C.fsvr_audio_clock(d.ptr)) }
+func (d *Decoder) Volume(volume float64)     { C.fsvr_volume(d.ptr, C.float(volume)) }
+func (d *Decoder) Clock() float64            { return float64(C.fsvr_audio_clock(d.ptr)) }
+func (d *Decoder) bufferedAudioEnd() float64 { return float64(C.fsvr_audio_end(d.ptr)) }
 func (d *Decoder) Close() {
 	if d.ptr != nil {
 		d.stop()

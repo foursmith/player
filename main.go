@@ -73,13 +73,19 @@ type application struct {
 	cues                                      []subtitle.Cue
 	selected                                  int
 	view                                      projection.View
+	flatView                                  video.FlatView
 	mode                                      projection.Mode
+	detectMode                                bool
+	modeManual                                bool
+	modeDetection                             *modeDetectionTask
+	recognitionTest                           bool
+	modeDetectionSequence                     uint64
 	settingsOpen                              bool
 	shortcutsOpen                             bool
 	playlistExpanded                          bool
 	projectionOpen                            bool
 	projectionFocused                         int
-	projectionItems                           [7]ui.Handle
+	projectionItems                           [8]ui.Handle
 	adjustmentsOpen                           bool
 	debugOpen                                 bool
 	controlsUntil                             time.Time
@@ -103,15 +109,20 @@ type application struct {
 }
 
 func main() {
-	dataDir := flag.String("data-dir", "", "application data directory")
-	flag.Parse()
+	options, err := parseApplicationOptions(os.Args[1:])
+	if err != nil {
+		if err != flag.ErrHelp {
+			os.Exit(2)
+		}
+		return
+	}
 	if err := loadAssets(); err != nil {
 		log.Fatal(err)
 	}
 	mygo.App.SetName(appInfo.Name)
 	mygo.App.SetLanguages("en", "zh-CN", "ja")
-	if *dataDir != "" {
-		mygo.App.SetPath(mygo.PathUserData, *dataDir)
+	if options.dataDir != "" {
+		mygo.App.SetPath(mygo.PathUserData, options.dataDir)
 	}
 	userData, err := mygo.App.Path(mygo.PathUserData)
 	if err != nil {
@@ -120,7 +131,10 @@ func main() {
 	path := filepath.Join(userData, "state.json")
 	state := loadState(path)
 
-	a := &application{preferences: state.Preferences, stored: state, view: projection.DefaultView(), playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume}
+	a := &application{preferences: state.Preferences, stored: state, view: projection.DefaultView(), mode: projection.Flat, playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume, recognitionTest: options.recognitionTest}
+	if a.recognitionTest {
+		log.Print("[recognition-test] enabled: saved video types bypassed; history types preserved")
+	}
 	a.expandedFolders = map[string]bool{}
 	a.dlnaDevices = map[string]dlna.Device{}
 	a.loadingFolders = map[string]bool{}
@@ -142,6 +156,7 @@ func main() {
 			w.Invalidate()
 		}
 	})
+	a.player.SetTrace(a.recognitionTest)
 	a.player.SetVolume(a.preferences.Volume)
 	a.player.SetRate(a.preferences.PlaybackRate)
 	mygo.App.OnSecondInstance(func(args []string, _ string) {
@@ -149,8 +164,23 @@ func main() {
 			a.window.Update(func() {
 				a.window.Show()
 				a.window.Focus()
-				if len(args) > 1 {
-					a.importPaths(args[1:], false)
+				if len(args) == 0 {
+					return
+				}
+				incoming, err := parseApplicationOptions(args[1:])
+				if err != nil {
+					log.Printf("Second-instance arguments: %v", err)
+					return
+				}
+				if incoming.recognitionTest {
+					a.recognitionTest = true
+					a.player.SetTrace(true)
+					log.Print("[recognition-test] enabled by second instance: saved video types bypassed")
+				}
+				if len(incoming.paths) > 0 {
+					a.importPaths(incoming.paths, false)
+				} else if incoming.recognitionTest {
+					a.redetectMode()
 				}
 			})
 		}
@@ -172,6 +202,7 @@ func main() {
 		a.persist()
 		a.shutdown = true
 		a.cancel()
+		a.cancelModeDetection()
 		a.cancelSubtitle()
 		a.cancelExport()
 		if err := a.stateWriter.Close(); err != nil {
@@ -209,7 +240,7 @@ func main() {
 			}
 		})
 		a.refreshMenu()
-		initialPaths := append(append([]string{}, flag.Args()...), a.pendingPaths...)
+		initialPaths := append(append([]string{}, options.paths...), a.pendingPaths...)
 		a.pendingPaths = nil
 		if len(initialPaths) > 0 {
 			a.importPaths(initialPaths, false)
@@ -288,18 +319,13 @@ func (a *application) playEntry(index int) {
 	}
 	a.cancelExport()
 	a.persist()
+	a.cancelModeDetection()
 	a.selected = index
 	a.view = projection.DefaultView()
-	a.mode = projection.SBS180
+	a.flatView = video.FlatView{}
 	a.tracker.Reset()
 	entry := a.entries[index]
-	start := 0.0
-	if entry.DeviceID == "" {
-		if history, ok := a.stored.History[library.Identity(entry)]; ok {
-			a.mode = history.Projection
-			start = history.Position
-		}
-	}
+	start := a.prepareVideoMode(entry)
 	a.loopA = nil
 	a.loopB = nil
 	a.manuallyPaused = false
@@ -404,6 +430,9 @@ func (a *application) setRate(v float64) {
 	a.persist()
 }
 func (a *application) params(pip bool) video.Parameters {
+	if a.mode == projection.Flat {
+		return video.Parameters{Mode: a.mode, FlatView: a.flatView, SplitCount: 1, Quality: a.preferences.QualityID}
+	}
 	count := a.preferences.SplitCount
 	if pip {
 		count = 1
@@ -416,7 +445,19 @@ func (a *application) togglePip() {
 		return
 	}
 	a.presentation[1] = presentationState{}
-	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: 360, Height: 640, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
+	width, height := 360, 640
+	if a.mode == projection.Flat {
+		metadata := a.player.Snapshot().Metadata
+		width, height = 480, 270
+		if metadata.Width > 0 && metadata.Height > 0 {
+			if metadata.Width >= metadata.Height {
+				height = max(180, int(480*float64(metadata.Height)/float64(metadata.Width)))
+			} else {
+				width, height = max(240, int(480*float64(metadata.Width)/float64(metadata.Height))), 480
+			}
+		}
+	}
+	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: width, Height: height, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
 	a.refreshVideoOnReveal(a.pipWindow, 1)
 	var err error
 	a.pipSurface, err = video.New(a.pipWindow.NativeHandle())

@@ -23,10 +23,20 @@ type preferences struct {
 	Locale               string  `json:"locale"`
 }
 type videoHistory struct {
-	Projection projection.Mode
-	Position   float64
-	UpdatedAt  int64
+	Projection       projection.Mode `json:",omitempty"`
+	AutoProjection   string          `json:",omitempty"`
+	Position         float64
+	UpdatedAt        int64
+	ProjectionManual bool `json:",omitempty"`
 }
+
+func (h videoHistory) automaticProjection() (projection.Mode, bool) {
+	if index := slices.Index(projection.IDs[:], h.AutoProjection); index >= 0 {
+		return projection.Mode(index), true
+	}
+	return projection.Flat, false
+}
+
 type storedState struct {
 	Preferences preferences
 	History     map[string]videoHistory
@@ -67,6 +77,11 @@ func loadState(path string) storedState {
 	for key, history := range state.History {
 		if history.Projection < 0 || history.Projection > projection.Flat || history.Position < 0 {
 			delete(state.History, key)
+			continue
+		}
+		if _, valid := history.automaticProjection(); history.AutoProjection != "" && !valid {
+			history.AutoProjection = ""
+			state.History[key] = history
 		}
 	}
 	var recent []string

@@ -1,4 +1,4 @@
-// Package projection owns the seven existing projections and camera geometry.
+// Package projection owns video mode IDs, VR projections and camera geometry.
 package projection
 
 import "math"
@@ -23,8 +23,10 @@ type Vec3 struct{ X, Y, Z float64 }
 type Rect struct{ X, Y, Width, Height float64 }
 
 func DefaultView() View               { return View{Zoom: 1} }
+func (m Mode) IsVR() bool             { return m >= SBS180 && m <= TB360 }
 func (m Mode) Half() bool             { return m == SBS180 || m == SBSFisheye || m == Mono180 || m == MonoFisheye }
 func (m Mode) Fisheye() bool          { return m == SBSFisheye || m == MonoFisheye }
+func (m Mode) Binocular() bool        { return m == SBS180 || m == SBSFisheye || m == TB360 }
 func Clamp(v, lo, hi float64) float64 { return math.Min(hi, math.Max(lo, v)) }
 func Angle(v float64) float64         { return math.Mod(math.Mod(v+180, 360)+360, 360) - 180 }
 func Radians(v float64) float64       { return v * math.Pi / 180 }
@@ -57,16 +59,9 @@ func SpherePoint(origin, ray Vec3, radius float64) (Vec3, bool) {
 	}
 	return origin.Add(ray.Scale(t)), true
 }
-func UV(mode Mode, origin, ray Vec3, sourceAspect float64) (u, v float64, visible bool) {
-	if mode == Flat {
-		if ray.Z >= 0 {
-			return 0, 0, false
-		}
-		t := (-65 - origin.Z) / ray.Z
-		p := origin.Add(ray.Scale(t))
-		u = .5 + p.X/(60*sourceAspect)
-		v = .5 - (p.Y-10)/60
-		return u, v, t > 0 && u >= 0 && u <= 1 && v >= 0 && v <= 1
+func UV(mode Mode, origin, ray Vec3) (u, v float64, visible bool) {
+	if !mode.IsVR() {
+		return 0, 0, false
 	}
 	p, ok := SpherePoint(origin, ray, 100)
 	if !ok || (mode.Half() && p.Z > 0) {
@@ -162,10 +157,6 @@ func Constrain(mode Mode, current, proposed View, aspect float64) View {
 	current.Forward += (proposed.Forward - current.Forward) * lo
 	return current
 }
-func ZoomForward(forward, scale float64, mode Mode) float64 {
-	distance := 100.0
-	if mode == Flat {
-		distance = 65
-	}
-	return distance - (distance-forward)/math.Max(.000001, scale)
+func ZoomForward(forward, scale float64) float64 {
+	return 100 - (100-forward)/math.Max(.000001, scale)
 }

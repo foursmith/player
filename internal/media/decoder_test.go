@@ -1,7 +1,9 @@
 package media
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"image/color"
 	"io"
@@ -14,6 +16,85 @@ import (
 	"testing"
 	"time"
 )
+
+// Add ISO BMFF spatial-video boxes to the fixture's video sample entry. The
+// fixture stores moov after mdat, so growing moov leaves chunk offsets intact.
+func spatialFixture(t *testing.T, stereo byte, half bool) string {
+	t.Helper()
+	file := fixture(t, false)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	box := func(kind string, payload []byte) []byte {
+		out := make([]byte, 8, 8+len(payload))
+		binary.BigEndian.PutUint32(out, uint32(8+len(payload)))
+		copy(out[4:], kind)
+		return append(out, payload...)
+	}
+	bounds := make([]byte, 20)
+	if half {
+		binary.BigEndian.PutUint32(bounds[12:16], 0x40000000)
+		binary.BigEndian.PutUint32(bounds[16:20], 0x40000000)
+	}
+	projection := box("proj", append(box("prhd", make([]byte, 16)), box("equi", bounds)...))
+	spherical := box("sv3d", append(box("svhd", append(make([]byte, 4), []byte("Foursmith test\x00")...)), projection...))
+	extra := append(box("st3d", []byte{0, 0, 0, 0, stereo}), spherical...)
+	inserted := false
+	var rewrite func([]byte) []byte
+	rewrite = func(input []byte) []byte {
+		var output []byte
+		for len(input) >= 8 {
+			size := int(binary.BigEndian.Uint32(input))
+			if size < 8 || size > len(input) {
+				t.Fatal("invalid fixture atom")
+			}
+			kind, payload := string(input[4:8]), input[8:size]
+			switch kind {
+			case "moov", "trak", "mdia", "minf", "stbl":
+				payload = rewrite(payload)
+			case "stsd":
+				payload = append(bytes.Clone(payload[:8]), rewrite(payload[8:])...)
+			case "avc1":
+				payload = append(bytes.Clone(payload), extra...)
+				inserted = true
+			}
+			output = append(output, box(kind, payload)...)
+			input = input[size:]
+		}
+		return append(output, input...)
+	}
+	data = rewrite(data)
+	if !inserted {
+		t.Fatal("video sample entry not found")
+	}
+	if err = os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+func TestDecoderReadsSpatialMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		stereo byte
+		want   string
+		half   bool
+	}{{0, "mono", false}, {1, "tb", false}, {2, "sbs", false}, {0, "mono", true}, {2, "sbs", true}} {
+		d, err := Open(Source{URL: spatialFixture(t, tc.stereo, tc.half)}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		metadata := d.Metadata()
+		d.Close()
+		projection := "equirectangular"
+		if tc.half {
+			projection = "half-equirectangular"
+		}
+		if metadata.Spherical != projection || metadata.Stereo != tc.want {
+			t.Fatalf("spatial metadata missing: %+v", metadata)
+		}
+	}
+}
 
 func fixture(t *testing.T, audio bool) string {
 	t.Helper()
@@ -104,6 +185,34 @@ func TestDecoderFramesAndAccurateSeek(t *testing.T) {
 	defer frame.Close()
 	if frame.PTS() < .45 || frame.PTS() > .49 {
 		t.Fatalf("inaccurate seek: %v", frame.PTS())
+	}
+}
+
+func TestAnalysisAVCDecoderReturnsFramesAndPreservesAccurateSeek(t *testing.T) {
+	d, err := openContext(context.Background(), Source{URL: fixture(t, false)}, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if name := d.Metadata().Decoder; name != "h264" {
+		t.Fatal("software analysis decoder allocated hardware:", name)
+	}
+	for _, at := range []float64{0, .45, .2} {
+		if err := d.Seek(at); err != nil {
+			t.Fatal(err)
+		}
+		frame, err := d.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if frame.Native() != nil || frame.PTS() < at || frame.PTS() > at+.04 {
+			t.Fatalf("unexpected software frame at %.2f: native=%v pts=%v", at, frame.Native(), frame.PTS())
+		}
+		img, err := frame.RGBA(80, 40)
+		frame.Close()
+		if err != nil || img.RGBAAt(40, 20).R < 200 {
+			t.Fatalf("software thumbnail failed: %v", err)
+		}
 	}
 }
 func waitState(t *testing.T, p *Player, predicate func(State) bool) State {

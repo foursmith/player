@@ -46,7 +46,7 @@ func (a *application) exportLoop(format string) {
 	if !a.preferences.SubtitlesEnabled {
 		cues = nil
 	}
-	autoCenter := a.preferences.FaceAutoCenter && !a.manuallyPaused
+	autoCenter := a.mode.IsVR() && a.preferences.FaceAutoCenter && !a.manuallyPaused
 	wasPlaying := a.player.Snapshot().Playing
 	a.exporting = true
 	a.exportFormat = format

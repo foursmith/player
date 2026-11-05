@@ -24,6 +24,7 @@ func (a *application) render(c *ui.Context) {
 		}
 	}
 	state := a.player.Snapshot()
+	a.resolveVideoMode(state)
 	if a.exporting {
 		state.Position = a.exportPosition
 	}
@@ -85,7 +86,7 @@ func (a *application) render(c *ui.Context) {
 				a.controlPopovers(c)
 			}
 		}
-		if a.debugOpen && state.URL != "" {
+		if a.debugOpen && a.mode.IsVR() && state.URL != "" {
 			a.debug(c, state)
 		}
 		if a.notice != "" || state.Error != "" {
@@ -130,7 +131,7 @@ func (a *application) topControls(c *ui.Context) {
 		if a.selected >= 0 {
 			a.iconButton(c, "x", a.t("media.closeVideo"), topControlSize, false, a.closeVideo)
 		}
-		if a.manuallyPaused || c.Now().Before(a.manualUntil) {
+		if a.mode.IsVR() && (a.manuallyPaused || c.Now().Before(a.manualUntil)) {
 			a.iconButton(c, "scan-face", a.t("debug.resumeCentering"), topControlSize, false, func() { a.manuallyPaused = false; a.manualUntil = time.Time{}; a.tracker.Reset() })
 		}
 		a.iconButton(c, "settings", a.t("common.settings"), topControlSize, false, func() { a.settingsOpen = true })
@@ -251,7 +252,15 @@ func (a *application) stageInput(event ui.InputEvent, aspect float64, pip bool) 
 		return true
 	case ui.InputPointerMove:
 		dx, dy := float64(point.X-a.lastPointer.X), float64(point.Y-a.lastPointer.Y)
-		if a.dragging {
+		if a.dragging && a.mode == projection.Flat {
+			width, height := float64(a.width), float64(a.height)
+			if pip {
+				bounds := a.pipWindow.ContentBounds()
+				width, height = float64(bounds.Width), float64(bounds.Height)
+			}
+			a.dragDistance = math.Hypot(float64(point.X-a.pressPointer.X), float64(point.Y-a.pressPointer.Y))
+			a.flatView = a.flatView.Pan(dx/max(1, width), dy/max(1, height), aspect, a.sourceAspect())
+		} else if a.dragging {
 			a.dragDistance = math.Hypot(float64(point.X-a.pressPointer.X), float64(point.Y-a.pressPointer.Y))
 			next := a.view
 			next.Yaw += dx * .08
@@ -299,8 +308,12 @@ func (a *application) setView(next projection.View, aspect float64) {
 	a.tracker.Reset()
 }
 func (a *application) zoom(scale, aspect float64) {
+	if a.mode == projection.Flat {
+		a.flatView = a.flatView.Scale(scale, aspect, a.sourceAspect())
+		return
+	}
 	next := a.view
-	next.Forward = projection.ZoomForward(next.Forward, scale, a.mode)
+	next.Forward = projection.ZoomForward(next.Forward, scale)
 	a.setView(next, aspect)
 }
 func (a *application) keyboard(c *ui.Context) {
@@ -310,12 +323,16 @@ func (a *application) keyboard(c *ui.Context) {
 			delta int
 		}{{ui.KeyUp, -1}, {ui.KeyDown, 1}} {
 			if c.Shortcut(0, step.key) {
-				a.projectionFocused = (a.projectionFocused + step.delta + 7) % 7
+				a.projectionFocused = (a.projectionFocused + step.delta + len(a.projectionItems)) % len(a.projectionItems)
 				a.projectionItems[a.projectionFocused].Focus(c)
 			}
 		}
 		if c.Shortcut(0, ui.KeyEnter) {
-			a.setMode(projection.Mode(a.projectionFocused))
+			if a.projectionFocused == len(projection.IDs) {
+				a.redetectMode()
+			} else {
+				a.setMode(projection.Mode(a.projectionFocused))
+			}
 			a.projectionOpen = false
 		}
 	}
@@ -418,36 +435,58 @@ func (a *application) controlPopovers(c *ui.Context) {
 	if a.projectionOpen {
 		anchor := a.projectionButton.Bounds(c)
 		left := max(float32(12), min(a.width-220, anchor.X+anchor.W/2-104))
-		panel := panel(c, 16).Absolute().Left(left).Bottom(a.height - anchor.Y + 10).Width(208).Height(288).Padding(6).Gap(4).Role(ui.RoleMenu).Label(a.t("projection.title"))
+		height := min(float32(380), max(100, anchor.Y-22))
+		panel := panel(c, 16).Absolute().Left(left).Bottom(a.height - anchor.Y + 10).Width(208).Height(height).Padding(6).Role(ui.RoleMenu).Label(a.t("projection.title"))
 		hold(a, panel)
 		panel.Children(func() {
-			for i := range projection.Labels {
-				label := a.projectionLabel(i)
-				selected := a.mode == projection.Mode(i)
-				color := white(.68)
-				if selected {
-					color = white(1)
+			ui.Scroll(c).Fill().Gap(4).Children(func() {
+				for i := range projection.Labels {
+					if i == 0 || projection.Mode(i) == projection.Flat {
+						key := "projection.vr"
+						if projection.Mode(i) == projection.Flat {
+							key = "projection.flat"
+						}
+						smallText(c, a.t(key), .42).FontSize(10).Height(20).Padding(2, 10)
+					}
+					label := a.projectionLabel(i)
+					selected := a.mode == projection.Mode(i)
+					color := white(.68)
+					if selected {
+						color = white(1)
+					}
+					button := ui.Button(c, "").Bind(&a.projectionItems[i]).FillWidth().Height(36).FontSize(12).Padding(0, 10).Background(ui.Transparent).Border(0, ui.Transparent).Radius(12).Label(label)
+					button.Children(func() {
+						ui.Row(c).Fill().Gap(12).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, icons["projection-"+projection.IDs[i]]).Size(18, 18).TextColor(color)
+							ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(color).Grow(1).MinWidth(0).Wrap()
+							if selected {
+								ui.Icon(c, icons["check"]).Size(16, 16).TextColor(white(.72))
+							}
+						})
+					})
+					if selected {
+						button.Background(white(.12))
+						button.AutoFocus()
+					}
+					if button.Clicked() {
+						a.setMode(projection.Mode(i))
+						a.projectionOpen = false
+					}
 				}
-				button := ui.Button(c, "").Bind(&a.projectionItems[i]).FillWidth().Height(36).FontSize(12).Padding(0, 10).Background(ui.Transparent).Border(0, ui.Transparent).Radius(12).Label(label)
+				ui.Divider(c).Background(white(.07))
+				label := a.t("projection.redetect")
+				button := ui.Button(c, "").Bind(&a.projectionItems[len(projection.IDs)]).FillWidth().Height(36).Padding(0, 10).Background(ui.Transparent).Border(0, ui.Transparent).Radius(12).Label(label)
 				button.Children(func() {
 					ui.Row(c).Fill().Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, icons["projection-"+projection.IDs[i]]).Size(18, 18).TextColor(color)
-						ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(color).Grow(1).MinWidth(0).Wrap()
-						if selected {
-							ui.Icon(c, icons["check"]).Size(16, 16).TextColor(white(.72))
-						}
+						ui.Icon(c, icons["rotate-ccw"]).Size(18, 18).TextColor(white(.68))
+						ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(white(.68))
 					})
 				})
-				if selected {
-					button.Background(white(.12))
-					button.AutoFocus()
-				}
 				if button.Clicked() {
-					a.setMode(projection.Mode(i))
+					a.redetectMode()
 					a.projectionOpen = false
-					a.persist()
 				}
-			}
+			})
 		})
 	}
 }
@@ -668,16 +707,34 @@ type presentationState struct {
 }
 
 func (a *application) resetView() {
+	if a.mode == projection.Flat {
+		a.flatView = video.FlatView{}
+		return
+	}
 	a.view = projection.DefaultView()
 	a.manuallyPaused = !a.preferences.ResumeAfterMovement
 	a.manualUntil = time.Now().Add(time.Second)
 	a.tracker.Reset()
 }
 func (a *application) setMode(mode projection.Mode) {
+	a.cancelModeDetection()
+	a.detectMode = false
+	a.modeManual = true
+	a.applyMode(mode)
+}
+
+func (a *application) applyMode(mode projection.Mode) {
+	a.cancelExport()
 	a.mode = mode
 	a.view = projection.DefaultView()
+	a.flatView = video.FlatView{}
 	a.tracker.Reset()
 	a.manuallyPaused = false
 	a.manualUntil = time.Time{}
 	a.persist()
+}
+
+func (a *application) sourceAspect() float64 {
+	metadata := a.player.Snapshot().Metadata
+	return float64(max(1, metadata.Width)) / float64(max(1, metadata.Height))
 }

@@ -8,6 +8,7 @@ FsvrVideoDecoder *fsvr_video_open(AVStream *stream, AVBufferRef *device, int (*i
 int fsvr_video_send(FsvrVideoDecoder *decoder, const AVPacket *packet);
 int fsvr_video_receive(FsvrVideoDecoder *decoder, AVFrame *frame);
 int fsvr_video_reset(FsvrVideoDecoder *decoder);
+const char *fsvr_video_error(FsvrVideoDecoder *decoder);
 void fsvr_video_drain(FsvrVideoDecoder *decoder);
 void fsvr_video_close(FsvrVideoDecoder *decoder);
 #endif
