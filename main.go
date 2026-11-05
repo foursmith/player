@@ -162,8 +162,7 @@ func main() {
 	mygo.App.OnSecondInstance(func(args []string, _ string) {
 		if a.window != nil {
 			a.window.Update(func() {
-				a.window.Show()
-				a.window.Focus()
+				a.showWindow()
 				if len(args) == 0 {
 					return
 				}
@@ -188,6 +187,7 @@ func main() {
 	mygo.App.OnOpenFile(func(path string) {
 		if w := a.windowRef.Load(); w != nil {
 			w.Update(func() {
+				a.showWindow()
 				a.pendingPaths = append(a.pendingPaths, path)
 				a.openFilesAt = time.Now().Add(30 * time.Millisecond)
 			})
@@ -240,6 +240,7 @@ func main() {
 			}
 		})
 		a.refreshMenu()
+		a.restoreSystemRecentFiles()
 		initialPaths := append(append([]string{}, options.paths...), a.pendingPaths...)
 		a.pendingPaths = nil
 		if len(initialPaths) > 0 {
@@ -254,6 +255,15 @@ func main() {
 		log.Fatal(err)
 	}
 }
+
+func (a *application) showWindow() {
+	if a.window.IsMinimized() {
+		a.window.Restore()
+	}
+	a.window.Show()
+	a.window.Focus()
+}
+
 func (a *application) activity(delay time.Duration) { a.controlsUntil = time.Now().Add(delay) }
 
 // Opening replaces the local queue and always plays the requested selection.
@@ -338,6 +348,7 @@ func (a *application) playEntry(index int) {
 	if entry.DeviceID == "" {
 		a.stored.LastFile = entry.Path
 		a.stored.RecentFiles = rememberFile(a.stored.RecentFiles, entry.Path)
+		addSystemRecentFile(entry.Path)
 		a.refreshMenu()
 	} else {
 		a.stored.LastFile = ""

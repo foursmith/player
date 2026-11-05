@@ -25,6 +25,7 @@ func (a *application) refreshMenu() {
 		recent = append(recent, mygo.Separator(), action("media.clearRecent", "", func() {
 			a.stored.RecentFiles = nil
 			a.stored.LastFile = ""
+			clearSystemRecentFiles()
 			a.refreshMenu()
 			a.persist()
 		}))
@@ -45,6 +46,16 @@ func (a *application) refreshMenu() {
 	}
 	var items []*mygo.MenuItem
 	if runtime.GOOS == "darwin" {
+		mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+			action("media.openFiles", "", func() {
+				a.showWindow()
+				a.choose(false, false)
+			}),
+			action("media.openFolder", "", func() {
+				a.showWindow()
+				a.choose(true, false)
+			}),
+		}))
 		items = append(items, &mygo.MenuItem{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleAbout}, mygo.Separator(), settings, mygo.Separator(),
 			{Role: mygo.RoleServices}, mygo.Separator(), {Role: mygo.RoleHide}, {Role: mygo.RoleHideOthers}, {Role: mygo.RoleUnhide}, mygo.Separator(), {Role: mygo.RoleQuit},
