@@ -7,9 +7,12 @@ import (
 )
 
 func (a *application) shortcutSettings(c *ui.Context) {
-	ui.Row(c.Key("shortcuts-help")).FillWidth().Padding(0, 0, 12).Gap(12).AlignItems(ui.Center).Children(func() {
-		smallText(c, a.t("shortcuts.editDescription"), .48).Grow(1).MinWidth(0).Wrap()
-		button := ui.Button(c, a.t("shortcuts.resetAll")).FontSize(10).Height(28).Padding(0, 10).Radius(10).Border(0, ui.Transparent).Background(white(.07)).Disabled(len(a.preferences.Shortcuts) == 0)
+	ui.Row(c.Key("shortcuts-help")).FillWidth().Padding(0, 12, 10).Gap(16).AlignItems(ui.Center).Children(func() {
+		smallText(c, a.t("shortcuts.editDescription"), .42).FontSize(10).Grow(1).MinWidth(0).Wrap()
+		button := ui.Button(c, a.t("shortcuts.resetAll")).FontSize(10).FontWeight(400).Height(24).Padding(0).Radius(6).Border(0, ui.Transparent).Background(ui.Transparent).TextColor(white(.56)).Disabled(len(a.preferences.Shortcuts) == 0)
+		if !button.IsDisabled() && (button.Hovered() || button.FocusVisible()) {
+			button.TextColor(white(.9))
+		}
 		if button.Clicked() {
 			a.preferences.Shortcuts = nil
 			a.setShortcutRecording("")
