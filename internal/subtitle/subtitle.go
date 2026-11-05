@@ -1,6 +1,7 @@
 package subtitle
 
 import (
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -10,6 +11,8 @@ import (
 type Cue struct {
 	Start, End float64
 	Text       string
+	// prefixEnd makes the search monotonic even when cues overlap.
+	prefixEnd float64
 }
 
 var htmlTags = regexp.MustCompile(`<[^>]*>`)
@@ -29,7 +32,7 @@ func timestamp(s string) float64 {
 	result := 0.0
 	for _, part := range parts {
 		value, err := strconv.ParseFloat(part, 64)
-		if err != nil {
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 			return -1
 		}
 		result = result*60 + value
@@ -42,7 +45,7 @@ func Parse(source, name string) []Cue {
 	appendCue := func(start, end float64, text string) {
 		text = clean(text)
 		if start >= 0 && end > start && text != "" {
-			cues = append(cues, Cue{start, end, text})
+			cues = append(cues, Cue{Start: start, End: end, Text: text})
 		}
 	}
 	if strings.HasSuffix(strings.ToLower(name), ".ass") || strings.HasSuffix(strings.ToLower(name), ".ssa") {
@@ -72,10 +75,27 @@ func Parse(source, name string) []Cue {
 		}
 	}
 	sort.SliceStable(cues, func(i, j int) bool { return cues[i].Start < cues[j].Start })
+	end := 0.0
+	for i := range cues {
+		end = max(end, cues[i].End)
+		cues[i].prefixEnd = end
+	}
 	return cues
 }
 func Active(cues []Cue, time float64) string {
-	index := sort.Search(len(cues), func(i int) bool { return cues[i].End > time })
+	if len(cues) == 0 {
+		return ""
+	}
+	// Callers can also provide cues directly, without Parse's search index.
+	if cues[len(cues)-1].prefixEnd == 0 {
+		for _, cue := range cues {
+			if cue.Start <= time && time < cue.End {
+				return cue.Text
+			}
+		}
+		return ""
+	}
+	index := sort.Search(len(cues), func(i int) bool { return cues[i].prefixEnd > time })
 	if index < len(cues) && cues[index].Start <= time && time < cues[index].End {
 		return cues[index].Text
 	}

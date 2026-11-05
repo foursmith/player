@@ -1,15 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
+	_ "github.com/egoist/mygo/locales/ja"
+	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
@@ -20,19 +22,26 @@ import (
 )
 
 type application struct {
+	ctx                                       context.Context
+	cancel                                    context.CancelFunc
+	stateWriter                               *stateWriter
 	subtitleCancel                            func()
 	trackingLog                               []string
 	recordingTracking                         bool
 	trackingSampleWidth, trackingSampleHeight int
-	exportPreview                             media.FrameSlot
+	exportTask                                *exportTask
 	exportPosition                            float64
 	exportFormat                              string
-	exportCancel                              func()
 	presentation                              [2]presentationState
 	controlsVisible                           bool
 	remoteState
 	folders                   []library.Folder
 	expandedFolders           map[string]bool
+	playlistTree              []library.Node
+	playlistRows              []playlistRow
+	playlistTreeValid         bool
+	playlistRowsValid         bool
+	playlistList              ui.ListState
 	timelineHandle            ui.Handle
 	controlsPanel             ui.Handle
 	projectionButton          ui.Handle
@@ -51,7 +60,6 @@ type application struct {
 	pipSurface                video.Surface
 	preferences               preferences
 	stored                    storedState
-	statePath                 string
 	entries                   []library.Entry
 	subtitlePaths             []string
 	pendingPaths              []string
@@ -114,11 +122,21 @@ func main() {
 	}
 	state := loadState(path, previousPath)
 
-	a := &application{preferences: state.Preferences, stored: state, statePath: path, view: projection.DefaultView(), playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume}
+	a := &application{preferences: state.Preferences, stored: state, view: projection.DefaultView(), playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume}
 	a.expandedFolders = map[string]bool{}
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
+	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.stateWriter = newStateWriter(path, func(err error) {
+		if w := a.windowRef.Load(); w != nil {
+			w.Update(func() {
+				if !a.shutdown {
+					a.notice = err.Error()
+				}
+			})
+		}
+	})
 	a.player = media.NewPlayer(func() {
 		if w := a.windowRef.Load(); w != nil {
 			w.Invalidate()
@@ -145,13 +163,18 @@ func main() {
 		}
 	})
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
-		a.shutdown = true
-		a.cancelSubtitle()
-		if a.exportCancel != nil {
-			a.exportCancel()
+		if a.shutdown {
+			return
 		}
-		a.exportPreview.Close()
 		a.persist()
+		a.shutdown = true
+		a.cancel()
+		a.cancelSubtitle()
+		a.cancelExport()
+		if err := a.stateWriter.Close(); err != nil {
+			log.Print(err)
+		}
+		a.windowRef.Store(nil)
 		a.player.Close()
 		if a.inference != nil {
 			a.inference.close()
@@ -174,6 +197,7 @@ func main() {
 			a.notice = err.Error()
 		}
 		a.window.OnReadyToShow(a.window.Show)
+		a.refreshVideoOnReveal(a.window, 0)
 		a.window.OnFileDrop(func(event *mygo.FileDropEvent) { a.importPaths(event.Paths) })
 		a.window.OnClose(func(*mygo.CloseEvent) {
 			a.persist()
@@ -199,33 +223,15 @@ func main() {
 	}
 }
 func (a *application) activity(delay time.Duration) { a.controlsUntil = time.Now().Add(delay) }
-func (a *application) persist() {
-	if a.selected >= 0 && a.selected < len(a.entries) && (a.entries[a.selected].SourceID == "" || a.entries[a.selected].SourceID == "local") {
-		state := a.player.Snapshot()
-		entry := a.entries[a.selected]
-		a.stored.History[library.Identity(entry)] = videoHistory{Projection: a.mode, Position: state.Position, UpdatedAt: time.Now().UnixMilli()}
-		a.stored.LastFile = entry.Path
-	}
-	if len(a.stored.History) > 10000 {
-		keys := make([]string, 0, len(a.stored.History))
-		for key := range a.stored.History {
-			keys = append(keys, key)
-		}
-		sort.Slice(keys, func(i, j int) bool { return a.stored.History[keys[i]].UpdatedAt < a.stored.History[keys[j]].UpdatedAt })
-		for _, key := range keys[:len(keys)-10000] {
-			delete(a.stored.History, key)
-		}
-	}
-	a.stored.Preferences = a.preferences
-	if err := saveState(a.statePath, a.stored); err != nil {
-		a.notice = err.Error()
-	}
-	a.lastSaved = time.Now()
-}
 func (a *application) importPaths(paths []string) {
+	window, ctx := a.window, a.ctx
 	go func() {
 		entries, subtitles, err := library.FromPaths(paths)
-		a.window.Update(func() {
+		preferred := library.FirstVideo(library.Tree(entries, nil))
+		window.Update(func() {
+			if ctx.Err() != nil {
+				return
+			}
 			if err != nil {
 				a.notice = err.Error()
 				return
@@ -237,53 +243,20 @@ func (a *application) importPaths(paths []string) {
 				}
 				return
 			}
-			seen := map[string]bool{}
-			for _, entry := range a.entries {
-				seen[entry.Path] = true
+			indices := make(map[string]int, len(a.entries)+len(entries))
+			for i, entry := range a.entries {
+				indices[entry.Path] = i
 			}
-			first := -1
-			preferred := library.FirstVideo(library.Tree(entries, nil))
-			if preferred >= 0 {
-				preferredPath := entries[preferred].Path
-				for _, entry := range entries {
-					if entry.Path == a.stored.LastFile {
-						preferredPath = entry.Path
-						break
-					}
+			for i, entry := range entries {
+				if entry.Path == a.stored.LastFile {
+					preferred = i
 				}
-				for i, entry := range entries {
-					if entry.Path == preferredPath {
-						preferred = i
-						break
-					}
-				}
-			}
-			for _, entry := range entries {
-				if !seen[entry.Path] {
-					if first < 0 {
-						first = len(a.entries)
-					}
+				if _, exists := indices[entry.Path]; !exists {
+					indices[entry.Path] = len(a.entries)
 					a.entries = append(a.entries, entry)
-					seen[entry.Path] = true
 				}
 			}
-			if first < 0 {
-				for i, entry := range a.entries {
-					if entry.Path == entries[0].Path {
-						first = i
-						break
-					}
-				}
-			}
-			tree := library.Tree(a.entries, a.folders)
-			if preferred >= 0 {
-				for i, entry := range a.entries {
-					if entry.Path == entries[preferred].Path {
-						first = i
-						break
-					}
-				}
-			}
+			a.invalidatePlaylist()
 			var expand func([]library.Node)
 			expand = func(nodes []library.Node) {
 				for _, node := range nodes {
@@ -293,9 +266,9 @@ func (a *application) importPaths(paths []string) {
 					}
 				}
 			}
-			expand(tree)
+			expand(a.playlistModel())
 			if !a.player.Snapshot().Playing {
-				a.openEntry(first)
+				a.openEntry(indices[entries[max(0, preferred)].Path])
 			}
 		})
 	}()
@@ -304,9 +277,7 @@ func (a *application) openEntry(index int) {
 	if index < 0 || index >= len(a.entries) {
 		return
 	}
-	if a.exportCancel != nil {
-		a.exportCancel()
-	}
+	a.cancelExport()
 	a.persist()
 	a.selected = index
 	a.view = projection.DefaultView()
@@ -327,9 +298,13 @@ func (a *application) openEntry(index int) {
 	a.readSubtitle(entry, "", true)
 }
 func (a *application) choose(directory bool) {
+	window, ctx := a.window, a.ctx
 	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.window, Multiple: !directory, Directory: directory})
-		a.window.Update(func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: window, Multiple: !directory, Directory: directory})
+		window.Update(func() {
+			if ctx.Err() != nil {
+				return
+			}
 			if err != nil {
 				a.notice = err.Error()
 			} else if len(paths) > 0 {
@@ -346,7 +321,7 @@ func (a *application) next(automatic bool) {
 		a.player.Seek(0)
 		return
 	}
-	order := library.PlaybackOrder(library.Tree(a.entries, a.folders), a.selected)
+	order := library.PlaybackOrder(a.playlistModel(), a.selected)
 	next := 0
 	for i, index := range order {
 		if index == a.selected {
@@ -400,7 +375,9 @@ func (a *application) togglePip() {
 		a.pipWindow.Close()
 		return
 	}
+	a.presentation[1] = presentationState{}
 	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: 360, Height: 640, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
+	a.refreshVideoOnReveal(a.pipWindow, 1)
 	var err error
 	a.pipSurface, err = video.New(a.pipWindow.NativeHandle())
 	if err != nil {
@@ -414,4 +391,14 @@ func (a *application) togglePip() {
 		a.pipWindow = nil
 		a.window.Invalidate()
 	})
+}
+
+func (a *application) refreshVideoOnReveal(window *mygo.Window, index int) {
+	refresh := func() {
+		a.presentation[index].frame = 0
+		window.Invalidate()
+	}
+	window.OnShow(refresh)
+	window.OnRestore(refresh)
+	window.OnFocus(refresh)
 }

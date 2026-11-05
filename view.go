@@ -7,7 +7,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
 	"github.com/foursmith/player/internal/subtitle"
@@ -153,8 +152,8 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 	}
 	stage.Draw(func(p *ui.Painter, r ui.Rect) {
 		frame := a.player.Frame()
-		if a.exporting {
-			if preview := a.exportPreview.Frame(); preview != nil {
+		if a.exportTask != nil {
+			if preview := a.exportTask.preview.Frame(); preview != nil {
 				frame.Close()
 				frame = preview
 			}
@@ -176,14 +175,18 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 				window = a.pipWindow
 			}
 			scale := video.PixelRatio(a.preferences.QualityID, mygo.Screen.DisplayMatching(window.Bounds()).ScaleFactor)
-			if err := surface.Present(frame, params, float64(r.W), float64(r.H), scale); err != nil {
-				message := err.Error()
-				if presentation.err != message {
-					presentation.err = message
-					a.window.Update(func() { a.notice = message })
+			if interaction || frame.ID() != presentation.frame || scale != presentation.scale || presentation.err != "" {
+				if err := surface.Present(frame, params, float64(r.W), float64(r.H), scale); err != nil {
+					message := err.Error()
+					if presentation.err != message {
+						presentation.err = message
+						a.window.Update(func() { a.notice = message })
+					}
+				} else {
+					presentation.err = ""
+					presentation.frame = frame.ID()
+					presentation.scale = scale
 				}
-			} else {
-				presentation.err = ""
 			}
 			presentation.next = next
 			presentation.params = params
@@ -637,9 +640,12 @@ func (a *application) playlist(c *ui.Context, state media.State) {
 			}
 			a.iconControl(c, "trash", a.t("playlist.clear"), iconStyle{32, 14, floatingIcon}, false, a.clearLocalPlaylist)
 		})
-		ui.Scroll(c).FillWidth().MaxHeight(max(40, a.height-top-306)).Padding(0, 8).Children(func() {
-			a.playlistNodes(c, library.Tree(a.entries, a.folders), 0)
-		})
+		rows := a.visiblePlaylist()
+		a.playlistList.Key = func(i int) any { return rows[i].node.ID }
+		a.playlistList.Label = func(i int) string { return rows[i].node.Name }
+		ui.List(c.Key("playlist-rows"), &a.playlistList, len(rows), func(i int) {
+			a.playlistRow(c, rows[i])
+		}).FillWidth().Height(min(float32(len(rows))*36, max(40, a.height-top-306))).Padding(0, 8)
 		ui.Box(c).Padding(8).Children(func() { a.pickers(c, min(272, a.width-40)) })
 	})
 }
@@ -648,6 +654,8 @@ type presentationState struct {
 	params        video.Parameters
 	width, height float32
 	generation    uint64
+	frame         uint64
+	scale         float64
 	next          float64
 	err           string
 }

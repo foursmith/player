@@ -314,27 +314,27 @@ func MatchSubtitle(video Entry, paths []string) string {
 	if video.Subtitle != "" {
 		return video.Subtitle
 	}
-	var candidates []string
+	best, score := "", -1.0
 	for _, p := range paths {
 		if filepath.Dir(p) == filepath.Dir(video.Path) {
-			candidates = append(candidates, p)
+			if candidate := SubtitleScore(video.Name, p); candidate > score {
+				best, score = p, candidate
+			}
 		}
 	}
-	if s, ok := MatchSubtitles([]string{video.Name}, candidates)[0]; ok {
-		return candidates[s]
-	}
-	return ""
+	return best
 }
-func Siblings(path string) ([]Entry, []string, error) {
+func SubtitleSiblings(path string) ([]string, error) {
 	files, err := os.ReadDir(filepath.Dir(path))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var paths []string
 	for _, f := range files {
-		if !f.IsDir() {
-			paths = append(paths, filepath.Join(filepath.Dir(path), f.Name()))
+		p := filepath.Join(filepath.Dir(path), f.Name())
+		if !f.IsDir() && IsSubtitle(p) && !IsAppleDouble(p) {
+			paths = append(paths, p)
 		}
 	}
-	return FromPaths(paths)
+	return paths, nil
 }

@@ -20,3 +20,24 @@ func TestWebParserLineBreaksAndWhitespaceBlocks(t *testing.T) {
 		t.Fatal(cues)
 	}
 }
+
+func TestOverlappingCuesAndSeeks(t *testing.T) {
+	cues := Parse("1\n00:00:01 --> 00:00:10\nlong\n\n2\n00:00:02 --> 00:00:03\nshort\n\n3\n00:00:04 --> 00:00:05\nlater", "movie.srt")
+	for _, at := range []float64{6, 2.5, 8, 1} {
+		if got := Active(cues, at); got != "long" {
+			t.Fatalf("overlapping cue disappeared at %v: %q", at, got)
+		}
+	}
+	if Active(cues, 10) != "" || Active(cues, 0) != "" {
+		t.Fatal("subtitle leaked beyond its range")
+	}
+	if got := Active([]Cue{{Start: 1, End: 10, Text: "direct"}, {Start: 2, End: 3, Text: "short"}}, 6); got != "direct" {
+		t.Fatal("direct cues require a parser index", got)
+	}
+}
+
+func TestNonFiniteTimestampsAreRejected(t *testing.T) {
+	if got := Parse("00:01 --> 00:Inf\ninvalid", "movie.vtt"); len(got) != 0 {
+		t.Fatal(got)
+	}
+}

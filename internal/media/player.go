@@ -16,8 +16,7 @@ type Player struct {
 	commands    chan command
 	done        chan struct{}
 	state       atomic.Pointer[State]
-	frameMu     sync.Mutex
-	frame       *Frame
+	frame       FrameSlot
 	changed     func()
 	closeOnce   sync.Once
 	seekMu      sync.Mutex
@@ -99,19 +98,13 @@ func (p *Player) SetVolume(volume float64) {
 func (p *Player) SetRate(rate float64) {
 	p.send(command{kind: "rate", value: math.Max(.25, math.Min(4, rate))})
 }
-func (p *Player) Frame() *Frame { p.frameMu.Lock(); defer p.frameMu.Unlock(); return p.frame.Clone() }
-func (p *Player) setFrame(f *Frame) {
-	p.frameMu.Lock()
-	old := p.frame
-	p.frame = f
-	p.frameMu.Unlock()
-	old.Close()
-}
+func (p *Player) Frame() *Frame { return p.frame.Frame() }
 func (p *Player) Close() {
 	p.closeOnce.Do(func() { p.cancelActive(); p.send(command{kind: "close"}); <-p.done })
 }
 func (p *Player) run() {
 	defer close(p.done)
+	defer p.frame.Close()
 	state := p.Snapshot()
 	var decoder *Decoder
 	var queue []*Frame
@@ -132,7 +125,7 @@ func (p *Player) run() {
 	}
 	clear := func() {
 		clearFrames()
-		p.setFrame(nil)
+		p.frame.Store(nil)
 		if decoder != nil {
 			decoder.Close()
 			decoder = nil
@@ -173,8 +166,19 @@ func (p *Player) run() {
 		return nil
 	}
 	ticker := time.NewTicker(4 * time.Millisecond)
+	ticker.Stop()
 	defer ticker.Stop()
+	var ticks <-chan time.Time
 	for {
+		// Paused and empty players wait for commands without polling.
+		active := decoder != nil && (state.Playing || first)
+		if active && ticks == nil {
+			ticker.Reset(4 * time.Millisecond)
+			ticks = ticker.C
+		} else if !active && ticks != nil {
+			ticker.Stop()
+			ticks = nil
+		}
 		select {
 		case cmd := <-p.commands:
 			switch cmd.kind {
@@ -182,6 +186,7 @@ func (p *Player) run() {
 				return
 			case "reset":
 				clear()
+				first, drained = false, false
 				state.Generation++
 				state.URL = ""
 				state.Metadata = Metadata{}
@@ -277,10 +282,7 @@ func (p *Player) run() {
 				}
 			}
 			publish()
-		case <-ticker.C:
-			if decoder == nil || (!state.Playing && !first) {
-				continue
-			}
+		case <-ticks:
 			// Feed audio independently of video decode-ahead: interleaved MP4
 			// chunks may put the next audio packet behind many video packets.
 			if err := decoder.bufferAudio(.25); err != nil {
@@ -347,7 +349,7 @@ func (p *Player) run() {
 			}
 			state.Position = frame.PTS()
 			state.Loading = false
-			p.setFrame(frame)
+			p.frame.Store(frame)
 			publish()
 		}
 	}

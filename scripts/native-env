@@ -8,12 +8,16 @@ if [[ -f .cache/tflite/libtensorflowlite_c.2.17.1.dylib ]]; then
 fi
 
 # Respect explicitly supplied toolchains (including Windows/Linux SDKs).
-# Homebrew's FFmpeg and SDL are keg-only on some installations.
-if [[ "$(uname -s)" == Darwin ]] && command -v brew >/dev/null; then
-    for formula in ffmpeg sdl3; do
-        prefix="$(brew --prefix "$formula")"
-        export CGO_CFLAGS="${CGO_CFLAGS:-} -I${prefix}/include"
-        export CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${prefix}/lib -Wl,-rpath,${prefix}/lib"
-    done
+if [[ "$(uname -s)" == Darwin ]]; then
+    # Go adds -lobjc for each Objective-C cgo package: golang/go#67799.
+    export CGO_LDFLAGS="${CGO_LDFLAGS:-} -Wl,-no_warn_duplicate_libraries"
+    if command -v brew >/dev/null; then
+        # These dylibs have absolute install names, so no runtime rpath is needed.
+        for formula in ffmpeg sdl3; do
+            prefix="$(brew --prefix "$formula")"
+            export CGO_CFLAGS="${CGO_CFLAGS:-} -I${prefix}/include"
+            export CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${prefix}/lib"
+        done
+    fi
 fi
 exec "$@"

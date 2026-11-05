@@ -65,7 +65,8 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	if out != nil {
 		return json.NewDecoder(io.LimitReader(r.Body, 16<<20)).Decode(out)
 	}
-	return nil
+	_, err = io.Copy(io.Discard, io.LimitReader(r.Body, 16<<20))
+	return err
 }
 func (c *Client) Connect(ctx context.Context) (bool, error) {
 	var status struct{ Name string }

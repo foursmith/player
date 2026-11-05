@@ -75,3 +75,24 @@ func TestRemoteMediaIdentityAndRootPlayback(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestSubtitleDiscoveryAndSingleMatch(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"Movie.mp4", "Movie.en.srt", "Movie.zh.srt", "other.vtt", "._Movie.srt", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "folder.srt"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	entry := Entry{Name: "Movie.mp4", Path: filepath.Join(dir, "Movie.mp4")}
+	paths, err := SubtitleSiblings(entry.Path)
+	if err != nil || len(paths) != 3 {
+		t.Fatalf("subtitle-only discovery: %v, %v", paths, err)
+	}
+	matched := MatchSubtitles([]string{entry.Name}, paths)[0]
+	if got := MatchSubtitle(entry, paths); got != paths[matched] {
+		t.Fatalf("single match changed greedy tie order: %q", got)
+	}
+}

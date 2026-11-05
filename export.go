@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/egoist/mygo"
 	"github.com/foursmith/player/internal/exporter"
@@ -16,8 +17,23 @@ import (
 	"time"
 )
 
+type exportTask struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
+	preview media.FrameSlot
+}
+
+func (a *application) cancelExport() {
+	if task := a.exportTask; task != nil {
+		task.cancel()
+		task.preview.Close()
+		a.exportTask = nil
+	}
+	a.exporting = false
+}
+
 func (a *application) exportLoop(format string) {
-	if a.exporting || a.loopA == nil || a.loopB == nil || a.selected < 0 {
+	if a.exporting || a.loopA == nil || a.loopB == nil || a.selected < 0 || a.selected >= len(a.entries) {
 		return
 	}
 	start, end := *a.loopA, *a.loopB
@@ -34,6 +50,12 @@ func (a *application) exportLoop(format string) {
 	wasPlaying := a.player.Snapshot().Playing
 	a.exporting = true
 	a.exportFormat = format
+	a.exportPosition = a.player.Snapshot().Position
+	a.exportMessage = ""
+	ctx, cancel := context.WithCancel(a.ctx)
+	task := &exportTask{ctx: ctx, cancel: cancel}
+	a.exportTask = task
+	window := a.window
 	width -= width % 2
 	height -= height % 2
 	fps := []int{24, 30, 60}[a.preferences.FrameRateID-1]
@@ -44,19 +66,9 @@ func (a *application) exportLoop(format string) {
 	}
 	stem := strings.TrimSuffix(entry.Name, filepath.Ext(entry.Name))
 	name := fmt.Sprintf("%s-AB-%s-%s.%s", stem, strings.ReplaceAll(fmt.Sprintf("%.1f", start), ".", "-"), strings.ReplaceAll(fmt.Sprintf("%.1f", end), ".", "-"), extension)
-	go func() {
-		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: a.window, DefaultPath: name})
-		if err != nil || path == "" {
-			a.window.Update(func() { a.exporting = false })
-			if err != nil {
-				a.window.Update(func() { a.notice = err.Error() })
-			}
-			return
-		}
-		a.window.Update(func() { a.exportProgress = 0; a.player.Pause() })
-		ctx, cancel := context.WithCancel(context.Background())
+	run := func(path string) {
 		defer cancel()
-		a.window.Update(func() { a.exportCancel = cancel })
+		defer task.preview.Close()
 		models := &faceModels{}
 		defer models.close()
 		tracker := &tracking.Tracker{}
@@ -101,10 +113,15 @@ func (a *application) exportLoop(format string) {
 			p.View = view
 			return p, nil
 		}
-		err = exporter.Export(ctx, exporter.Options{Source: entry.Path, Cookies: entry.Cookies, Encoder: encoderPath(), CSSWidth: cssWidth, Cues: cues, Project: project, Frame: func(frame *media.Frame, p video.Parameters, at float64) { a.exportPreview.Store(frame.Clone()) }, Destination: path, Format: format, Start: start, End: end, Width: width, Height: height, FPS: fps, BitRate: bitrate, Parameters: params, Progress: func(progress int) {
+		lastProgress := -1
+		err := exporter.Export(ctx, exporter.Options{Source: entry.Path, Cookies: entry.Cookies, Encoder: encoderPath(), CSSWidth: cssWidth, Cues: cues, Project: project, Frame: func(frame *media.Frame, p video.Parameters, at float64) { task.preview.Store(frame.Clone()) }, Destination: path, Format: format, Start: start, End: end, Width: width, Height: height, FPS: fps, BitRate: bitrate, Parameters: params, Progress: func(progress int) {
+			if progress == lastProgress {
+				return
+			}
+			lastProgress = progress
 			capturedView := view
-			a.window.Update(func() {
-				if a.selected < 0 || a.selected >= len(a.entries) || a.entries[a.selected].Path != entry.Path {
+			window.Update(func() {
+				if ctx.Err() != nil || a.exportTask != task {
 					return
 				}
 				a.exportProgress = progress
@@ -112,19 +129,39 @@ func (a *application) exportLoop(format string) {
 				a.view = capturedView
 			})
 		}})
-		a.window.Update(func() {
-			a.exporting = false
-			a.exportCancel = nil
-			a.exportPreview.Close()
+		window.Update(func() {
+			if a.shutdown || a.exportTask != task {
+				return
+			}
+			a.cancelExport()
 			if wasPlaying && a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].Path == entry.Path {
 				a.player.Play()
 			}
 			a.tracker.Reset()
-			if err != nil {
+			if err != nil && !errors.Is(err, context.Canceled) {
 				a.notice = err.Error()
-			} else {
+			} else if err == nil {
 				a.exportMessage = a.t("export.saved", filepath.Base(path))
 			}
+		})
+	}
+	go func() {
+		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: window, DefaultPath: name})
+		window.Update(func() {
+			if task.ctx.Err() != nil || a.exportTask != task {
+				return
+			}
+			if err != nil || path == "" {
+				a.cancelExport()
+				if err != nil {
+					a.notice = err.Error()
+				}
+				return
+			}
+			a.exportProgress = 0
+			a.player.Pause()
+			// Update is asynchronous: start only after this main-thread check.
+			go run(path)
 		})
 	}()
 }

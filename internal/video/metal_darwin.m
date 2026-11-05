@@ -35,6 +35,7 @@ fragment float4 fragmentMain(Vertex in [[stage_in]],constant Params &p [[buffer(
 @property(nonatomic,strong) id<MTLCommandQueue> queue;
 @property(nonatomic,strong) id<MTLRenderPipelineState> pipeline;
 @property(nonatomic,strong) CAMetalLayer *layer;
+@property(nonatomic,strong) id<MTLTexture> capture;
 @property(nonatomic,weak) NSView *view;
 @property(nonatomic) CVMetalTextureCacheRef cache;
 @end
@@ -89,6 +90,6 @@ int fsvr_metal_present(void *renderer,void *pixel_buffer,const unsigned char *rg
  @autoreleasepool {FsvrMetal *r=(__bridge FsvrMetal *)renderer;if(!r.layer)return -1;[CATransaction begin];[CATransaction setDisableActions:YES];r.layer.frame=r.view.bounds;r.layer.contentsScale=scale;r.layer.drawableSize=CGSizeMake(width*scale,height*scale);[CATransaction commit];id<CAMetalDrawable> drawable=[r.layer nextDrawable];if(!drawable)return 0;return render(r,pixel_buffer,rgba,sw,sh,params,drawable.texture,drawable,NULL);}
 }
 int fsvr_metal_capture(void *renderer,void *pixel_buffer,const unsigned char *rgba,int sw,int sh,FsvrParameters params,int width,int height,unsigned char *out){
- @autoreleasepool {FsvrMetal *r=(__bridge FsvrMetal *)renderer;MTLTextureDescriptor *desc=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:width height:height mipmapped:NO];desc.storageMode=MTLStorageModeShared;desc.usage=MTLTextureUsageRenderTarget;id<MTLTexture> target=[r.device newTextureWithDescriptor:desc];return render(r,pixel_buffer,rgba,sw,sh,params,target,nil,out);}
+ @autoreleasepool {FsvrMetal *r=(__bridge FsvrMetal *)renderer;if(!r.capture||r.capture.width!=width||r.capture.height!=height){MTLTextureDescriptor *desc=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:width height:height mipmapped:NO];desc.storageMode=MTLStorageModeShared;desc.usage=MTLTextureUsageRenderTarget;r.capture=[r.device newTextureWithDescriptor:desc];}if(!r.capture)return -4;return render(r,pixel_buffer,rgba,sw,sh,params,r.capture,nil,out);}
 }
 void fsvr_metal_close(void *renderer){@autoreleasepool {FsvrMetal *r=CFBridgingRelease(renderer);[r.layer removeFromSuperlayer];}}

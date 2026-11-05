@@ -7,7 +7,6 @@ import (
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/subtitle"
 	"github.com/foursmith/player/internal/video"
-	"image"
 	"io"
 	"os"
 	"os/exec"
@@ -23,7 +22,6 @@ type Options struct {
 	Width, Height, FPS, BitRate int
 	Parameters                  video.Parameters
 	Progress                    func(int)
-	Compose                     func(*image.RGBA, float64) error
 	Project                     func(*media.Frame, video.Parameters, float64) (video.Parameters, error)
 	Frame                       func(*media.Frame, video.Parameters, float64)
 	Cues                        []subtitle.Cue
@@ -141,11 +139,6 @@ func Export(ctx context.Context, o Options) error {
 		img, err := surface.Capture(current, params, o.Width, o.Height)
 		if err != nil {
 			return err
-		}
-		if o.Compose != nil {
-			if err = o.Compose(img, at); err != nil {
-				return err
-			}
 		}
 		if subtitle.NativeComposition {
 			if err = subtitle.Compose(img, subtitle.Active(o.Cues, at), o.CSSWidth); err != nil {

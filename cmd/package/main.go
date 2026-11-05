@@ -165,11 +165,6 @@ func run() error {
 				return err
 			}
 		}
-		if filepath.Dir(path) == lib {
-			if err = command("install_name_tool", "-id", "@loader_path/"+filepath.Base(path), path); err != nil {
-				return err
-			}
-		}
 	}
 	for _, path := range append(libraries, runtimeDest, encoded, main) {
 		if err = command("codesign", "--force", "--sign", "-", path); err != nil {

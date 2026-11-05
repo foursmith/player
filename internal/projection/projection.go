@@ -140,7 +140,7 @@ func Constrain(mode Mode, current, proposed View, aspect float64) View {
 	if !mode.Half() || proposedMargin >= 0 || currentMargin < 0 && proposedMargin > currentMargin {
 		return proposed
 	}
-	if Coverage(mode, current, aspect) < 0 {
+	if currentMargin < 0 {
 		return current
 	}
 	lo, hi := 0.0, 1.0

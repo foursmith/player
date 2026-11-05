@@ -28,7 +28,7 @@ func (a *application) loadSubtitle(path string) {
 // disk/network reads and parsing never block the native event/render thread.
 func (a *application) readSubtitle(entry library.Entry, path string, discover bool) {
 	a.cancelSubtitle()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(a.ctx)
 	a.subtitleCancel = cancel
 	paths := append([]string(nil), a.subtitlePaths...)
 	client, window := a.server, a.window
@@ -39,7 +39,7 @@ func (a *application) readSubtitle(entry library.Entry, path string, discover bo
 		if discover {
 			path = library.MatchSubtitle(entry, paths)
 			if path == "" && !remote(entry.Path) {
-				if _, siblings, err := library.Siblings(entry.Path); err == nil {
+				if siblings, err := library.SubtitleSiblings(entry.Path); err == nil {
 					path = library.MatchSubtitle(entry, siblings)
 				}
 			}

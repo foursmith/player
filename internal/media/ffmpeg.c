@@ -34,7 +34,6 @@ struct FsvrDecoder {
     AVFilterContext *source, *sink;
     SDL_AudioStream *output;
     double rate, audio_start, audio_samples, seek_target, start_time;
-    atomic_int interrupted;
 };
 struct FsvrFrame { AVFrame *image; double pts; uint64_t serial; };
 static atomic_uint_fast64_t frame_serial;
@@ -48,7 +47,7 @@ static int fail(int code, char *error, int size) {
     return code;
 }
 static int interrupt_cb(void *opaque) {
-    FsvrDecoder *d=opaque;return atomic_load(&d->interrupted)||(d->cancel&&atomic_load(&d->cancel->value));
+    FsvrDecoder *d=opaque;return d->cancel&&atomic_load(&d->cancel->value);
 }
 static enum AVPixelFormat hw_format(AVCodecContext *ctx, const enum AVPixelFormat *formats) {
     FsvrDecoder *d = ctx->opaque;
@@ -117,7 +116,6 @@ FsvrDecoder *fsvr_open(const char *url, const char *cookies, FsvrCancel *cancel,
     FsvrDecoder *d = av_mallocz(sizeof(*d));
     if (!d) { fail(AVERROR(ENOMEM), error, error_size); return NULL; }
     d->video_stream = d->audio_stream = -1;
-    atomic_init(&d->interrupted,0);
     d->cancel=cancel;
     d->rate = 1; d->audio_start = NAN;
     d->format = avformat_alloc_context();
@@ -154,7 +152,6 @@ failed:
 failed_no_error:
     fsvr_close(d); return NULL;
 }
-void fsvr_interrupt(FsvrDecoder *d) { if (d) atomic_store(&d->interrupted, 1); }
 static void clear_packets(FsvrDecoder *d) {
     while (d->video_head) {
         FsvrPacket *node = d->video_head;

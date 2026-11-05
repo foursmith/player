@@ -26,10 +26,6 @@ func run() error {
 		return err
 	}
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
-		if p := os.Getenv("FSVR_TFLITE_LIBRARY"); p != "" {
-			_, err := os.Stat(p)
-			return err
-		}
 		return fmt.Errorf("set FSVR_TFLITE_LIBRARY to a TensorFlow Lite C runtime for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	const digest = "c183be044a6ad0c6976a6ddd2fafb9d723b03c46c9f06870ab9a55201d71c2d0"

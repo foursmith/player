@@ -15,6 +15,8 @@ type remoteState struct {
 	serverStatus, serverError, password string
 	scanning                            bool
 	loadingFolders                      map[string]bool
+	serverContext                       context.Context
+	serverCancel                        context.CancelFunc
 }
 
 func (a *application) connectServer(endpoint string) {
@@ -23,12 +25,21 @@ func (a *application) connectServer(endpoint string) {
 		a.notice = err.Error()
 		return
 	}
+	if a.serverCancel != nil {
+		a.serverCancel()
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.serverContext, a.serverCancel = ctx, cancel
 	a.server = client
 	a.serverStatus = "connecting"
 	a.loadingFolders = map[string]bool{}
+	window := a.window
 	go func() {
-		authenticated, err := client.Connect(context.Background())
-		a.window.Update(func() {
+		authenticated, err := client.Connect(ctx)
+		window.Update(func() {
+			if ctx.Err() != nil || a.server != client {
+				return
+			}
 			if err != nil {
 				a.serverStatus = "error"
 				a.serverError = a.t("server.connectionFailed")
@@ -48,9 +59,13 @@ func (a *application) authenticate() {
 	a.password = ""
 	a.serverStatus = "connecting"
 	a.serverError = ""
+	client, ctx, window := a.server, a.serverContext, a.window
 	go func() {
-		err := a.server.Authenticate(context.Background(), password)
-		a.window.Update(func() {
+		err := client.Authenticate(ctx, password)
+		window.Update(func() {
+			if ctx.Err() != nil || a.server != client {
+				return
+			}
 			if err != nil {
 				a.serverStatus = "authentication-required"
 				a.serverError = a.t("server.invalidPassword")
@@ -61,16 +76,20 @@ func (a *application) authenticate() {
 	}()
 }
 func (a *application) loadServerLibrary(scan bool) {
+	client, ctx, window := a.server, a.serverContext, a.window
 	go func() {
 		var err error
 		if scan {
-			err = a.server.Scan(context.Background())
+			err = client.Scan(ctx)
 		}
 		var folders []library.Folder
 		if err == nil {
-			folders, err = a.server.Sources(context.Background())
+			folders, err = client.Sources(ctx)
 		}
-		a.window.Update(func() {
+		window.Update(func() {
+			if ctx.Err() != nil || a.server != client {
+				return
+			}
 			a.scanning = false
 			if err != nil {
 				a.serverStatus = "error"
@@ -91,6 +110,9 @@ func (a *application) loadServerLibrary(scan bool) {
 				}
 			} else {
 				a.folders = folders
+			}
+			a.invalidatePlaylist()
+			if !scan {
 				a.resumeServer()
 			}
 		})
@@ -139,6 +161,7 @@ func (a *application) resumeFolders(ids []string, mediaURL string) {
 	for _, f := range a.folders {
 		if f.ID == ids[0] {
 			a.expandedFolders[f.ID] = true
+			a.playlistRowsValid = false
 			a.loadRemoteFolder(f, func() { a.resumeFolders(ids[1:], mediaURL) })
 			return
 		}
@@ -155,9 +178,13 @@ func (a *application) loadRemoteFolder(folder library.Folder, done func()) {
 		return
 	}
 	a.loadingFolders[folder.ID] = true
+	client, ctx, window := a.server, a.serverContext, a.window
 	go func() {
-		entries, folders, err := a.server.Entries(context.Background(), folder)
-		a.window.Update(func() {
+		entries, folders, err := client.Entries(ctx, folder)
+		window.Update(func() {
+			if ctx.Err() != nil || a.server != client {
+				return
+			}
 			delete(a.loadingFolders, folder.ID)
 			if err != nil {
 				a.serverError = err.Error()
@@ -170,6 +197,7 @@ func (a *application) loadRemoteFolder(folder library.Folder, done func()) {
 			}
 			a.folders = append(a.folders, folders...)
 			a.entries = append(a.entries, entries...)
+			a.invalidatePlaylist()
 			if done != nil {
 				done()
 			}

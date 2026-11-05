@@ -155,7 +155,6 @@ func (d *Decoder) Pause(paused bool) {
 }
 func (d *Decoder) Volume(volume float64) { C.fsvr_volume(d.ptr, C.float(volume)) }
 func (d *Decoder) Clock() float64        { return float64(C.fsvr_audio_clock(d.ptr)) }
-func (d *Decoder) Interrupt()            { C.fsvr_interrupt(d.ptr) }
 func (d *Decoder) Close() {
 	if d.ptr != nil {
 		d.stop()

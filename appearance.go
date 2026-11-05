@@ -10,7 +10,8 @@ import (
 var accent = ui.Hex("#62cfd8")
 
 func white(alpha float32) ui.Color { return ui.RGBA(255, 255, 255, alpha) }
-func transparentTheme(c *ui.Context) {
+
+var playerTheme = func() *ui.Theme {
 	theme := *ui.DarkTheme()
 	theme.Background = ui.Transparent
 	theme.Surface = ui.RGBA(255, 255, 255, .05)
@@ -22,8 +23,10 @@ func transparentTheme(c *ui.Context) {
 	theme.Font = "Inter, system-ui"
 	theme.Radius = 12
 	theme.Spacing = 4
-	c.SetTheme(&theme)
-}
+	return &theme
+}()
+
+func transparentTheme(c *ui.Context) { c.SetTheme(playerTheme) }
 func glass(c *ui.Context, radius float32) ui.Element {
 	return ui.Box(c).Radius(radius).Background(ui.Transparent).Draw(func(p *ui.Painter, r ui.Rect) {
 		paintGlass(p, r, radius, false, false)
@@ -133,9 +136,7 @@ func (a *application) iconControl(c *ui.Context, name, label string, style iconS
 			p.Stroke(dot, white(.34), 3, 1)
 		}
 	})
-	if button.Clicked() {
-		action()
-	}
+	button.OnClick(action)
 	return button
 }
 func (a *application) pickers(c *ui.Context, width float32) {

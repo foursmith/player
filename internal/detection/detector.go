@@ -26,6 +26,9 @@ type Detector struct {
 	ptr           *C.FsvrInference
 	Width, Height int
 	anchors       []anchor
+	input         []float32
+	outputs       [][]float32
+	message       [1024]C.char
 }
 
 func New(library string, model []byte) (*Detector, error) {
@@ -45,6 +48,12 @@ func New(library string, model []byte) (*Detector, error) {
 		return nil, errors.New("invalid face model input")
 	}
 	d.anchors = anchors(d.Width)
+	d.input = make([]float32, d.Width*d.Height*3)
+	d.outputs = make([][]float32, int(C.fsvr_inference_output_count(ptr)))
+	for i := range d.outputs {
+		size := int(C.fsvr_inference_output(ptr, C.int(i), nil, 0))
+		d.outputs[i] = make([]float32, size)
+	}
 	return d, nil
 }
 func (d *Detector) Close() {
@@ -82,10 +91,7 @@ func (d *Detector) Detect(img *image.RGBA) ([]Face, error) {
 	if img == nil || img.Bounds().Empty() {
 		return nil, errors.New("empty detector image")
 	}
-	input := make([]float32, d.Width*d.Height*3)
-	for i := range input {
-		input[i] = -1
-	} // Zero-pixel letterbox before [-1,1] normalization.
+	input := d.input
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	scale := math.Min(float64(d.Width)/float64(w), float64(d.Height)/float64(h))
 	padX, padY := (float64(d.Width)-float64(w)*scale)/2, (float64(d.Height)-float64(h)*scale)/2
@@ -110,17 +116,15 @@ func (d *Detector) Detect(img *image.RGBA) ([]Face, error) {
 			}
 		}
 	}
-	var message [1024]C.char
-	if C.fsvr_inference_run(d.ptr, (*C.float)(unsafe.Pointer(&input[0])), C.size_t(len(input)), &message[0], C.int(len(message))) < 0 {
-		return nil, errors.New(C.GoString(&message[0]))
+	if C.fsvr_inference_run(d.ptr, (*C.float)(unsafe.Pointer(&input[0])), C.size_t(len(input)), &d.message[0], C.int(len(d.message))) < 0 {
+		return nil, errors.New(C.GoString(&d.message[0]))
 	}
 	var boxes, scores []float32
-	for i := 0; i < int(C.fsvr_inference_output_count(d.ptr)); i++ {
-		size := int(C.fsvr_inference_output(d.ptr, C.int(i), nil, 0))
+	for i, output := range d.outputs {
+		size := len(output)
 		if size == 0 {
 			continue
 		}
-		output := make([]float32, size)
 		if C.fsvr_inference_output(d.ptr, C.int(i), (*C.float)(unsafe.Pointer(&output[0])), C.size_t(size)) == 0 {
 			return nil, errors.New("cannot read face inference output")
 		}
@@ -170,8 +174,10 @@ func weightedNMS(faces []Face, threshold float64) []Face {
 	for len(faces) > 0 {
 		best := faces[0]
 		var rest []Face
-		var x, y, w, h, weight float64
-		for _, f := range faces {
+		x, y := best.X*best.Score, best.Y*best.Score
+		w, h, weight := best.Width*best.Score, best.Height*best.Score, best.Score
+		// Consume the seed even when its area is zero and its self-IoU is 0.
+		for _, f := range faces[1:] {
 			if intersectionOverUnion(best, f) > threshold {
 				x += f.X * f.Score
 				y += f.Y * f.Score
