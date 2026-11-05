@@ -9,11 +9,11 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/vr/app/internal/detection"
-	"github.com/foursmith/vr/app/internal/media"
-	"github.com/foursmith/vr/app/internal/projection"
-	"github.com/foursmith/vr/app/internal/tracking"
-	"github.com/foursmith/vr/app/internal/video"
+	"github.com/foursmith/player/internal/detection"
+	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/internal/tracking"
+	"github.com/foursmith/player/internal/video"
 )
 
 type inferenceJob struct {

@@ -1,4 +1,4 @@
-module github.com/foursmith/vr/app
+module github.com/foursmith/player
 
 go 1.27.3
 

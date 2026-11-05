@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/vr/app/internal/fsvr"
-	"github.com/foursmith/vr/app/internal/library"
+	"github.com/foursmith/player/internal/fsvr"
+	"github.com/foursmith/player/internal/library"
 	"net/url"
 	"strings"
 )

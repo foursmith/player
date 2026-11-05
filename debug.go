@@ -6,9 +6,9 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/vr/app/internal/media"
-	"github.com/foursmith/vr/app/internal/projection"
-	"github.com/foursmith/vr/app/internal/tracking"
+	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/internal/tracking"
 	"math"
 	"strings"
 )
@@ -42,7 +42,7 @@ func (a *application) toggleTrackingLog() {
 		return
 	}
 	a.recordingTracking = true
-	a.trackingLog = []string{`{"app":"Foursmith VR","runtime":"native","version":"0.2.6"}`}
+	a.trackingLog = []string{fmt.Sprintf(`{"app":%q,"runtime":"native","version":%q}`, appInfo.Name, appInfo.Version)}
 }
 func (a *application) debug(c *ui.Context, state media.State) {
 	width := min(float32(224), a.width*.38, a.height*.315)

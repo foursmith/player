@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/vr/app/internal/projection"
+	"github.com/foursmith/player/internal/projection"
 	"time"
 )
 

@@ -4,6 +4,8 @@
 
 控件材质与弹层几何按浏览器实际计算样式对照，见 [UI_PARITY.md](UI_PARITY.md)。
 
+应用名称为 `Foursmith Player`，标识为 `com.foursmith.player`，Go 模块路径为 `github.com/foursmith/player`。运行时名称与版本读取内嵌的 `mygo.json`，打包工具也从该配置读取名称。默认配置目录改名后，仅当新目录缺少 `state.json` 时读取旧应用的设置与历史；已有新配置或显式指定 `--data-dir` 时不回退。
+
 ## 所有权
 
 - `main.go`、各原生视图：主线程拥有交互、设置、目录、相机状态。
@@ -52,4 +54,4 @@ Windows/Linux 具有原生 UI、FFmpeg 解码与打包代码，但未在对应�
 
 本机 M4 对一段 8192×4096、59.94 fps、约 65.6 Mbps 的 HEVC Main 8-bit 文件，原来的逐帧等待硬解路径抽样约 49–52 fps；异步播放路径连续解码 180 帧约 177–181 fps，全部保留原生纹理。使用 CoreAudio 输出（静音）进行 35 秒无界面播放，视频推进 34.985 秒；按呈现时音频时钟与视频 PTS 的差统计，P95 为 15.65 ms，最大 19.24 ms。交替切换该文件和小视频首帧耗时 74–174 ms，定位到 600.123 秒耗时 217 ms，连续快速选择 17 次后最后一次恢复到历史位置耗时 244 ms。独立 SDL dummy 测量的偏差最大 16.7 ms。这些是媒体内核测量，未包含显示器扫描、实际扬声器延迟或完整 UI/人脸推理负载，不代表全部 8K60 场景验收通过。该文件约 0.47 秒的音频预读死锁也已修复。
 
-本次新产物放在 `build/candidate/darwin-arm64/Foursmith VR.app`，保留已打开的原生应用及其媒体会话。临时签名不是 Developer ID 签名或公证。
+本次新产物放在 `build/candidate/darwin-arm64/Foursmith Player.app`，保留已打开的原生应用及其媒体会话。临时签名不是 Developer ID 签名或公证。

@@ -3,9 +3,9 @@ package exporter
 import (
 	"context"
 	"encoding/json"
-	"github.com/foursmith/vr/app/internal/projection"
-	"github.com/foursmith/vr/app/internal/subtitle"
-	"github.com/foursmith/vr/app/internal/video"
+	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/internal/subtitle"
+	"github.com/foursmith/player/internal/video"
 	"os"
 	"os/exec"
 	"path/filepath"

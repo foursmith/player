@@ -3,8 +3,8 @@ package video
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/shader"
-	"github.com/foursmith/vr/app/internal/media"
-	"github.com/foursmith/vr/app/internal/projection"
+	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/projection"
 	"image"
 )
 

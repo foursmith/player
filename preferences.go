@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/foursmith/vr/app/internal/projection"
+	"github.com/foursmith/player/internal/projection"
 	"os"
 	"path/filepath"
 )
@@ -35,9 +35,13 @@ type storedState struct {
 func defaultPreferences() preferences {
 	return preferences{Volume: 1, PlaybackRate: 1, QualityID: 2, FrameRateID: 3, SplitCount: 2, PreferredSplitAspect: "1:1", FaceAutoCenter: true, ResumeAfterMovement: true, SubtitlesEnabled: true, RepeatMode: "file", Locale: "en"}
 }
-func loadState(path string) storedState {
+func loadState(path, previousPath string) storedState {
 	state := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{}}
-	if data, err := os.ReadFile(path); err == nil {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) && previousPath != "" {
+		data, err = os.ReadFile(previousPath)
+	}
+	if err == nil {
 		candidate := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{}}
 		if json.Unmarshal(data, &candidate) == nil {
 			state = candidate

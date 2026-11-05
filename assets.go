@@ -13,11 +13,21 @@ import (
 //go:embed assets
 var assets embed.FS
 
+//go:embed mygo.json
+var appManifest []byte
+
+var appInfo struct {
+	Name, Version string
+}
+
 var icons = map[string]*ui.SVG{}
 var dictionaries = map[string]map[string]string{}
 var logo *ui.Bitmap
 
 func loadAssets() error {
+	if err := json.Unmarshal(appManifest, &appInfo); err != nil {
+		return fmt.Errorf("application manifest: %w", err)
+	}
 	files, err := fs.ReadDir(assets, "assets/icons")
 	if err != nil {
 		return err
@@ -42,6 +52,7 @@ func loadAssets() error {
 		if err = json.Unmarshal(b, &dictionary); err != nil {
 			return err
 		}
+		dictionary["common.appName"] = appInfo.Name
 		dictionaries[locale] = dictionary
 	}
 	b, err := assets.ReadFile("assets/logo.png")

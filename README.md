@@ -1,4 +1,4 @@
-# Foursmith VR 原生版
+# Foursmith Player 原生版
 
 Go + MyGo v0.7.4 原生 UI，FFmpeg 解封装、解码及导出，SDL3 音频输出。原生程序不嵌入浏览器，也不启动 Bun 服务。迁移工作区中的 `../web/` 保存原实现，作为界面、交互及算法对照；构建所需资源已收录本仓库，无需该目录。
 
@@ -11,7 +11,7 @@ just test
 just build
 ```
 
-以上命令在本仓库根目录执行。构建产物位于 `build/darwin-arm64/Foursmith VR.app`。`just build` 收集本机 FFmpeg/SDL 的动态依赖和编码器，加入 LiteRT C 运行库，再重新执行本机临时签名。正式分发仍需开发者证书签名和公证。
+以上命令在本仓库根目录执行。构建产物位于 `build/darwin-arm64/Foursmith Player.app`。`just build` 收集本机 FFmpeg/SDL 的动态依赖和编码器，加入 LiteRT C 运行库，再重新执行本机临时签名。正式分发仍需开发者证书签名和公证。
 
 可选的 `just assets` 用于从迁移工作区的 `../web/` 重新同步资源，需要 Bun 和该 Web 项目的依赖；日常开发与构建不需要执行。
 
@@ -23,6 +23,6 @@ Windows/Linux 需要本平台的 FFmpeg、SDL3 开发 SDK 与 LiteRT C 库，设
 
 `just doctor` 检查媒体依赖和 GPU。`FSVR_TFLITE_LIBRARY` 可指定兼容的 TensorFlow Lite C 运行库。开发时需要 FFmpeg 与 SDL3 头文件和动态库；macOS 自动读取 Homebrew 路径，其他平台使用 `CGO_CFLAGS` / `CGO_LDFLAGS` 指定工具链。
 
-设置和播放历史保存在系统用户数据目录中的 `state.json`。`--data-dir` 可隔离开发配置；文件或文件夹可直接作为启动参数。远程 FSVR 连接使用 `--server http://host:port`，密码和会话只保存在当前进程内。
+设置和播放历史保存在系统用户数据目录中的 `Foursmith Player/state.json`。首次使用新名称且尚无配置时会读取旧应用的设置和播放历史，随后保存在新目录。`--data-dir` 可隔离开发配置，不读取旧应用数据；文件或文件夹可直接作为启动参数。远程 FSVR 连接使用 `--server http://host:port`，密码和会话只保存在当前进程内。
 
 迁移范围及验收记录见 [doc/MIGRATION.md](doc/MIGRATION.md)，人像居中算法见 [doc/PORTRAIT_CENTERING.md](doc/PORTRAIT_CENTERING.md)。

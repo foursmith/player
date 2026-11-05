@@ -54,7 +54,7 @@ func (a *application) empty(c *ui.Context) {
 					})
 					if button.Clicked() {
 						if c.Preferences().ReduceMotion {
-							go mygo.Shell.OpenExternal("https://github.com/foursmith/vr")
+							go mygo.Shell.OpenExternal("https://github.com/foursmith/player")
 						} else if a.githubStarted.IsZero() {
 							a.githubStarted = c.Now()
 						}
@@ -117,7 +117,7 @@ func (a *application) githubBurst(c *ui.Context, heroW, heroH float32) {
 	elapsed := c.Now().Sub(a.githubStarted)
 	if elapsed >= 760*time.Millisecond {
 		a.githubStarted = time.Time{}
-		go mygo.Shell.OpenExternal("https://github.com/foursmith/vr")
+		go mygo.Shell.OpenExternal("https://github.com/foursmith/player")
 		return
 	}
 	t := elapsed.Seconds() / .72

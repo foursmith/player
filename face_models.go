@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/foursmith/vr/app/internal/detection"
+	"github.com/foursmith/player/internal/detection"
 	"image"
 )
 

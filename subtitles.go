@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/foursmith/vr/app/internal/library"
-	"github.com/foursmith/vr/app/internal/subtitle"
+	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/subtitle"
 )
 
 func (a *application) cancelSubtitle() {

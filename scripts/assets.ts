@@ -2,6 +2,8 @@ import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises"
 import { resolve, dirname } from "node:path"
 
 const root = resolve(import.meta.dir, "..")
+const { name: appName } = JSON.parse(await readFile(resolve(root, "mygo.json"), "utf8"))
+const brand = (text: string) => text.replaceAll("Foursmith VR", appName).replaceAll("foursmith/vr", "foursmith/player")
 const web = resolve(root, "../web")
 const source = await readFile(resolve(web, "src/i18n.ts"), "utf8")
 const dictionaries = source.slice(0, source.indexOf("const dictionaries:")).replace(/^import .*\n/gm, "")
@@ -20,9 +22,13 @@ await mkdir(resolve(root, "assets/icons"), { recursive: true })
 await mkdir(resolve(root, "assets/locales"), { recursive: true })
 await mkdir(resolve(root, "assets/models"), { recursive: true })
 for (const [locale, dictionary] of Object.entries(module.default)) {
-  await writeFile(resolve(root, `assets/locales/${locale}.json`), `${JSON.stringify(flatten(dictionary), null, 2)}\n`)
+  const localized = Object.fromEntries(Object.entries(flatten(dictionary)).map(([key, value]) => [key, brand(value)]))
+  localized["common.appName"] = appName
+  delete localized["settings.viewStars"]
+  delete localized["settings.githubStars"]
+  await writeFile(resolve(root, `assets/locales/${locale}.json`), `${JSON.stringify(localized, null, 2)}\n`)
 }
-await copyFile(resolve(web, "public/icon.svg"), resolve(root, "assets/icon.svg"))
+await writeFile(resolve(root, "assets/icon.svg"), brand(await readFile(resolve(web, "public/icon.svg"), "utf8")))
 await copyFile(resolve(web, "public/pwa-512x512.png"), resolve(root, "assets/icon.png"))
 const logo = await readFile(resolve(web, "src/components/ui/FsvrLogo.tsx"), "utf8")
 await writeFile(resolve(root, "assets/logo.svg"), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">${logo.slice(logo.indexOf("<defs>"), logo.indexOf("</svg>"))}</svg>\n`)

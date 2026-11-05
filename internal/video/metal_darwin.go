@@ -9,7 +9,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"github.com/foursmith/vr/app/internal/media"
+	"github.com/foursmith/player/internal/media"
 	"image"
 	"sync"
 	"unsafe"

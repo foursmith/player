@@ -7,11 +7,11 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/vr/app/internal/library"
-	"github.com/foursmith/vr/app/internal/media"
-	"github.com/foursmith/vr/app/internal/projection"
-	"github.com/foursmith/vr/app/internal/subtitle"
-	"github.com/foursmith/vr/app/internal/video"
+	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/internal/subtitle"
+	"github.com/foursmith/player/internal/video"
 )
 
 func (a *application) render(c *ui.Context) {

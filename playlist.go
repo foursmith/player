@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/vr/app/internal/library"
+	"github.com/foursmith/player/internal/library"
 )
 
 func (a *application) playlistNodes(c *ui.Context, nodes []library.Node, depth int) {

@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/foursmith/vr/app/internal/media"
-	"github.com/foursmith/vr/app/internal/video"
+	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/video"
 	"log"
 	"os"
 	"os/exec"

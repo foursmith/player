@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/foursmith/vr/app/internal/library"
+	"github.com/foursmith/player/internal/library"
 	"io"
 	"net/http"
 	"net/http/cookiejar"

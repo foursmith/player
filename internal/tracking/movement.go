@@ -1,7 +1,7 @@
 package tracking
 
 import (
-	"github.com/foursmith/vr/app/internal/projection"
+	"github.com/foursmith/player/internal/projection"
 	"math"
 )
 

@@ -1,6 +1,6 @@
 {
-  "name": "Foursmith VR",
-  "identifier": "com.foursmith.vr",
+  "name": "Foursmith Player",
+  "identifier": "com.foursmith.player",
   "version": "0.2.6",
   "out": "build",
   "icon": "assets/icon.png",

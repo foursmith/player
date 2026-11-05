@@ -11,16 +11,15 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/vr/app/internal/library"
-	"github.com/foursmith/vr/app/internal/media"
-	"github.com/foursmith/vr/app/internal/projection"
-	"github.com/foursmith/vr/app/internal/subtitle"
-	"github.com/foursmith/vr/app/internal/tracking"
-	"github.com/foursmith/vr/app/internal/video"
+	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/internal/subtitle"
+	"github.com/foursmith/player/internal/tracking"
+	"github.com/foursmith/player/internal/video"
 )
 
 type application struct {
-	aboutState
 	subtitleCancel                            func()
 	githubStarted                             time.Time
 	trackingLog                               []string
@@ -96,7 +95,7 @@ func main() {
 	if err := loadAssets(); err != nil {
 		log.Fatal(err)
 	}
-	mygo.App.SetName("Foursmith VR")
+	mygo.App.SetName(appInfo.Name)
 	mygo.App.SetLanguages("en", "zh-CN", "ja")
 	if *dataDir != "" {
 		mygo.App.SetPath(mygo.PathUserData, *dataDir)
@@ -106,7 +105,15 @@ func main() {
 		log.Fatal(err)
 	}
 	path := filepath.Join(userData, "state.json")
-	state := loadState(path)
+	previousPath := ""
+	if *dataDir == "" {
+		appData, err := mygo.App.Path(mygo.PathAppData)
+		if err != nil {
+			log.Fatal(err)
+		}
+		previousPath = filepath.Join(appData, "Foursmith VR", "state.json")
+	}
+	state := loadState(path, previousPath)
 
 	a := &application{preferences: state.Preferences, stored: state, statePath: path, view: projection.DefaultView(), playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume}
 	a.expandedFolders = map[string]bool{}
@@ -159,7 +166,7 @@ func main() {
 	})
 	mygo.App.OnWindowAllClosed(mygo.App.Quit)
 	mygo.App.WhenReady(func() {
-		a.window = mygo.NewWindow(mygo.WindowOptions{Title: "Foursmith VR", Width: 1200, Height: 800, MinWidth: 360, MinHeight: 320, UseContentSize: true, TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: "#000000", Hidden: true, Content: ui.View(a.render)})
+		a.window = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: 1200, Height: 800, MinWidth: 360, MinHeight: 320, UseContentSize: true, TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: "#000000", Hidden: true, Content: ui.View(a.render)})
 		a.windowRef.Store(a.window)
 		a.inference = newInferenceWorker(a)
 		var err error
@@ -394,7 +401,7 @@ func (a *application) togglePip() {
 		a.pipWindow.Close()
 		return
 	}
-	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: "Foursmith VR", Width: 360, Height: 640, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
+	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: 360, Height: 640, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
 	var err error
 	a.pipSurface, err = video.New(a.pipWindow.NativeHandle())
 	if err != nil {

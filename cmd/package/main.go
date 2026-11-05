@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -64,7 +65,18 @@ func run() error {
 	if runtime.GOOS != "darwin" {
 		return portable()
 	}
-	bundle := filepath.Join(*output, "darwin-"+runtime.GOARCH, "Foursmith VR.app")
+	manifest, err := os.ReadFile("mygo.json")
+	if err != nil {
+		return err
+	}
+	var config struct{ Name string }
+	if err := json.Unmarshal(manifest, &config); err != nil {
+		return err
+	}
+	if config.Name == "" {
+		return fmt.Errorf("mygo.json is missing the application name")
+	}
+	bundle := filepath.Join(*output, "darwin-"+runtime.GOARCH, config.Name+".app")
 	resource := filepath.Join(bundle, "Contents", "Resources")
 	lib := filepath.Join(resource, "lib")
 	bin := filepath.Join(resource, "bin")
@@ -73,7 +85,7 @@ func run() error {
 			return err
 		}
 	}
-	main := filepath.Join(bundle, "Contents", "MacOS", "Foursmith VR")
+	main := filepath.Join(bundle, "Contents", "MacOS", config.Name)
 	if _, err := os.Stat(main); err != nil {
 		files, e := os.ReadDir(filepath.Dir(main))
 		if e != nil {
