@@ -23,7 +23,7 @@ func Fragment(dst vec4,pos vec2)vec4{
 var oceanStarted = time.Now()
 
 func (a *application) empty(c *ui.Context) {
-	t := time.Since(oceanStarted).Seconds()
+	t := c.Now().Sub(oceanStarted).Seconds()
 	if c.Preferences().ReduceMotion {
 		t = 0
 	}
@@ -60,7 +60,8 @@ func (a *application) empty(c *ui.Context) {
 		})
 	})
 	if !c.Preferences().ReduceMotion {
-		c.After(time.Second / 12)
+		// Keep the foreground motion in step with the display, rather than a timer.
+		c.AnimationFrame()
 	}
 }
 
