@@ -17,7 +17,7 @@ type Player struct {
 	commands    chan command
 	done        chan struct{}
 	state       atomic.Pointer[State]
-	frame       FrameSlot
+	frame       frameSlot
 	changed     func()
 	closeOnce   sync.Once
 	seekMu      sync.Mutex
@@ -101,13 +101,12 @@ func (p *Player) SetVolume(volume float64) {
 func (p *Player) SetRate(rate float64) {
 	p.send(command{kind: "rate", value: math.Max(.25, math.Min(4, rate))})
 }
-func (p *Player) Frame() *Frame { return p.frame.Frame() }
+func (p *Player) Frame() *Frame { return p.frame.load() }
 func (p *Player) Close() {
 	p.closeOnce.Do(func() { p.cancelActive(); p.send(command{kind: "close"}); <-p.done })
 }
 func (p *Player) run() {
 	defer close(p.done)
-	defer p.frame.Close()
 	state := p.Snapshot()
 	var decoder *Decoder
 	var queue []*Frame
@@ -138,7 +137,7 @@ func (p *Player) run() {
 	}
 	clear := func() {
 		clearFrames()
-		p.frame.Store(nil)
+		p.frame.store(nil)
 		if decoder != nil {
 			decoder.Close()
 			decoder = nil
@@ -242,7 +241,7 @@ func (p *Player) run() {
 				}
 				publish()
 				var err error
-				decoder, err = OpenContext(cmd.ctx, cmd.source, true)
+				decoder, err = Open(cmd.ctx, cmd.source, true)
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
 						continue
@@ -382,7 +381,7 @@ func (p *Player) run() {
 			}
 			state.Position = frame.PTS()
 			state.Loading = false
-			p.frame.Store(frame)
+			p.frame.store(frame)
 			publish()
 		}
 	}

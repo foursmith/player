@@ -45,8 +45,6 @@ func init() {
 		{"resetView", "shortcuts.resetView", shiftAlias(ui.KeyR), (*application).resetView},
 		{"zoomOut", "shortcuts.zoomOut", []keyChord{{Key: ui.KeyBracketLeft}, {Key: ui.KeyMinus}}, zoom(1 / 1.1)},
 		{"zoomIn", "shortcuts.zoomIn", []keyChord{{Key: ui.KeyBracketRight}, {Key: ui.KeyEqual}}, zoom(1.1)},
-		{"previousQuality", "shortcuts.previousQuality", keys(ui.KeyComma), func(a *application) { a.preferences.QualityID = max(0, a.preferences.QualityID-1); a.persist() }},
-		{"nextQuality", "shortcuts.nextQuality", keys(ui.KeyPeriod), func(a *application) { a.preferences.QualityID = min(3, a.preferences.QualityID+1); a.persist() }},
 	}
 	labels := []string{"sbs180Eqr", "sbs180Fe", "mono360Eqr", "mono180Eqr", "mono180Fe", "tb360Eqr", "flat2d"}
 	for i, id := range projection.IDs {

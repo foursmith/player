@@ -13,8 +13,6 @@ import (
 type preferences struct {
 	Volume                 float64             `json:"volume"`
 	PlaybackRate           float64             `json:"playbackRate"`
-	QualityID              int                 `json:"qualityId"`
-	FrameRateID            int                 `json:"renderFrameRateId"`
 	SplitCount             int                 `json:"splitCount"`
 	PreferredSplitAspect   string              `json:"preferredSplitAspect"`
 	FaceAutoCenter         bool                `json:"faceAutoCenter"`
@@ -62,7 +60,7 @@ type storedState struct {
 
 func defaultPreferences() preferences {
 	return preferences{
-		Volume: 1, PlaybackRate: 1, QualityID: 2, FrameRateID: 3,
+		Volume: 1, PlaybackRate: 1,
 		SplitCount: 2, PreferredSplitAspect: "1:1", FaceAutoCenter: true, ResumeAfterMovement: true,
 		VRDragSensitivity: 1, CenteringResumeDelay: 1, ProjectionAI: true,
 		ResumePlaybackPosition: true, RecordPlaybackHistory: true, RecentFilesEnabled: true,
@@ -81,8 +79,6 @@ func loadState(path string) storedState {
 	p := &state.Preferences
 	p.Volume = projection.Clamp(p.Volume, 0, 1)
 	p.PlaybackRate = projection.Clamp(p.PlaybackRate, .25, 4)
-	p.QualityID = max(0, min(3, p.QualityID))
-	p.FrameRateID = max(1, min(3, p.FrameRateID))
 	p.SplitCount = max(1, min(3, p.SplitCount))
 	p.VRDragSensitivity = projection.Clamp(p.VRDragSensitivity, .25, 3)
 	p.CenteringResumeDelay = projection.Clamp(p.CenteringResumeDelay, .25, 5)

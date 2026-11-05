@@ -13,7 +13,6 @@ type Parameters struct {
 	FlatView   FlatView
 	SplitCount int
 	Portrait   bool
-	Quality    int
 	FOV        float64
 }
 type Surface interface {

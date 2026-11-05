@@ -80,7 +80,7 @@ func TestDecoderReadsSpatialMetadata(t *testing.T) {
 		want   string
 		half   bool
 	}{{0, "mono", false}, {1, "tb", false}, {2, "sbs", false}, {0, "mono", true}, {2, "sbs", true}} {
-		d, err := Open(Source{URL: spatialFixture(t, tc.stereo, tc.half)}, false)
+		d, err := Open(context.Background(), Source{URL: spatialFixture(t, tc.stereo, tc.half)}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +136,7 @@ func TestClosingPlayerInterruptsBlockedNetworkOpen(t *testing.T) {
 	}
 }
 func TestDecoderFramesAndAccurateSeek(t *testing.T) {
-	d, err := Open(Source{URL: fixture(t, false)}, false)
+	d, err := Open(context.Background(), Source{URL: fixture(t, false)}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestPlayerContinuesAcrossChunkedAudio(t *testing.T) {
 
 func TestAudioPrefetchPreservesVideoAndClearsOnSeek(t *testing.T) {
 	t.Setenv("SDL_AUDIO_DRIVER", "dummy")
-	d, err := Open(Source{URL: fixture(t, true)}, true)
+	d, err := Open(context.Background(), Source{URL: fixture(t, true)}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestAudioPrefetchPreservesVideoAndClearsOnSeek(t *testing.T) {
 
 func TestPlaybackDecoderReordersConvertsAndSeeks(t *testing.T) {
 	t.Setenv("SDL_AUDIO_DRIVER", "dummy")
-	d, err := Open(Source{URL: fixture(t, true)}, true)
+	d, err := Open(context.Background(), Source{URL: fixture(t, true)}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +427,7 @@ func TestCancellationStopsBufferedMedia(t *testing.T) {
 	t.Setenv("SDL_AUDIO_DRIVER", "dummy")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	d, err := OpenContext(ctx, Source{URL: fixture(t, true)}, true)
+	d, err := Open(ctx, Source{URL: fixture(t, true)}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

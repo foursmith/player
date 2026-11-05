@@ -49,19 +49,19 @@ func TestShortcutRecorderConflictsCancelAndReset(t *testing.T) {
 
 func TestCustomShortcutRunsActionAndReplacesDefault(t *testing.T) {
 	a := modeTestApplication(t)
-	a.preferences.QualityID = 1
-	a.preferences.Shortcuts = map[string]keyChord{"nextQuality": {Key: ui.KeyP}}
+	a.preferences.Volume = .5
+	a.preferences.Shortcuts = map[string]keyChord{"volumeUp": {Key: ui.KeyP}}
 	view := ui.NewTester(func(c *ui.Context) {
 		transparentTheme(c)
 		ui.Box(c).Fill().Focusable().AutoFocus()
 		a.playbackKeyboard(c)
 	}, 320, 200)
-	view.Key(0, ui.KeyPeriod)
-	if a.preferences.QualityID != 1 {
+	view.Key(0, ui.KeyUp)
+	if a.preferences.Volume != .5 {
 		t.Fatal("old key still ran a remapped action")
 	}
 	view.Key(0, ui.KeyP)
-	if a.preferences.QualityID != 2 {
+	if a.preferences.Volume != .55 {
 		t.Fatal("custom key did not run its playback action")
 	}
 }

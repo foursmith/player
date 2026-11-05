@@ -25,22 +25,19 @@ func (a *application) render(c *ui.Context) {
 	}
 	state := a.player.Snapshot()
 	a.resolveVideoMode(state)
-	if a.exporting {
-		state.Position = a.exportPosition
-	}
 	if state.Generation != a.lastGeneration {
 		a.lastGeneration = state.Generation
 		a.tracker.Reset()
 		a.endedGeneration = 0
 	}
-	if state.Ended && !a.exporting && a.endedGeneration != state.Generation {
+	if state.Ended && a.endedGeneration != state.Generation {
 		if a.selected >= 0 && a.selected < len(a.entries) {
 			a.recordPlaybackHistory(a.entries[a.selected], state)
 		}
 		a.endedGeneration = state.Generation
 		a.next(true)
 	}
-	if a.loopA != nil && a.loopB != nil && state.Position >= *a.loopB && !a.exporting {
+	if a.loopA != nil && a.loopB != nil && state.Position >= *a.loopB {
 		a.player.Seek(*a.loopA)
 	}
 	if !a.singleClickAt.IsZero() {
@@ -70,6 +67,7 @@ func (a *application) render(c *ui.Context) {
 		if a.pipWindow == nil {
 			a.renderStage(c, false)
 		} else {
+			a.pipWindow.Invalidate()
 			ui.Box(c).Fill().Background(ui.RGB(0, 0, 0)).Center().Children(func() { ui.Text(c, a.t("controls.playingInPip")).TextColor(white(.5)) })
 		}
 		if state.URL == "" {
@@ -144,9 +142,6 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 	}
 	width, height := c.Size()
 	state := a.player.Snapshot()
-	if a.exporting {
-		state.Position = a.exportPosition
-	}
 	stage := ui.Box(c.Key("stage")).Fill().Focusable().HandleInput(func(event ui.InputEvent) bool { return a.stageInput(event, float64(width/height), pip) })
 	if !pip && !a.controlsVisible {
 		stage.Cursor(ui.CursorNone)
@@ -158,18 +153,8 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 	presentation := &a.presentation[index]
 	params := a.params(pip)
 	interaction := params != presentation.params || width != presentation.width || height != presentation.height || state.Generation != presentation.generation
-	render, next := video.ScheduleFrame(trackingNow(), float64([]int{24, 30, 60}[a.preferences.FrameRateID-1]), presentation.next, interaction)
-	if state.Playing && !render {
-		c.After(time.Duration(max(0, next-trackingNow()) * float64(time.Millisecond)))
-	}
 	stage.Draw(func(p *ui.Painter, r ui.Rect) {
 		frame := a.player.Frame()
-		if a.exportTask != nil {
-			if preview := a.exportTask.preview.Frame(); preview != nil {
-				frame.Close()
-				frame = preview
-			}
-		}
 		if frame == nil {
 			return
 		}
@@ -181,31 +166,28 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 		if surface == nil {
 			return
 		}
-		if render {
-			window := a.window
-			if pip {
-				window = a.pipWindow
-			}
-			scale := video.PixelRatio(a.preferences.QualityID, mygo.Screen.DisplayMatching(window.Bounds()).ScaleFactor)
-			if interaction || frame.ID() != presentation.frame || scale != presentation.scale || presentation.err != "" {
-				if err := surface.Present(frame, params, float64(r.W), float64(r.H), scale); err != nil {
-					message := err.Error()
-					if presentation.err != message {
-						presentation.err = message
-						a.window.Update(func() { a.notice = message })
-					}
-				} else {
-					presentation.err = ""
-					presentation.frame = frame.ID()
-					presentation.scale = scale
-				}
-			}
-			presentation.next = next
-			presentation.params = params
-			presentation.width = width
-			presentation.height = height
-			presentation.generation = state.Generation
+		window := a.window
+		if pip {
+			window = a.pipWindow
 		}
+		scale := mygo.Screen.DisplayMatching(window.Bounds()).ScaleFactor
+		if interaction || frame.ID() != presentation.frame || scale != presentation.scale || presentation.err != "" {
+			if err := surface.Present(frame, params, float64(r.W), float64(r.H), scale); err != nil {
+				message := err.Error()
+				if presentation.err != message {
+					presentation.err = message
+					a.window.Update(func() { a.notice = message })
+				}
+			} else {
+				presentation.err = ""
+				presentation.frame = frame.ID()
+				presentation.scale = scale
+			}
+		}
+		presentation.params = params
+		presentation.width = width
+		presentation.height = height
+		presentation.generation = state.Generation
 		video.Paint(surface, p, r)
 	})
 	stage.Children(func() {
@@ -217,9 +199,6 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 			}
 		}
 	})
-	if pip && state.Playing {
-		c.After(time.Second / 60)
-	}
 }
 func (a *application) stageInput(event ui.InputEvent, aspect float64, pip bool) bool {
 	point := ui.Point{X: event.X, Y: event.Y}
@@ -562,25 +541,9 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 				}
 				if i == 0 {
 					if a.loopA != nil {
-						a.iconButton(c, "x", a.t("timeline.clearLoop"), 20, false, func() { a.loopA = nil; a.loopB = nil; a.exportMessage = "" })
+						a.iconButton(c, "x", a.t("timeline.clearLoop"), 20, false, func() { a.loopA = nil; a.loopB = nil })
 					} else {
 						ui.Box(c).Width(8).Height(1).Background(white(.15))
-					}
-				}
-			}
-			if a.loopB != nil {
-				for _, format := range []string{"webm", "mp4", "motion-photo"} {
-					key := format
-					if key == "motion-photo" {
-						key = "motionPhoto"
-					}
-					label := a.t("export.formats." + key)
-					if a.exporting && a.exportFormat == format {
-						label = fmt.Sprintf("%d%%", a.exportProgress)
-					}
-					button := ui.Button(c, label).Description(a.exportMessage).FontSize(9).Height(20).Padding(0, 6).Radius(6).Background(white(.08)).Border(0, ui.Transparent).Disabled(a.exporting || *a.loopB-*a.loopA > 60)
-					if button.Clicked() {
-						a.exportLoop(format)
 					}
 				}
 			}
@@ -681,7 +644,6 @@ type presentationState struct {
 	generation    uint64
 	frame         uint64
 	scale         float64
-	next          float64
 	err           string
 }
 
@@ -703,7 +665,6 @@ func (a *application) setMode(mode projection.Mode) {
 }
 
 func (a *application) applyMode(mode projection.Mode) {
-	a.cancelExport()
 	a.mode = mode
 	a.view = projection.DefaultView()
 	a.flatView = video.FlatView{}

@@ -175,7 +175,6 @@ func (a *application) resetPlayback() {
 	a.persist()
 	a.cancelModeDetection()
 	a.detectMode = false
-	a.cancelExport()
 	a.cancelSubtitle()
 	a.player.Reset()
 	a.selected = -1

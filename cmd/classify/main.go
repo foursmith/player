@@ -85,7 +85,7 @@ func classify(ctx context.Context, classifier *detection.ImageClassifier, path s
 		}
 	default:
 		var decoder *media.Decoder
-		decoder, err = media.OpenContext(ctx, media.Source{URL: path}, false)
+		decoder, err = media.Open(ctx, media.Source{URL: path}, false)
 		if err == nil {
 			metadata := decoder.Metadata()
 			decoder.Close()

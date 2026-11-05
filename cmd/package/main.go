@@ -62,9 +62,6 @@ func deps(path string) ([]string, error) {
 	return result, nil
 }
 func run() error {
-	if runtime.GOOS != "darwin" {
-		return portable()
-	}
 	manifest, err := os.ReadFile("mygo.json")
 	if err != nil {
 		return err
@@ -76,32 +73,17 @@ func run() error {
 	if config.Name == "" {
 		return fmt.Errorf("mygo.json is missing the application name")
 	}
+	if runtime.GOOS != "darwin" {
+		return portable(config.Name)
+	}
 	bundle := filepath.Join(*output, "darwin-"+runtime.GOARCH, config.Name+".app")
 	resource := filepath.Join(bundle, "Contents", "Resources")
 	lib := filepath.Join(resource, "lib")
-	bin := filepath.Join(resource, "bin")
-	for _, dir := range []string{lib, bin} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
-		}
+	if err := os.MkdirAll(lib, 0755); err != nil {
+		return err
 	}
 	main := filepath.Join(bundle, "Contents", "MacOS", config.Name)
 	if _, err := os.Stat(main); err != nil {
-		files, e := os.ReadDir(filepath.Dir(main))
-		if e != nil {
-			return e
-		}
-		if len(files) != 1 {
-			return err
-		}
-		main = filepath.Join(filepath.Dir(main), files[0].Name())
-	}
-	encoder, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		return err
-	}
-	encoded := filepath.Join(bin, "ffmpeg")
-	if err = copyFile(encoder, encoded); err != nil {
 		return err
 	}
 	rt := os.Getenv("FSVR_TFLITE_LIBRARY")
@@ -112,7 +94,7 @@ func run() error {
 	if err = copyFile(rt, runtimeDest); err != nil {
 		return err
 	}
-	queue := []string{main, encoded, runtimeDest}
+	queue := []string{main, runtimeDest}
 	seen := map[string]string{filepath.Base(rt): rt}
 	var libraries []string
 	for len(queue) > 0 {
@@ -131,7 +113,7 @@ func run() error {
 			if strings.HasPrefix(dep, "/System/") || strings.HasPrefix(dep, "/usr/lib/") {
 				continue
 			}
-			if strings.HasPrefix(dep, "@") { // Previously packaged dependencies are already relocatable.
+			if strings.HasPrefix(dep, "@") { // Includes each library's rewritten install name.
 				if strings.HasPrefix(dep, "@loader_path/") || strings.HasPrefix(dep, "@executable_path/") {
 					continue
 				}
@@ -158,15 +140,13 @@ func run() error {
 			replacement := "@loader_path/" + base
 			if path == main {
 				replacement = "@executable_path/../Resources/lib/" + base
-			} else if path == encoded {
-				replacement = "@loader_path/../lib/" + base
 			}
 			if err = command("install_name_tool", "-change", dep, replacement, path); err != nil {
 				return err
 			}
 		}
 	}
-	for _, path := range append(libraries, runtimeDest, encoded, main) {
+	for _, path := range append(libraries, runtimeDest, main) {
 		if err = command("codesign", "--force", "--sign", "-", path); err != nil {
 			return err
 		}

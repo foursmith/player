@@ -24,7 +24,7 @@ func TestHighResolutionH264PlaybackAndSeek(t *testing.T) {
 	}
 	// Native session rejection must fall back to software, not repeatedly try
 	// the same VideoToolbox setup through libavcodec. No audio device is opened.
-	d, err := OpenContext(ctx, Source{URL: path}, true)
+	d, err := Open(ctx, Source{URL: path}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestAsyncHEVCReorderingBitDepthAndFrameLifetime(t *testing.T) {
 			if out, err := exec.Command(encoder, args...).CombinedOutput(); err != nil {
 				t.Fatalf("HEVC fixture: %v: %s", err, out)
 			}
-			d, err := Open(Source{URL: path}, true)
+			d, err := Open(context.Background(), Source{URL: path}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestAsyncHEVCOpenGOPSeekPreservesHardwareAndPresentationOrder(t *testing.T)
 			if out, err := exec.Command(encoder, args...).CombinedOutput(); err != nil {
 				t.Fatalf("open-GOP fixture: %v: %s", err, out)
 			}
-			d, err := Open(Source{URL: path}, true)
+			d, err := Open(context.Background(), Source{URL: path}, true)
 			if err != nil {
 				t.Fatal(err)
 			}

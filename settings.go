@@ -121,7 +121,6 @@ func (a *application) settingsNavigation(c *ui.Context) {
 
 func (a *application) playbackSettings(c *ui.Context) {
 	settingsGroup(c).Children(func() {
-		a.qualityMatrix(c)
 		if a.toggleSetting(c, "settings.resumeLastVideo", "settings.resumeLastVideoDescription", "play", &a.preferences.AutoResume, !a.preferences.RecordPlaybackHistory) {
 			a.updateHistoryRecording()
 		}
@@ -255,84 +254,6 @@ func (a *application) segmentSetting(c *ui.Context, title, description, icon str
 					onChange(i)
 					a.persist()
 				}
-			}
-		})
-	})
-}
-
-var qualityColors = [...]ui.Color{ui.Hex("#58bde2"), ui.Hex("#5ed59a"), ui.Hex("#efa557"), ui.Hex("#9d74f7")}
-
-func (a *application) qualityMatrix(c *ui.Context) {
-	const labelWidth, rowHeight, thumbSize = float32(62), float32(40), float32(28)
-	color := qualityColors[a.preferences.QualityID]
-	ui.Column(c.Key("quality-matrix")).FillWidth().Padding(12).Gap(6).Children(func() {
-		ui.Row(c).FillWidth().Children(func() {
-			smallText(c, a.t("settings.renderer"), .55).Width(labelWidth).FontSize(10)
-			for col, key := range []string{"low", "medium", "high", "ultra"} {
-				foreground := white(.4)
-				if col == a.preferences.QualityID {
-					foreground = color
-				}
-				ui.Box(c).Grow(1).Center().Children(func() {
-					ui.Text(c, a.t("settings.quality."+key)).FontSize(10).TextColor(foreground).SingleLine()
-				})
-			}
-		})
-		ui.Column(c).FillWidth().Height(3 * rowHeight).Draw(func(p *ui.Painter, r ui.Rect) {
-			rail := ui.Rect{X: r.X + labelWidth, Y: r.Y, W: r.W - labelWidth, H: r.H}
-			p.Fill(rail, white(.035), 16)
-			paintGlassRim(p, rail, 16, .06)
-		}).Children(func() {
-			for row, fps := range []int{24, 30, 60} {
-				active := row == a.preferences.FrameRateID-1
-				ui.Row(c.Key(row)).FillWidth().Height(rowHeight).Children(func() {
-					label := smallText(c, fmt.Sprintf("%d fps", fps), .4).Width(labelWidth).FontSize(10)
-					if active {
-						label.TextColor(color)
-					}
-					ui.Row(c).Grow(1).Height(rowHeight).Draw(func(p *ui.Painter, r ui.Rect) {
-						if !active {
-							return
-						}
-						x := r.X + r.W*(float32(a.preferences.QualityID)+.5)/4
-						// Keep the track's rounded end entirely beneath the thumb.
-						band := ui.Rect{X: r.X + 6, Y: r.Y + 8, W: max(0, x-r.X-6+12), H: 24}
-						p.Fill(band, color.Alpha(.9), 12)
-						thumb := ui.Rect{X: x - thumbSize/2, Y: r.Y + (r.H-thumbSize)/2, W: thumbSize, H: thumbSize}
-						p.Fill(thumb, ui.Hex("#f2f2f2"), thumbSize/2)
-						p.Stroke(thumb, white(.55), thumbSize/2, .75)
-					}).Children(func() {
-						for col := range 4 {
-							selected := active && col == a.preferences.QualityID
-							label := a.t("settings.quality." + []string{"low", "medium", "high", "ultra"}[col])
-							button := ui.Button(c.Key(col), "").Grow(1).Height(rowHeight).Padding(0).Radius(12).Background(ui.Transparent).Border(0, ui.Transparent).FocusRing(false).Role(ui.RoleRadio).Checked(selected).Label(fmt.Sprintf("%s, %d fps", label, fps))
-							hover := white(0)
-							if !selected && button.Hovered() {
-								hover = white(.045)
-							}
-							hover = button.AnimateColor("hover", hover, pickerTransition)
-							button.Draw(func(p *ui.Painter, r ui.Rect) {
-								circle := ui.Rect{X: r.X + (r.W-thumbSize)/2, Y: r.Y + (r.H-thumbSize)/2, W: thumbSize, H: thumbSize}
-								p.Fill(circle, hover, thumbSize/2)
-								if !selected {
-									dot := white(.24)
-									if active && col < a.preferences.QualityID {
-										dot = white(.9)
-									}
-									p.Fill(ui.Rect{X: r.X + r.W/2 - 2.5, Y: r.Y + r.H/2 - 2.5, W: 5, H: 5}, dot, 2.5)
-								}
-								if button.FocusVisible() {
-									p.Stroke(circle, color.Alpha(.7), thumbSize/2, .75)
-								}
-							})
-							if button.Clicked() {
-								a.preferences.QualityID = col
-								a.preferences.FrameRateID = row + 1
-								a.persist()
-							}
-						}
-					})
-				})
 			}
 		})
 	})

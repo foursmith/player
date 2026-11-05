@@ -2,6 +2,7 @@ package video
 
 import (
 	"bytes"
+	"context"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
 	"image"
@@ -40,7 +41,7 @@ func patternFrame(t *testing.T, width, height int) (*media.Frame, *image.RGBA) {
 	if out, err := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-loop", "1", "-i", input, "-t", "0.1", "-pix_fmt", "yuv420p", "-c:v", "libx264", clip).CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %v: %s", err, out)
 	}
-	decoder, err := media.Open(media.Source{URL: clip}, false)
+	decoder, err := media.Open(context.Background(), media.Source{URL: clip}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

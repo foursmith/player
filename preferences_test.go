@@ -45,12 +45,12 @@ func TestStoredStateRejectsCorruptionAndInvalidHistory(t *testing.T) {
 	if got := loadState(path); got.History == nil {
 		t.Fatal("empty history must remain writable after loading")
 	}
-	data := fmt.Sprintf(`{"Preferences":{"volume":2,"qualityId":100,"splitCount":0,"locale":"unknown"},"History":{"%s":{"Projection":42,"Position":10},"%s":{"AutoProjection":"sbs_180_eqr","Position":3},"%s":{"Projection":6,"ProjectionManual":true,"AutoProjection":"unknown","Position":5}}}`, library.Identity(library.Entry{Path: "bad"}), library.Identity(library.Entry{Path: "good"}), library.Identity(library.Entry{Path: "invalid-auto"}))
+	data := fmt.Sprintf(`{"Preferences":{"volume":2,"splitCount":0,"locale":"unknown"},"History":{"%s":{"Projection":42,"Position":10},"%s":{"AutoProjection":"sbs_180_eqr","Position":3},"%s":{"Projection":6,"ProjectionManual":true,"AutoProjection":"unknown","Position":5}}}`, library.Identity(library.Entry{Path: "bad"}), library.Identity(library.Entry{Path: "good"}), library.Identity(library.Entry{Path: "invalid-auto"}))
 	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
 	got := loadState(path)
-	if got.Preferences.Volume != 1 || got.Preferences.QualityID != 3 || got.Preferences.SplitCount != 1 || got.Preferences.Locale != "en" || len(got.History) != 2 {
+	if got.Preferences.Volume != 1 || got.Preferences.SplitCount != 1 || got.Preferences.Locale != "en" || len(got.History) != 2 {
 		t.Fatal(got)
 	}
 	if history := got.History[library.Identity(library.Entry{Path: "invalid-auto"})]; history.AutoProjection != "" || history.Projection != projection.Flat || !history.ProjectionManual || history.Position != 5 {

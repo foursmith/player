@@ -6,16 +6,10 @@ import (
 	"github.com/foursmith/player/internal/video"
 	"log"
 	"os"
-	"os/exec"
 )
 
 func main() {
 	fmt.Println("FFmpeg:", media.Version())
-	if path, err := exec.LookPath("ffmpeg"); err != nil {
-		log.Fatal("FFmpeg encoder executable is missing")
-	} else {
-		fmt.Println("Encoder:", path)
-	}
 	surface, err := video.New(0)
 	if err != nil {
 		log.Fatal("GPU renderer: ", err)

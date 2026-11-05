@@ -29,9 +29,6 @@ type application struct {
 	trackingLog                               []string
 	recordingTracking                         bool
 	trackingSampleWidth, trackingSampleHeight int
-	exportTask                                *exportTask
-	exportPosition                            float64
-	exportFormat                              string
 	presentation                              [2]presentationState
 	controlsVisible                           bool
 	scanning                                  bool
@@ -59,6 +56,7 @@ type application struct {
 	player                                    *media.Player
 	surface                                   video.Surface
 	pipWindow                                 *mygo.Window
+	pipWindowRef                              atomic.Pointer[mygo.Window]
 	pipSurface                                video.Surface
 	settingsWindow                            *mygo.Window
 	catalogWindow                             *mygo.Window
@@ -97,9 +95,7 @@ type application struct {
 	singleClickAt                             time.Time
 	width, height                             float32
 	loopA, loopB                              *float64
-	exportProgress                            int
-	exporting                                 bool
-	exportMessage, notice                     string
+	notice                                    string
 	lastAudible                               float64
 	lastGeneration                            uint64
 	lastSaved                                 time.Time
@@ -154,6 +150,9 @@ func main() {
 		if w := a.windowRef.Load(); w != nil {
 			w.Invalidate()
 		}
+		if w := a.pipWindowRef.Load(); w != nil {
+			w.Invalidate()
+		}
 	})
 	a.player.SetTrace(a.recognitionTest)
 	a.player.SetVolume(a.preferences.Volume)
@@ -205,11 +204,11 @@ func main() {
 		a.stopCatalogThumbnails()
 		a.cancelModeDetection()
 		a.cancelSubtitle()
-		a.cancelExport()
 		if err := a.stateWriter.Close(); err != nil {
 			log.Print(err)
 		}
 		a.windowRef.Store(nil)
+		a.pipWindowRef.Store(nil)
 		a.player.Close()
 		if a.inference != nil {
 			a.inference.close()
@@ -308,7 +307,6 @@ func (a *application) playEntry(index int) {
 	if index < 0 || index >= len(a.entries) {
 		return
 	}
-	a.cancelExport()
 	a.persist()
 	a.cancelModeDetection()
 	a.selected = index
@@ -424,13 +422,13 @@ func (a *application) setRate(v float64) {
 }
 func (a *application) params(pip bool) video.Parameters {
 	if a.mode == projection.Flat {
-		return video.Parameters{Mode: a.mode, FlatView: a.flatView, SplitCount: 1, Quality: a.preferences.QualityID}
+		return video.Parameters{Mode: a.mode, FlatView: a.flatView, SplitCount: 1}
 	}
 	count := a.preferences.SplitCount
 	if pip {
 		count = 1
 	}
-	return video.Parameters{Mode: a.mode, View: a.view, SplitCount: count, Portrait: a.preferences.PreferredSplitAspect == "9:16", Quality: a.preferences.QualityID}
+	return video.Parameters{Mode: a.mode, View: a.view, SplitCount: count, Portrait: a.preferences.PreferredSplitAspect == "9:16"}
 }
 func (a *application) togglePip() {
 	if a.pipWindow != nil {
@@ -451,6 +449,7 @@ func (a *application) togglePip() {
 		}
 	}
 	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: width, Height: height, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
+	a.pipWindowRef.Store(a.pipWindow)
 	a.refreshVideoOnReveal(a.pipWindow, 1)
 	var err error
 	a.pipSurface, err = video.New(a.pipWindow.NativeHandle())
@@ -458,6 +457,7 @@ func (a *application) togglePip() {
 		a.notice = err.Error()
 	}
 	a.pipWindow.OnClosed(func() {
+		a.pipWindowRef.Store(nil)
 		if a.pipSurface != nil {
 			a.pipSurface.Close()
 			a.pipSurface = nil

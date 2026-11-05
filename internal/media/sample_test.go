@@ -120,7 +120,7 @@ func TestSampleLongGOPReplacesRepeatedBlackKeyframes(t *testing.T) {
 	if !replaced {
 		t.Fatal("duplicate-keyframe replacement was missing from diagnostics")
 	}
-	d, err := OpenContext(ctx, Source{URL: source}, false)
+	d, err := Open(ctx, Source{URL: source}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -141,7 +141,7 @@ func (a *application) trackingAspect() float64 {
 }
 
 func (a *application) canTrack(state media.State) bool {
-	return a.mode.IsVR() && !a.exporting && a.inference != nil && state.Playing && !state.Loading && a.preferences.FaceAutoCenter && !a.manuallyPaused && !a.dragging && !a.scrubbing && !time.Now().Before(a.manualUntil)
+	return a.mode.IsVR() && a.inference != nil && state.Playing && !state.Loading && a.preferences.FaceAutoCenter && !a.manuallyPaused && !a.dragging && !a.scrubbing && !time.Now().Before(a.manualUntil)
 }
 
 func (a *application) updateTracking(c *ui.Context, state media.State) {
@@ -156,7 +156,7 @@ func (a *application) updateTracking(c *ui.Context, state media.State) {
 	if a.tracker.State.Moving || movement.Stopped {
 		c.After(time.Second / 60)
 	}
-	fps := float64([]int{24, 30, 60}[a.preferences.FrameRateID-1])
+	fps := max(1, state.Metadata.FrameRate)
 	request, ready := a.tracker.Begin(now, fps, a.mode, a.view, aspect)
 	if !ready {
 		if !a.tracker.Busy && !a.tracker.State.Moving {

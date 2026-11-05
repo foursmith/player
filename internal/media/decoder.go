@@ -55,10 +55,7 @@ type Metadata struct {
 }
 
 func Version() string { return C.GoString(C.fsvr_version()) }
-func Open(source Source, outputAudio bool) (*Decoder, error) {
-	return OpenContext(context.Background(), source, outputAudio)
-}
-func OpenContext(ctx context.Context, source Source, outputAudio bool) (*Decoder, error) {
+func Open(ctx context.Context, source Source, outputAudio bool) (*Decoder, error) {
 	return openContext(ctx, source, outputAudio, false)
 }
 
@@ -126,8 +123,8 @@ func (d *Decoder) Seek(seconds float64) error {
 	return d.seek(seconds, true)
 }
 
-// Inexact seeking is reserved for analysis thumbnails; playback and export
-// always call Seek and decode through the exact requested timestamp.
+// Inexact seeking is reserved for analysis thumbnails; playback always calls
+// Seek and decodes through the exact requested timestamp.
 func (d *Decoder) seek(seconds float64, precise bool) error {
 	if err := d.ctx.Err(); err != nil {
 		return err
