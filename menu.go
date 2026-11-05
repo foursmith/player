@@ -14,7 +14,7 @@ func (a *application) refreshMenu() {
 			a.window.Update(run)
 		}}
 	}
-	settings := action("common.settings", "CmdOrCtrl+,", func() { a.settingsOpen = true })
+	settings := action("common.settings", "CmdOrCtrl+,", a.openSettings)
 	recent := []*mygo.MenuItem{}
 	for _, path := range a.stored.RecentFiles {
 		recent = append(recent, &mygo.MenuItem{Label: filepath.Base(path), Click: func(*mygo.MenuItem, *mygo.Window) {
@@ -22,28 +22,26 @@ func (a *application) refreshMenu() {
 		}})
 	}
 	if len(recent) > 0 {
-		recent = append(recent, mygo.Separator(), action("media.clearRecent", "", func() {
-			a.stored.RecentFiles = nil
-			a.stored.LastFile = ""
-			clearSystemRecentFiles()
-			a.refreshMenu()
-			a.persist()
-		}))
+		recent = append(recent, mygo.Separator(), action("media.clearRecent", "", a.clearRecentFiles))
 	} else {
 		recent = append(recent, &mygo.MenuItem{Label: a.t("media.noRecent"), Disabled: true})
 	}
 	file := []*mygo.MenuItem{
 		action("media.openFiles", "CmdOrCtrl+O", func() { a.choose(false, false) }),
 		action("media.openFolder", "CmdOrCtrl+Shift+O", func() { a.choose(true, false) }),
-		{Label: a.t("media.recentFiles"), Submenu: recent},
+	}
+	if a.preferences.RecentFilesEnabled {
+		file = append(file, &mygo.MenuItem{Label: a.t("media.recentFiles"), Submenu: recent})
+	}
+	file = append(file,
 		mygo.Separator(),
 		action("media.addFiles", "CmdOrCtrl+Shift+A", func() { a.choose(false, true) }),
 		action("media.addFolder", "", func() { a.choose(true, true) }),
 		action("playlist.scanDlna", "CmdOrCtrl+Shift+D", a.scanDLNA),
 		mygo.Separator(),
 		action("media.closeVideo", "CmdOrCtrl+Shift+W", a.closeVideo),
-		{Role: mygo.RoleClose},
-	}
+		&mygo.MenuItem{Role: mygo.RoleClose},
+	)
 	var items []*mygo.MenuItem
 	if runtime.GOOS == "darwin" {
 		mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
@@ -79,5 +77,16 @@ func (a *application) refreshMenu() {
 		}},
 		&mygo.MenuItem{Role: mygo.RoleWindowMenu},
 	)
-	mygo.App.SetMenu(mygo.NewMenu(items))
+	menu := mygo.NewMenu(items)
+	if a.shortcutRecording != "" {
+		var disable func([]*mygo.MenuItem)
+		disable = func(items []*mygo.MenuItem) {
+			for _, item := range items {
+				item.SetEnabled(false)
+				disable(item.Submenu)
+			}
+		}
+		disable(menu.Items())
+	}
+	mygo.App.SetMenu(menu)
 }

@@ -2,25 +2,34 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/foursmith/player/internal/projection"
 	"os"
 	"path/filepath"
 	"slices"
+
+	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/projection"
 )
 
 type preferences struct {
-	Volume               float64 `json:"volume"`
-	PlaybackRate         float64 `json:"playbackRate"`
-	QualityID            int     `json:"qualityId"`
-	FrameRateID          int     `json:"renderFrameRateId"`
-	SplitCount           int     `json:"splitCount"`
-	PreferredSplitAspect string  `json:"preferredSplitAspect"`
-	FaceAutoCenter       bool    `json:"faceAutoCenter"`
-	ResumeAfterMovement  bool    `json:"resumeFaceAutoCenterAfterViewChange"`
-	AutoResume           bool    `json:"autoResumePlayback"`
-	SubtitlesEnabled     bool    `json:"subtitlesEnabled"`
-	RepeatMode           string  `json:"repeatMode"`
-	Locale               string  `json:"locale"`
+	Volume                 float64             `json:"volume"`
+	PlaybackRate           float64             `json:"playbackRate"`
+	QualityID              int                 `json:"qualityId"`
+	FrameRateID            int                 `json:"renderFrameRateId"`
+	SplitCount             int                 `json:"splitCount"`
+	PreferredSplitAspect   string              `json:"preferredSplitAspect"`
+	FaceAutoCenter         bool                `json:"faceAutoCenter"`
+	ResumeAfterMovement    bool                `json:"resumeFaceAutoCenterAfterViewChange"`
+	VRDragSensitivity      float64             `json:"vrDragSensitivity"`
+	CenteringResumeDelay   float64             `json:"centeringResumeDelay"`
+	ProjectionAI           bool                `json:"projectionAI"`
+	AutoResume             bool                `json:"autoResumePlayback"`
+	ResumePlaybackPosition bool                `json:"resumePlaybackPosition"`
+	RecordPlaybackHistory  bool                `json:"recordPlaybackHistory"`
+	RecentFilesEnabled     bool                `json:"recentFilesEnabled"`
+	SubtitlesEnabled       bool                `json:"subtitlesEnabled"`
+	RepeatMode             string              `json:"repeatMode"`
+	Locale                 string              `json:"locale"`
+	Shortcuts              map[string]keyChord `json:"shortcuts,omitempty"`
 }
 type videoHistory struct {
 	Projection       projection.Mode `json:",omitempty"`
@@ -45,7 +54,13 @@ type storedState struct {
 }
 
 func defaultPreferences() preferences {
-	return preferences{Volume: 1, PlaybackRate: 1, QualityID: 2, FrameRateID: 3, SplitCount: 2, PreferredSplitAspect: "1:1", FaceAutoCenter: true, ResumeAfterMovement: true, SubtitlesEnabled: true, RepeatMode: "file", Locale: "en"}
+	return preferences{
+		Volume: 1, PlaybackRate: 1, QualityID: 2, FrameRateID: 3,
+		SplitCount: 2, PreferredSplitAspect: "1:1", FaceAutoCenter: true, ResumeAfterMovement: true,
+		VRDragSensitivity: 1, CenteringResumeDelay: 1, ProjectionAI: true,
+		ResumePlaybackPosition: true, RecordPlaybackHistory: true, RecentFilesEnabled: true,
+		SubtitlesEnabled: true, RepeatMode: "file", Locale: "en",
+	}
 }
 func loadState(path string) storedState {
 	state := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{}}
@@ -62,6 +77,9 @@ func loadState(path string) storedState {
 	p.QualityID = max(0, min(3, p.QualityID))
 	p.FrameRateID = max(1, min(3, p.FrameRateID))
 	p.SplitCount = max(1, min(3, p.SplitCount))
+	p.VRDragSensitivity = projection.Clamp(p.VRDragSensitivity, .25, 3)
+	p.CenteringResumeDelay = projection.Clamp(p.CenteringResumeDelay, .25, 5)
+	p.normalizeShortcuts()
 	if p.PreferredSplitAspect != "9:16" {
 		p.PreferredSplitAspect = "1:1"
 	}
@@ -71,18 +89,22 @@ func loadState(path string) storedState {
 	if p.RepeatMode != "file" && p.RepeatMode != "folder" {
 		p.RepeatMode = "off"
 	}
-	if state.History == nil {
-		state.History = map[string]videoHistory{}
-	}
+	cache := make(map[string]videoHistory, len(state.History))
 	for key, history := range state.History {
 		if history.Projection < 0 || history.Projection > projection.Flat || history.Position < 0 {
-			delete(state.History, key)
 			continue
 		}
 		if _, valid := history.automaticProjection(); history.AutoProjection != "" && !valid {
 			history.AutoProjection = ""
-			state.History[key] = history
 		}
+		cacheKey := library.HashedIdentity(key)
+		if previous, exists := cache[cacheKey]; !exists || history.UpdatedAt > previous.UpdatedAt || history.UpdatedAt == previous.UpdatedAt && key == cacheKey {
+			cache[cacheKey] = history
+		}
+	}
+	state.History = cache
+	if !p.RecordPlaybackHistory || !p.AutoResume {
+		state.LastFile = ""
 	}
 	var recent []string
 	for _, path := range state.RecentFiles {

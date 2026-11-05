@@ -64,6 +64,7 @@ type application struct {
 	surface                                   video.Surface
 	pipWindow                                 *mygo.Window
 	pipSurface                                video.Surface
+	settingsWindow                            *mygo.Window
 	preferences                               preferences
 	stored                                    storedState
 	entries                                   []library.Entry
@@ -80,8 +81,10 @@ type application struct {
 	modeDetection                             *modeDetectionTask
 	recognitionTest                           bool
 	modeDetectionSequence                     uint64
-	settingsOpen                              bool
-	shortcutsOpen                             bool
+	settingsTab                               int
+	settingsScroll                            [settingsTabCount]ui.ScrollState
+	shortcutRecording                         string
+	shortcutError                             string
 	playlistExpanded                          bool
 	projectionOpen                            bool
 	projectionFocused                         int
@@ -245,11 +248,12 @@ func main() {
 		a.pendingPaths = nil
 		if len(initialPaths) > 0 {
 			a.importPaths(initialPaths, false)
-		} else if a.preferences.AutoResume && state.LastFile != "" {
+		} else if a.preferences.RecordPlaybackHistory && a.preferences.AutoResume && state.LastFile != "" {
 			if _, err := os.Stat(state.LastFile); err == nil {
 				a.importPaths([]string{state.LastFile}, false)
 			}
 		}
+		a.persist()
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
@@ -345,13 +349,14 @@ func (a *application) playEntry(index int) {
 	a.scrubbing, a.dragging = false, false
 	a.player.Open(media.Source{URL: entry.Path, Start: start})
 	a.window.SetTitle(entry.Name + " — " + appInfo.Name)
-	if entry.DeviceID == "" {
+	if entry.DeviceID == "" && a.preferences.RecordPlaybackHistory && a.preferences.AutoResume {
 		a.stored.LastFile = entry.Path
-		a.stored.RecentFiles = rememberFile(a.stored.RecentFiles, entry.Path)
-		addSystemRecentFile(entry.Path)
-		a.refreshMenu()
 	} else {
 		a.stored.LastFile = ""
+	}
+	if a.rememberRecentFile(entry) {
+		addSystemRecentFile(entry.Path)
+		a.refreshMenu()
 	}
 	a.persist()
 	a.activity(3600 * time.Millisecond)

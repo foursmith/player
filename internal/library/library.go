@@ -2,10 +2,9 @@
 package library
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"golang.org/x/text/collate"
-	"golang.org/x/text/language"
-	"golang.org/x/text/unicode/norm"
 	"io/fs"
 	"mime"
 	"os"
@@ -15,6 +14,10 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf16"
+
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
+	"golang.org/x/text/unicode/norm"
 )
 
 type Entry struct {
@@ -132,7 +135,19 @@ func FromPaths(paths []string) ([]Entry, []string, error) {
 	return entries, subtitles, nil
 }
 func Identity(e Entry) string {
-	return fmt.Sprintf("%s:%d:%d", e.Path, e.Size, e.Modified)
+	return HashedIdentity(fmt.Sprintf("%s:%d:%d", e.Path, e.Size, e.Modified))
+}
+
+// HashedIdentity keeps cache keys opaque and leaves an existing SHA-256
+// key unchanged, so rewriting a retained cache never hashes it twice.
+func HashedIdentity(identity string) string {
+	if len(identity) == sha256.Size*2 {
+		if decoded, err := hex.DecodeString(identity); err == nil {
+			return hex.EncodeToString(decoded)
+		}
+	}
+	sum := sha256.Sum256([]byte(identity))
+	return hex.EncodeToString(sum[:])
 }
 func Tree(entries []Entry, dlnaFolders []Folder) []Node {
 	folders := map[string]Folder{}

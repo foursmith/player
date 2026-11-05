@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/foursmith/player/internal/projection"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/projection"
 )
 
 func TestStoredStateRoundTripAndDefaults(t *testing.T) {
@@ -16,7 +18,7 @@ func TestStoredStateRoundTripAndDefaults(t *testing.T) {
 	if !reflect.DeepEqual(state.Preferences, defaultPreferences()) {
 		t.Fatal(state)
 	}
-	state.History["file:example"] = videoHistory{AutoProjection: "mono_360_eqr", Position: 12.5, UpdatedAt: 100}
+	state.History[library.HashedIdentity("file:example")] = videoHistory{AutoProjection: "mono_360_eqr", Position: 12.5, UpdatedAt: 100}
 	state.Preferences.Locale = "zh-CN"
 	if err := saveState(path, state); err != nil {
 		t.Fatal(err)
@@ -44,7 +46,7 @@ func TestStoredStateRejectsCorruptionAndInvalidHistory(t *testing.T) {
 	if got.Preferences.Volume != 1 || got.Preferences.QualityID != 3 || got.Preferences.SplitCount != 1 || got.Preferences.Locale != "en" || len(got.History) != 2 {
 		t.Fatal(got)
 	}
-	if history := got.History["invalid-auto"]; history.AutoProjection != "" || history.Projection != projection.Flat || !history.ProjectionManual || history.Position != 5 {
+	if history := got.History[library.HashedIdentity("invalid-auto")]; history.AutoProjection != "" || history.Projection != projection.Flat || !history.ProjectionManual || history.Position != 5 {
 		t.Fatalf("invalid automatic cache affected the manual choice or position: %+v", history)
 	}
 }

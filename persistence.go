@@ -36,6 +36,7 @@ func newStateWriter(path string, failed func(error)) *stateWriter {
 func (w *stateWriter) Submit(state storedState) {
 	state.History = maps.Clone(state.History)
 	state.RecentFiles = slices.Clone(state.RecentFiles)
+	state.Preferences.Shortcuts = maps.Clone(state.Preferences.Shortcuts)
 	select {
 	case <-w.pending:
 	default:
@@ -54,6 +55,9 @@ func (a *application) persist() {
 	if a.shutdown {
 		return
 	}
+	if !a.preferences.RecordPlaybackHistory || !a.preferences.AutoResume {
+		a.stored.LastFile = ""
+	}
 	if a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].DeviceID == "" {
 		a.recordPlaybackHistory(a.entries[a.selected], a.player.Snapshot())
 	}
@@ -70,13 +74,17 @@ func (a *application) persist() {
 	a.stored.Preferences = a.preferences
 	if a.window != nil && a.menuLocale != a.preferences.Locale {
 		a.refreshMenu()
+		if a.settingsWindow != nil {
+			a.settingsWindow.SetTitle(a.t("common.settings"))
+		}
 	}
+	a.refreshWindows()
 	a.stateWriter.Submit(a.stored)
 	a.lastSaved = time.Now()
 }
 
 func (a *application) recordPlaybackHistory(entry library.Entry, state media.State) {
-	if entry.DeviceID != "" || state.URL != entry.Path || state.Loading || state.Error != "" {
+	if !a.preferences.RecordPlaybackHistory || entry.DeviceID != "" || state.URL != entry.Path || state.Loading || state.Error != "" {
 		return
 	}
 	key := library.Identity(entry)

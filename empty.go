@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/shader"
 	"math"
 	"path/filepath"
 	"time"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/shader"
 )
 
 var ocean = shader.MustCompile(`package main
@@ -61,7 +62,7 @@ func (a *application) empty(c *ui.Context) {
 					label = a.t("playlist.scanningDlna")
 				}
 				ui.Button(c, label).FontSize(11).Background(ui.Transparent).Border(0, ui.Transparent).Disabled(a.scanning).OnClick(a.scanDLNA)
-				if a.height >= 640 && len(a.stored.RecentFiles) > 0 {
+				if a.preferences.RecentFilesEnabled && a.height >= 640 && len(a.stored.RecentFiles) > 0 {
 					ui.Column(c.Key("recent")).Width(288).Gap(4).Children(func() {
 						smallText(c, a.t("media.recentFiles"), .42).Padding(4, 8)
 						for _, path := range a.stored.RecentFiles[:min(3, len(a.stored.RecentFiles))] {

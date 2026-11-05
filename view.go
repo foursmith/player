@@ -55,7 +55,7 @@ func (a *application) render(c *ui.Context) {
 	held := a.controlsHeld
 	a.updateTracking(c, state)
 	a.controlsHeld = false
-	visible := state.URL == "" || state.Loading || a.settingsOpen || a.adjustmentsOpen || a.projectionOpen || held || c.Now().Before(a.controlsUntil)
+	visible := state.URL == "" || state.Loading || a.adjustmentsOpen || a.projectionOpen || held || c.Now().Before(a.controlsUntil)
 	a.controlsVisible = visible
 	if visible && !a.controlsUntil.IsZero() {
 		remaining := a.controlsUntil.Sub(c.Now())
@@ -101,9 +101,6 @@ func (a *application) render(c *ui.Context) {
 				})
 			})
 		}
-		if a.settingsOpen {
-			a.settings(c)
-		}
 	})
 	a.keyboard(c)
 }
@@ -134,7 +131,7 @@ func (a *application) topControls(c *ui.Context) {
 		if a.mode.IsVR() && (a.manuallyPaused || c.Now().Before(a.manualUntil)) {
 			a.iconButton(c, "scan-face", a.t("debug.resumeCentering"), topControlSize, false, func() { a.manuallyPaused = false; a.manualUntil = time.Time{}; a.tracker.Reset() })
 		}
-		a.iconButton(c, "settings", a.t("common.settings"), topControlSize, false, func() { a.settingsOpen = true })
+		a.iconButton(c, "settings", a.t("common.settings"), topControlSize, false, a.openSettings)
 	})
 }
 
@@ -263,8 +260,8 @@ func (a *application) stageInput(event ui.InputEvent, aspect float64, pip bool) 
 		} else if a.dragging {
 			a.dragDistance = math.Hypot(float64(point.X-a.pressPointer.X), float64(point.Y-a.pressPointer.Y))
 			next := a.view
-			next.Yaw += dx * .08
-			next.Pitch = projection.Clamp(next.Pitch+dy*.08, -85, 85)
+			next.Yaw += dx * .08 * a.preferences.VRDragSensitivity
+			next.Pitch = projection.Clamp(next.Pitch+dy*.08*a.preferences.VRDragSensitivity, -85, 85)
 			a.setView(next, aspect)
 		}
 		if math.Hypot(dx, dy) >= 3 {
@@ -304,7 +301,7 @@ func (a *application) setView(next projection.View, aspect float64) {
 	}
 	a.view = next
 	a.manuallyPaused = !a.preferences.ResumeAfterMovement
-	a.manualUntil = time.Now().Add(time.Second)
+	a.manualUntil = time.Now().Add(a.preferences.centeringDelay())
 	a.tracker.Reset()
 }
 func (a *application) zoom(scale, aspect float64) {
@@ -336,9 +333,8 @@ func (a *application) keyboard(c *ui.Context) {
 			a.projectionOpen = false
 		}
 	}
-	if a.settingsOpen || a.adjustmentsOpen || a.projectionOpen {
+	if a.adjustmentsOpen || a.projectionOpen {
 		if c.Shortcut(0, ui.KeyEscape) {
-			a.settingsOpen = false
 			a.adjustmentsOpen = false
 			a.projectionOpen = false
 		}
@@ -351,41 +347,21 @@ func (a *application) keyboard(c *ui.Context) {
 	if state.URL == "" {
 		return
 	}
-	register := func(mods ui.Modifiers, key ui.Key, action func()) {
-		if a.timelineHandle.Focused(c) && (key == ui.KeyLeft || key == ui.KeyRight || key == ui.KeyUp || key == ui.KeyDown) {
-			return
+	a.playbackKeyboard(c)
+}
+
+func (a *application) playbackKeyboard(c *ui.Context) {
+	for _, def := range playbackShortcuts {
+		for _, chord := range a.preferences.shortcutKeys(def) {
+			if a.timelineHandle.Focused(c) && (chord.Key == ui.KeyLeft || chord.Key == ui.KeyRight || chord.Key == ui.KeyUp || chord.Key == ui.KeyDown) {
+				continue
+			}
+			if c.Shortcut(chord.Mods, chord.Key) {
+				def.run(a)
+				a.activity(1500 * time.Millisecond)
+				return
+			}
 		}
-		if c.Shortcut(mods, key) {
-			action()
-			a.activity(1500 * time.Millisecond)
-		}
-	}
-	register(0, ui.KeySpace, a.player.Toggle)
-	for _, mods := range []ui.Modifiers{0, ui.Shift} {
-		amount := 10.0
-		if mods == ui.Shift {
-			amount = 60
-		}
-		register(mods, ui.KeyLeft, func() { a.player.Seek(state.Position - amount) })
-		register(mods, ui.KeyRight, func() { a.player.Seek(state.Position + amount) })
-	}
-	register(0, ui.KeyUp, func() { a.setVolume(a.preferences.Volume + .05) })
-	register(0, ui.KeyDown, func() { a.setVolume(a.preferences.Volume - .05) })
-	for _, mods := range []ui.Modifiers{0, ui.Shift} {
-		register(mods, ui.KeyM, a.mute)
-		register(mods, ui.KeyF, a.window.ToggleFullScreen)
-		register(mods, ui.KeyR, a.resetView)
-	}
-	for _, key := range []ui.Key{ui.KeyBracketLeft, ui.KeyMinus} {
-		register(0, key, func() { a.zoom(1/1.1, float64(a.width/a.height)) })
-	}
-	for _, key := range []ui.Key{ui.KeyBracketRight, ui.KeyEqual} {
-		register(0, key, func() { a.zoom(1.1, float64(a.width/a.height)) })
-	}
-	register(0, ui.KeyComma, func() { a.preferences.QualityID = max(0, a.preferences.QualityID-1); a.persist() })
-	register(0, ui.KeyPeriod, func() { a.preferences.QualityID = min(3, a.preferences.QualityID+1); a.persist() })
-	for i, key := range []ui.Key{ui.Key1, ui.Key2, ui.Key3, ui.Key4, ui.Key5, ui.Key6, ui.Key7} {
-		register(0, key, func() { a.setMode(projection.Mode(i)) })
 	}
 }
 func (a *application) controls(c *ui.Context, state media.State) {
@@ -713,7 +689,7 @@ func (a *application) resetView() {
 	}
 	a.view = projection.DefaultView()
 	a.manuallyPaused = !a.preferences.ResumeAfterMovement
-	a.manualUntil = time.Now().Add(time.Second)
+	a.manualUntil = time.Now().Add(a.preferences.centeringDelay())
 	a.tracker.Reset()
 }
 func (a *application) setMode(mode projection.Mode) {

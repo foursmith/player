@@ -16,7 +16,10 @@ func (a *application) about(c *ui.Context) {
 		smallText(c, a.t("settings.by"), .42)
 		smallText(c, "ourongxing", .68)
 		ui.Spacer(c).Grow(1)
-		a.aboutAction(c, "bug", a.t("settings.debug"), a.debugOpen, func() { a.debugOpen = !a.debugOpen })
+		a.aboutAction(c, "bug", a.t("settings.debug"), a.debugOpen, func() {
+			a.debugOpen = !a.debugOpen
+			a.refreshWindows()
+		})
 	})
 }
 func (a *application) aboutAction(c *ui.Context, icon, label string, pressed bool, action func()) {

@@ -1,12 +1,14 @@
 package main
 
 import (
-	"github.com/foursmith/player/internal/library"
-	"github.com/foursmith/player/internal/media"
-	"github.com/foursmith/player/internal/projection"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/projection"
 )
 
 func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
@@ -14,19 +16,24 @@ func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
 	w := newStateWriter(path, nil)
 	state := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{}}
 	state.RecentFiles = []string{filepath.Join(t.TempDir(), "original.mp4")}
+	state.Preferences.Shortcuts = map[string]keyChord{"playPause": {Key: ui.KeyP}}
 	originalRecent := state.RecentFiles[0]
 	for i := range 100 {
-		state.History["video"] = videoHistory{Position: float64(i)}
+		state.History[library.HashedIdentity("video")] = videoHistory{Position: float64(i)}
 		w.Submit(state)
 	}
 	// Mutating UI state after submission cannot change the saved snapshot.
-	state.History["video"] = videoHistory{Position: 999}
+	state.History[library.HashedIdentity("video")] = videoHistory{Position: 999}
 	state.RecentFiles[0] = filepath.Join(t.TempDir(), "mutated.mp4")
+	state.Preferences.Shortcuts["playPause"] = keyChord{Key: ui.KeyJ}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadState(path).History["video"].Position; got != 99 {
+	if got := loadState(path).History[library.HashedIdentity("video")].Position; got != 99 {
 		t.Fatalf("final snapshot was lost or shared mutable UI state: %v", got)
+	}
+	if got := loadState(path).Preferences.Shortcuts["playPause"]; got.Key != ui.KeyP {
+		t.Fatalf("shortcuts shared mutable state: %+v", got)
 	}
 	if got := loadState(path).RecentFiles; len(got) != 1 || got[0] != originalRecent {
 		t.Fatalf("recent files shared mutable UI state: %v", got)

@@ -1,10 +1,13 @@
 package library
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"mime"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -104,5 +107,17 @@ func TestSubtitleDiscoveryAndSingleMatch(t *testing.T) {
 	matched := MatchSubtitles([]string{entry.Name}, paths)[0]
 	if got := MatchSubtitle(entry, paths); got != paths[matched] {
 		t.Fatalf("single match changed greedy tie order: %q", got)
+	}
+}
+
+func TestHistoryIdentityUsesSHA256OfPathSizeAndModificationTime(t *testing.T) {
+	entry := Entry{Name: "private.mp4", Path: "/private/media/private.mp4", Size: 123, Modified: 456}
+	sum := sha256.Sum256([]byte("/private/media/private.mp4:123:456"))
+	got := Identity(entry)
+	if got != hex.EncodeToString(sum[:]) || len(got) != 64 || strings.Contains(got, entry.Name) {
+		t.Fatalf("unexpected cache identity: %s", got)
+	}
+	if HashedIdentity(got) != got {
+		t.Fatal("normalizing an existing digest hashed it again")
 	}
 }

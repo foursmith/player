@@ -25,9 +25,11 @@ func (a *application) prepareVideoMode(entry library.Entry) float64 {
 	a.mode = projection.Detect(entry.Name, "", "")
 	a.detectMode, a.modeManual = true, false
 	start := 0.0
-	if entry.DeviceID == "" {
+	if entry.DeviceID == "" && a.preferences.RecordPlaybackHistory {
 		if history, ok := a.stored.History[library.Identity(entry)]; ok {
-			start = history.Position
+			if a.preferences.ResumePlaybackPosition {
+				start = history.Position
+			}
 			if !a.recognitionTest {
 				if history.ProjectionManual {
 					a.mode, a.modeManual, a.detectMode = history.Projection, true, false
@@ -119,6 +121,9 @@ func (a *application) resolveVideoMode(state media.State) {
 	a.modeDetection = task
 	window := a.window
 	modelPath := os.Getenv("FSVR_PROJECTION_MODEL")
+	if !a.preferences.ProjectionAI {
+		modelPath = "off"
+	}
 	go func() {
 		defer cancel()
 		decision := analyzeVideoMode(ctx, entry, state.Metadata, modelPath, task.trace)
@@ -217,7 +222,7 @@ func analyzeVideoMode(ctx context.Context, entry library.Entry, metadata media.M
 
 func projectionClassifier(path string, trace *recognitionTrace) *detection.ImageClassifier {
 	if path == "off" {
-		trace.printf("model disabled: FSVR_PROJECTION_MODEL=off")
+		trace.printf("model disabled by settings or FSVR_PROJECTION_MODEL=off")
 		return nil
 	}
 	var model []byte
