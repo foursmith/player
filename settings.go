@@ -280,7 +280,10 @@ func (a *application) numberSetting(c *ui.Context, title, description, icon stri
 		})
 		slider := ui.SliderBase(c, value, lo, hi).Step(step).Width(100).Height(24).Disabled(disabled).Label(a.t(title))
 		slider.Draw(func(p *ui.Painter, r ui.Rect) { paintGlassTrack(p, r, float32((*value-lo)/(hi-lo))) })
-		smallText(c, strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", *value), "0"), ".")+suffix, .68).Width(38).TextAlign(ui.End)
+		label := smallText(c, strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", *value), "0"), ".")+suffix, .68).Width(38).TextAlign(ui.End)
+		if suffix == " s" {
+			label.Font("monospace")
+		}
 		if slider.Changed() {
 			a.persist()
 		}

@@ -511,7 +511,7 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 			}
 		})
 		ui.Row(c).FillWidth().Gap(6).Children(func() {
-			smallText(c, formatTime(state.Position), .48)
+			smallText(c, formatTime(state.Position), .48).Font("monospace")
 			for i, label := range []string{"A", "B"} {
 				text := label
 				if i == 0 && a.loopA != nil {
@@ -520,7 +520,7 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 				if i == 1 && a.loopB != nil {
 					text += " " + formatTime(*a.loopB)
 				}
-				button := ui.Button(c, text).FontSize(9).Height(20).Padding(0, 6).Radius(6).Border(0, ui.Transparent).Background(white(.06))
+				button := ui.Button(c, text).Font("monospace").FontSize(9).Height(20).Padding(0, 6).Radius(6).Border(0, ui.Transparent).Background(white(.06))
 				if i == 0 && a.loopA != nil {
 					button.Background(ui.Hex("#fcd34d").Alpha(.14)).TextColor(ui.Hex("#fde68a"))
 				}
@@ -548,7 +548,7 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 				}
 			}
 			ui.Spacer(c).Grow(1)
-			smallText(c, formatTime(state.Metadata.Duration), .6)
+			smallText(c, formatTime(state.Metadata.Duration), .6).Font("monospace")
 		})
 	})
 }

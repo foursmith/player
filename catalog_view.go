@@ -300,7 +300,7 @@ func (a *application) catalogItem(c *ui.Context, saved library.Saved, item libra
 				})
 				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 					ui.Text(c, name).FontSize(12).FontWeight(500).TextColor(white(.88)).SingleLine().FillWidth().MinWidth(0)
-					ui.Text(c, a.catalogTimeLabel(timing)).FontSize(10).TextColor(white(.56)).SingleLine().FillWidth().MinWidth(0)
+					ui.Text(c, a.catalogTimeLabel(timing)).Font("monospace").FontSize(10).TextColor(white(.56)).SingleLine().FillWidth().MinWidth(0)
 					detail := filepath.Dir(item.Path)
 					if saved.Folder != "" {
 						if relative, err := filepath.Rel(saved.Folder, detail); err == nil {

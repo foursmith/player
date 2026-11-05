@@ -78,7 +78,7 @@ func (a *application) debug(c *ui.Context, state media.State) {
 			})
 			ui.Divider(c).Background(white(.07))
 			detail := fmt.Sprintf("%dx%d · %.2f fps\n%s · FFmpeg %s\n%.3fs · %.2fx\n%s · P95 %.1fms\nyaw %.1f° · pitch %.1f°\nforward %.2f · faces %d", state.Metadata.Width, state.Metadata.Height, state.Metadata.FrameRate, state.Metadata.Decoder, media.Version(), state.Position, state.Rate, a.tracker.Activity, a.tracker.P95(), a.view.Yaw, a.view.Pitch, a.view.Forward, len(a.tracker.State.Faces))
-			smallText(c, detail, .54).FontSize(9).Padding(10, 12)
+			smallText(c, detail, .54).Font("monospace").FontSize(9).Padding(10, 12)
 			if target := a.tracker.State.Target; target != nil {
 				plan := tracking.CenteringPlan(*target, a.view, a.mode, a.trackingAspect(), a.tracker.State.Moving)
 				ui.Divider(c).Background(white(.07))
