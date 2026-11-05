@@ -24,7 +24,7 @@ await mkdir(resolve(root, "assets/models"), { recursive: true })
 for (const [locale, dictionary] of Object.entries(module.default)) {
   const localized = Object.fromEntries(Object.entries(flatten(dictionary)).map(([key, value]) => [key, brand(value)]))
   localized["common.appName"] = appName
-  for (const key of ["common.github", "empty.viewOnGithub", "settings.viewVersion", "settings.viewStars", "settings.githubStars"]) delete localized[key]
+  for (const key of ["common.github", "empty.viewOnGithub", "empty.openSource", "settings.viewVersion", "settings.viewStars", "settings.githubStars"]) delete localized[key]
   await writeFile(resolve(root, `assets/locales/${locale}.json`), `${JSON.stringify(localized, null, 2)}\n`)
 }
 await writeFile(resolve(root, "assets/icon.svg"), brand(await readFile(resolve(web, "public/icon.svg"), "utf8")))

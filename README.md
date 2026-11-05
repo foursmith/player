@@ -26,3 +26,5 @@ Windows/Linux 需要本平台的 FFmpeg、SDL3 开发 SDK 与 LiteRT C 库，设
 设置和播放历史保存在系统用户数据目录中的 `Foursmith Player/state.json`。首次使用新名称且尚无配置时会读取旧应用的设置和播放历史，随后保存在新目录。`--data-dir` 可隔离开发配置，不读取旧应用数据；文件或文件夹可直接作为启动参数。远程 FSVR 连接使用 `--server http://host:port`，密码和会话只保存在当前进程内。
 
 迁移范围及验收记录见 [doc/MIGRATION.md](doc/MIGRATION.md)，人像居中算法见 [doc/PORTRAIT_CENTERING.md](doc/PORTRAIT_CENTERING.md)。
+
+项目自有代码当前不提供开源授权。第三方组件保留各自的许可证，见 [resources/THIRD_PARTY_NOTICES.md](resources/THIRD_PARTY_NOTICES.md)。

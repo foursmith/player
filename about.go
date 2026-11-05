@@ -15,8 +15,6 @@ func (a *application) about(c *ui.Context) {
 	ui.Row(c).FillWidth().Padding(10, 12).Gap(4).Children(func() {
 		smallText(c, a.t("settings.by"), .42)
 		smallText(c, "ourongxing", .68)
-		smallText(c, "·", .24)
-		smallText(c, "MPL 2.0", .68)
 		ui.Spacer(c).Grow(1)
 		a.aboutAction(c, "bug", a.t("settings.debug"), a.debugOpen, func() { a.debugOpen = !a.debugOpen })
 	})

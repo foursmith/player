@@ -45,7 +45,7 @@ func (a *application) empty(c *ui.Context) {
 				for i, dot := range []struct {
 					x, y float32
 					key  string
-				}{{0, 24, "empty.noHeadset"}, {heroW - 6, 76, "empty.openSource"}, {40, heroH - 6, "empty.portraitLayout"}, {heroW - 10, heroH - 38, "empty.portraitCentering"}, {heroW/2 - 72, -8, "empty.autoFramedVr"}, {-6, 130, "common.appName"}} {
+				}{{0, 24, "empty.noHeadset"}, {40, heroH - 6, "empty.portraitLayout"}, {heroW - 10, heroH - 38, "empty.portraitCentering"}, {heroW/2 - 72, -8, "empty.autoFramedVr"}, {-6, 130, "common.appName"}} {
 					ui.Box(c.Key(i)).Absolute().Left(dot.x+float32(math.Sin(t/(2+float64(i)))*12)).Top(dot.y+float32(math.Cos(t/(3+float64(i)))*4)).Size(6, 6).Radius(3).Background(ui.Hex("#b8f3ec")).Focusable().Label(a.t(dot.key))
 				}
 			})
