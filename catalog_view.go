@@ -51,10 +51,6 @@ func (a *application) catalogView(c *ui.Context) {
 					})
 				})
 			}
-			ui.Row(c).FillWidth().Height(28).Padding(0, 20).Gap(6).Children(func() {
-				ui.Icon(c, icons["info"]).Size(11, 11).TextColor(white(.25)).Shrink(0)
-				ui.Text(c, a.t("library.storageDescription")).FontSize(9).TextColor(white(.3)).SingleLine().Grow(1).MinWidth(0)
-			})
 		})
 	})
 	if c.Shortcut(0, ui.KeyEscape) && a.catalogWindow != nil {
@@ -142,6 +138,9 @@ func (a *application) catalogSource(c *ui.Context, saved library.Saved) {
 		ui.Row(c).Fill().Gap(9).Children(func() {
 			ui.Icon(c, icons[catalogSourceIcon(saved)]).Size(14, 14).Shrink(0)
 			ui.Text(c, saved.Name).FontSize(11).FontWeight(500).SingleLine().Grow(1).MinWidth(0)
+			if saved.ShareDLNA && saved.DeviceID == "" {
+				ui.Icon(c, icons["source-dlna"]).Size(12, 12).TextColor(accent.Alpha(.7)).Shrink(0)
+			}
 		})
 	}).OnClick(func() { a.selectCatalog(saved.ID) })
 }
@@ -173,6 +172,7 @@ func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
 			trimmed := strings.TrimSpace(a.catalog.name)
 			quietIcon(c, "check", a.t("library.rename")).Size(24, 24).Disabled(trimmed == "" || trimmed == saved.Name).OnClick(a.renameCatalog)
 			quietIcon(c, "trash", a.t("library.remove")).Size(24, 24).OnClick(a.removeCatalog)
+			a.catalogSharingButton(c, saved)
 			glassAction(c, "play", a.t("library.playAll")).Background(accent.Alpha(.12)).TextColor(accent).Disabled(available == 0).OnClick(func() { a.playCatalog("", false) })
 			quietIcon(c, "playlist-add", a.t("library.append")).Disabled(available == 0).OnClick(func() { a.playCatalog("", true) })
 		})
@@ -199,6 +199,7 @@ func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
 				a.catalogItem(c, saved, items[rows[i]])
 			}).FillWidth().Grow(1).MinHeight(0).Padding(0, 12, 4)
 		}
+		a.catalogSharingStatus(c, saved)
 	})
 }
 

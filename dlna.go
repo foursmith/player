@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,6 +57,10 @@ func (a *application) scanDLNA() {
 			a.scanning = false
 			if ctx.Err() != nil || a.shutdown {
 				return
+			}
+			if a.stored.DLNAUUID != "" {
+				self := dlna.DeviceID("uuid:" + a.stored.DLNAUUID)
+				devices = slices.DeleteFunc(devices, func(device dlna.Device) bool { return device.ID == self })
 			}
 			if err != nil {
 				a.catalog.error = a.t("dlna.scanFailed") + ": " + err.Error()

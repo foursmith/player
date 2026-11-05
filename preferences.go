@@ -56,6 +56,7 @@ type storedState struct {
 	LastFile    string
 	RecentFiles []string
 	Libraries   []library.Saved
+	DLNAUUID    string `json:",omitempty"`
 }
 
 func defaultPreferences() preferences {

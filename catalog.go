@@ -100,6 +100,9 @@ func (a *application) selectCatalog(id string) {
 }
 
 func (a *application) refreshCatalog() {
+	if a.dlnaSharing.server != nil {
+		a.dlnaSharing.server.Refresh()
+	}
 	a.loadCatalog(false)
 }
 

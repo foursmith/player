@@ -32,6 +32,12 @@ type Device struct {
 	ID, Name, Location, ControlURL, ServiceType string
 }
 
+// DeviceID keeps saved sources stable across address changes and is also used
+// to exclude this application's own server from discovery results.
+func DeviceID(identity string) string {
+	return fmt.Sprintf("dlna-%x", sha256.Sum256([]byte(identity)))
+}
+
 type Item struct {
 	ID, Name, URL, Subtitle string
 	Folder, SubtitleFile    bool
@@ -317,7 +323,7 @@ func describe(ctx context.Context, location string) (Device, error) {
 				if name == "" {
 					name = "DLNA Media Server"
 				}
-				return Device{ID: fmt.Sprintf("dlna-%x", sha256.Sum256([]byte(identity))), Name: name, Location: location, ControlURL: control, ServiceType: s.Type}, true
+				return Device{ID: DeviceID(identity), Name: name, Location: location, ControlURL: control, ServiceType: s.Type}, true
 			}
 		}
 		for _, child := range d.Devices {

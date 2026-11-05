@@ -134,7 +134,6 @@
   "library.addPlaylist": "收录当前播放列表",
   "library.empty": "你的视频库",
   "library.emptyDescription": "添加文件夹、搜索 DLNA 设备，或创建自定义视频合集。",
-  "library.storageDescription": "视频库保存来源记录。移除记录会保留原视频文件。",
   "library.loading": "正在读取视频…",
   "library.noItems": "还没有视频",
   "library.noResults": "没有匹配的视频",
@@ -178,5 +177,10 @@
   "media.folder": "文件夹",
   "library.shortTitle": "视频库",
   "library.noSources": "尚未添加",
-  "library.savePlaylistShort": "保存播放列表"
+  "library.savePlaylistShort": "保存播放列表",
+  "sharing.title": "通过 DLNA 共享此库",
+  "sharing.starting": "正在启动共享…",
+  "sharing.failed": "无法启动 DLNA 共享",
+  "sharing.stopped": "DLNA 共享已停止，可重试连接。",
+  "sharing.retry": "重试共享"
 }

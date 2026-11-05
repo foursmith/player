@@ -74,6 +74,7 @@ func (a *application) persist() {
 	}
 	a.filterCatalog()
 	a.stored.Preferences = a.preferences
+	a.syncDLNASharing()
 	if a.window != nil && a.menuLocale != a.preferences.Locale {
 		a.refreshMenu()
 		if a.settingsWindow != nil {

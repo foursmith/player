@@ -61,6 +61,7 @@ type application struct {
 	settingsWindow                            *mygo.Window
 	catalogWindow                             *mygo.Window
 	catalog                                   catalogState
+	dlnaSharing                               dlnaSharingState
 	preferences                               preferences
 	stored                                    storedState
 	entries                                   []library.Entry
@@ -199,7 +200,12 @@ func main() {
 		}
 		a.persist()
 		a.shutdown = true
+		sharing := a.dlnaSharing.server
 		a.cancel()
+		a.stopDLNASharing()
+		if sharing != nil {
+			sharing.Close()
+		}
 		a.cancelCatalogRead()
 		a.stopCatalogThumbnails()
 		a.cancelModeDetection()

@@ -105,7 +105,7 @@ func TestCanceledLibraryScanStopsWithoutReturningPartialResults(t *testing.T) {
 
 func TestDLNASourceNormalizationRetainsOfflineIdentityWithoutStreamURLs(t *testing.T) {
 	got := NormalizeSaved([]Saved{
-		{ID: "nas", Name: " NAS ", DeviceID: "device-a", Location: "http://nas.local/device.xml", Folder: "/old/path", Paths: []string{"http://nas.local/stream?token=temporary"}},
+		{ID: "nas", Name: " NAS ", DeviceID: "device-a", Location: "http://nas.local/device.xml", Folder: "/old/path", Paths: []string{"http://nas.local/stream?token=temporary"}, ShareDLNA: true},
 		{ID: "duplicate", Name: "Duplicate NAS", DeviceID: "device-a", Location: "http://new-address/device.xml"},
 		{ID: "invalid", Name: "Invalid", DeviceID: "device-b", Location: "file:///device.xml"},
 		{ID: "credentials", Name: "Credentials", DeviceID: "device-c", Location: "http://user:secret@nas/device.xml"},

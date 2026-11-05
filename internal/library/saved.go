@@ -13,11 +13,12 @@ import (
 // Saved is a folder, a DLNA device, or an explicit collection of local paths.
 // Only locations are stored; opening a library reads current file information.
 type Saved struct {
-	ID, Name string
-	Folder   string   `json:",omitempty"`
-	Paths    []string `json:",omitempty"`
-	DeviceID string   `json:",omitempty"`
-	Location string   `json:",omitempty"`
+	ID, Name  string
+	Folder    string   `json:",omitempty"`
+	Paths     []string `json:",omitempty"`
+	DeviceID  string   `json:",omitempty"`
+	Location  string   `json:",omitempty"`
+	ShareDLNA bool     `json:",omitempty"`
 }
 
 type SavedItem struct {
@@ -64,6 +65,7 @@ func NormalizeSaved(saved []Saved) []Saved {
 			}
 			devices[item.DeviceID] = true
 			item.Folder, item.Paths = "", nil
+			item.ShareDLNA = false
 		} else if item.Folder != "" {
 			if !filepath.IsAbs(item.Folder) {
 				continue

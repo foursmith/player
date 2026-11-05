@@ -134,7 +134,6 @@
   "library.addPlaylist": "Add current playlist",
   "library.empty": "Your video library",
   "library.emptyDescription": "Add folders, find DLNA devices, or create video collections.",
-  "library.storageDescription": "The library saves source locations. Removing a source keeps the original video files.",
   "library.loading": "Reading videos…",
   "library.noItems": "No videos yet",
   "library.noResults": "No matching videos",
@@ -178,5 +177,10 @@
   "media.folder": "Folder",
   "library.shortTitle": "Library",
   "library.noSources": "Not added yet",
-  "library.savePlaylistShort": "Save playlist"
+  "library.savePlaylistShort": "Save playlist",
+  "sharing.title": "Share this library via DLNA",
+  "sharing.starting": "Starting sharing…",
+  "sharing.failed": "Could not start DLNA sharing",
+  "sharing.stopped": "DLNA sharing stopped. Retry to reconnect.",
+  "sharing.retry": "Retry sharing"
 }

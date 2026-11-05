@@ -134,7 +134,6 @@
   "library.addPlaylist": "現在の再生リストを取り込む",
   "library.empty": "動画ライブラリ",
   "library.emptyDescription": "フォルダーや DLNA デバイスを追加したり、動画をコレクションにまとめたりできます。",
-  "library.storageDescription": "動画ライブラリは保存場所を記録します。項目を削除しても元の動画ファイルは残ります。",
   "library.loading": "動画を読み込み中…",
   "library.noItems": "動画がありません",
   "library.noResults": "一致する動画がありません",
@@ -178,5 +177,10 @@
   "media.folder": "フォルダー",
   "library.shortTitle": "ライブラリ",
   "library.noSources": "未追加",
-  "library.savePlaylistShort": "再生リストを保存"
+  "library.savePlaylistShort": "再生リストを保存",
+  "sharing.title": "このライブラリを DLNA で共有",
+  "sharing.starting": "共有を開始中…",
+  "sharing.failed": "DLNA 共有を開始できませんでした",
+  "sharing.stopped": "DLNA 共有が停止しました。再試行してください。",
+  "sharing.retry": "共有を再試行"
 }
