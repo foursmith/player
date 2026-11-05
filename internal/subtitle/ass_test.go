@@ -1,0 +1,16 @@
+package subtitle
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestExportTrimsAndOffsetsCues(t *testing.T) {
+	out := ASS([]Cue{{1, 3, "片段\nsecond"}, {9, 12, "outside"}}, 2, 5, 800, 600, 400)
+	if !strings.Contains(out, "0:00:00.00,0:00:01.00") || !strings.Contains(out, `片段\Nsecond`) || strings.Contains(out, "outside") {
+		t.Fatal(out)
+	}
+	if !strings.Contains(out, "Helvetica Neue,32.000") {
+		t.Fatal("subtitle scale changed")
+	}
+}

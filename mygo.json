@@ -1,0 +1,72 @@
+{
+  "name": "Foursmith VR",
+  "identifier": "com.foursmith.vr",
+  "version": "0.2.6",
+  "out": "build",
+  "icon": "assets/icon.png",
+  "macos": {
+    "infoPlist": {
+      "NSLocalNetworkUsageDescription": "浏览局域网中的 fsvr 媒体库和 DLNA 设备。"
+    }
+  },
+  "fileAssociations": [
+    {
+      "ext": [
+        "mp4",
+        "m4v"
+      ],
+      "name": "Video",
+      "role": "Viewer",
+      "mimeType": "video/mp4"
+    },
+    {
+      "ext": [
+        "mkv"
+      ],
+      "name": "Video",
+      "role": "Viewer",
+      "mimeType": "video/x-matroska"
+    },
+    {
+      "ext": [
+        "mov"
+      ],
+      "name": "Video",
+      "role": "Viewer",
+      "mimeType": "video/quicktime"
+    },
+    {
+      "ext": [
+        "webm"
+      ],
+      "name": "Video",
+      "role": "Viewer",
+      "mimeType": "video/webm"
+    },
+    {
+      "ext": [
+        "avi"
+      ],
+      "name": "Video",
+      "role": "Viewer",
+      "mimeType": "video/x-msvideo"
+    },
+    {
+      "ext": [
+        "ogv"
+      ],
+      "name": "Video",
+      "role": "Viewer",
+      "mimeType": "video/ogg"
+    },
+    {
+      "ext": [
+        "mpeg",
+        "mpg"
+      ],
+      "name": "Video",
+      "role": "Viewer",
+      "mimeType": "video/mpeg"
+    }
+  ]
+}

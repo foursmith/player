@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export CGO_ENABLED=1
+export GOFLAGS="${GOFLAGS:-} -buildvcs=false"
+if [[ -f .cache/tflite/libtensorflowlite_c.2.17.1.dylib ]]; then
+    export FSVR_TFLITE_LIBRARY="${FSVR_TFLITE_LIBRARY:-$PWD/.cache/tflite/libtensorflowlite_c.2.17.1.dylib}"
+fi
+
+# Respect explicitly supplied toolchains (including Windows/Linux SDKs).
+# Homebrew's FFmpeg and SDL are keg-only on some installations.
+if [[ "$(uname -s)" == Darwin ]] && command -v brew >/dev/null; then
+    for formula in ffmpeg sdl3; do
+        prefix="$(brew --prefix "$formula")"
+        export CGO_CFLAGS="${CGO_CFLAGS:-} -I${prefix}/include"
+        export CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${prefix}/lib -Wl,-rpath,${prefix}/lib"
+    done
+fi
+exec "$@"
