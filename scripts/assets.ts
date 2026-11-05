@@ -3,7 +3,7 @@ import { resolve, dirname } from "node:path"
 
 const root = resolve(import.meta.dir, "..")
 const { name: appName } = JSON.parse(await readFile(resolve(root, "mygo.json"), "utf8"))
-const brand = (text: string) => text.replaceAll("Foursmith VR", appName).replaceAll("foursmith/vr", "foursmith/player")
+const brand = (text: string) => text.replaceAll("Foursmith VR", appName)
 const web = resolve(root, "../web")
 const source = await readFile(resolve(web, "src/i18n.ts"), "utf8")
 const dictionaries = source.slice(0, source.indexOf("const dictionaries:")).replace(/^import .*\n/gm, "")
@@ -24,8 +24,7 @@ await mkdir(resolve(root, "assets/models"), { recursive: true })
 for (const [locale, dictionary] of Object.entries(module.default)) {
   const localized = Object.fromEntries(Object.entries(flatten(dictionary)).map(([key, value]) => [key, brand(value)]))
   localized["common.appName"] = appName
-  delete localized["settings.viewStars"]
-  delete localized["settings.githubStars"]
+  for (const key of ["common.github", "empty.viewOnGithub", "settings.viewVersion", "settings.viewStars", "settings.githubStars"]) delete localized[key]
   await writeFile(resolve(root, `assets/locales/${locale}.json`), `${JSON.stringify(localized, null, 2)}\n`)
 }
 await writeFile(resolve(root, "assets/icon.svg"), brand(await readFile(resolve(web, "public/icon.svg"), "utf8")))
@@ -36,6 +35,7 @@ const iconSource = await readFile(resolve(web, "src/components/ui/Icon.tsx"), "u
 const names = [...iconSource.matchAll(/"([^"]+)": "i-ph-([^"]+)"/g)]
 const iconify = JSON.parse(await readFile(resolve(web,"node_modules/@iconify-json/ph/icons.json"),"utf8"))
 for (const [, name, id] of names) {
+  if (name === "github") continue
   const data = iconify.icons[id]
   if (!data) throw new Error(`Missing icon ${id}`)
   await writeFile(resolve(root, `assets/icons/${name}.svg`), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${data.width ?? iconify.width} ${data.height ?? iconify.height}">${data.body}</svg>\n`)

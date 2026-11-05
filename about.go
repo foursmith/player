@@ -1,9 +1,6 @@
 package main
 
-import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
-)
+import "github.com/egoist/mygo/ui"
 
 func (a *application) about(c *ui.Context) {
 	ui.Row(c).FillWidth().Padding(12).Gap(12).Children(func() {
@@ -17,20 +14,12 @@ func (a *application) about(c *ui.Context) {
 	ui.Divider(c).Background(white(.07))
 	ui.Row(c).FillWidth().Padding(10, 12).Gap(4).Children(func() {
 		smallText(c, a.t("settings.by"), .42)
-		linkButton(c, "ourongxing", "https://github.com/ourongxing")
+		smallText(c, "ourongxing", .68)
 		smallText(c, "·", .24)
-		linkButton(c, "MPL 2.0", "https://github.com/foursmith/player/blob/main/LICENSE")
+		smallText(c, "MPL 2.0", .68)
 		ui.Spacer(c).Grow(1)
 		a.aboutAction(c, "bug", a.t("settings.debug"), a.debugOpen, func() { a.debugOpen = !a.debugOpen })
-		a.aboutAction(c, "github", "GitHub", false, func() { go mygo.Shell.OpenExternal("https://github.com/foursmith/player") })
 	})
-}
-func linkButton(c *ui.Context, label, url string) ui.Element {
-	button := ui.Button(c, label).Height(22).Padding(0, 2).FontSize(10).Border(0, ui.Transparent).Background(ui.Transparent).TextColor(white(.68)).Cursor(ui.CursorPointer)
-	if button.Clicked() {
-		go mygo.Shell.OpenExternal(url)
-	}
-	return button
 }
 func (a *application) aboutAction(c *ui.Context, icon, label string, pressed bool, action func()) {
 	button := ui.Button(c, "").Height(24).Padding(4, 7).Radius(12).Border(0, ui.Transparent).Background(ui.Transparent).Label(label)

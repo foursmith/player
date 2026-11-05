@@ -21,7 +21,6 @@ import (
 
 type application struct {
 	subtitleCancel                            func()
-	githubStarted                             time.Time
 	trackingLog                               []string
 	recordingTracking                         bool
 	trackingSampleWidth, trackingSampleHeight int

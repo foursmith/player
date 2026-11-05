@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/shader"
 	"math"
@@ -43,30 +42,12 @@ func (a *application) empty(c *ui.Context) {
 			ui.Box(c).Size(heroW, heroH).Children(func() {
 				pose := motion(math.Mod(t, 18)/18, []motionFrame{{at: 0, x: 1, y: 1, rotate: -.2, scale: .998}, {at: .24, x: 1, y: 1, rotate: -.2, scale: .998}, {at: .48, x: 4, y: -2, rotate: .35, scale: 1.004}, {at: .56, x: -3, rotate: -.55, scale: .996}, {at: .63, x: -27, y: 1, rotate: -1.15, scale: 1.012}, {at: .70, x: -18, rotate: -.45, scale: 1.004}, {at: .84, x: 4, y: -1, rotate: .25, scale: 1}, {at: 1, x: 1, y: 1, rotate: -.2, scale: .998}}, [4]float64{.42, 0, .24, 1})
 				ui.Image(c, logo).Size(logoSize, logoSize).Attach(ui.AnchorCenter, ui.AnchorCenter).Translate(float32(pose.x), float32(pose.y)).Rotate(float32(pose.rotate)).Scale(float32(pose.scale), float32(pose.scale))
-				githubX := heroW/2 + 64 - 20
-				if wide {
-					githubX += 16
-				}
-				ui.Box(c).Absolute().Left(githubX).Top(heroH/2 - 20).Children(func() {
-					button := ui.Button(c, "").Size(40, 40).Padding(4).Background(ui.Transparent).Border(0, ui.Transparent).Label(a.t("empty.viewOnGithub"))
-					button.Draw(func(p *ui.Painter, r ui.Rect) {
-						p.Icon(icons["github"], ui.Rect{X: r.X + 4, Y: r.Y + 4, W: 32, H: 32}, ui.RGBA(218, 250, 245, .58))
-					})
-					if button.Clicked() {
-						if c.Preferences().ReduceMotion {
-							go mygo.Shell.OpenExternal("https://github.com/foursmith/player")
-						} else if a.githubStarted.IsZero() {
-							a.githubStarted = c.Now()
-						}
-					}
-				})
 				for i, dot := range []struct {
 					x, y float32
 					key  string
 				}{{0, 24, "empty.noHeadset"}, {heroW - 6, 76, "empty.openSource"}, {40, heroH - 6, "empty.portraitLayout"}, {heroW - 10, heroH - 38, "empty.portraitCentering"}, {heroW/2 - 72, -8, "empty.autoFramedVr"}, {-6, 130, "common.appName"}} {
 					ui.Box(c.Key(i)).Absolute().Left(dot.x+float32(math.Sin(t/(2+float64(i)))*12)).Top(dot.y+float32(math.Cos(t/(3+float64(i)))*4)).Size(6, 6).Radius(3).Background(ui.Hex("#b8f3ec")).Focusable().Label(a.t(dot.key))
 				}
-				a.githubBurst(c, heroW, heroH)
 			})
 			ui.Column(c).AlignItems(ui.Center).Gap(24).Children(func() {
 				ui.RichText(c, ui.Span{Text: a.t("common.tagline"), Italic: true, Size: 11, Weight: 500, LetterSpacing: 2.1, Color: ui.RGBA(245, 255, 252, .42)})
@@ -83,7 +64,7 @@ func (a *application) empty(c *ui.Context) {
 	}
 }
 
-type motionFrame struct{ at, x, y, rotate, scale, alpha float64 }
+type motionFrame struct{ at, x, y, rotate, scale float64 }
 
 func bezierProgress(x, a, b, c, d float64) float64 {
 	lo, hi := 0.0, 1.0
@@ -106,31 +87,7 @@ func motion(t float64, frames []motionFrame, ease [4]float64) motionFrame {
 		}
 		p := bezierProgress((t-left.at)/(right.at-left.at), ease[0], ease[1], ease[2], ease[3])
 		lerp := func(a, b float64) float64 { return a + (b-a)*p }
-		return motionFrame{t, lerp(left.x, right.x), lerp(left.y, right.y), lerp(left.rotate, right.rotate), lerp(left.scale, right.scale), lerp(left.alpha, right.alpha)}
+		return motionFrame{t, lerp(left.x, right.x), lerp(left.y, right.y), lerp(left.rotate, right.rotate), lerp(left.scale, right.scale)}
 	}
 	return frames[len(frames)-1]
-}
-func (a *application) githubBurst(c *ui.Context, heroW, heroH float32) {
-	if a.githubStarted.IsZero() {
-		return
-	}
-	elapsed := c.Now().Sub(a.githubStarted)
-	if elapsed >= 760*time.Millisecond {
-		a.githubStarted = time.Time{}
-		go mygo.Shell.OpenExternal("https://github.com/foursmith/player")
-		return
-	}
-	t := elapsed.Seconds() / .72
-	colors := []ui.Color{ui.Hex("#b8f3ec"), ui.Hex("#62cfd8"), ui.Hex("#f5fffc"), ui.Hex("#7dd3fc"), ui.Hex("#fda4af")}
-	x := heroW/2 + 64
-	if a.width >= 640 {
-		x += 16
-	}
-	for i := range 24 {
-		angle := 2 * math.Pi * float64(i) / 24
-		distance := 52 + 58*math.Abs(math.Sin(float64(i)*19.37))
-		p := motion(math.Min(1, t), []motionFrame{{at: 0, scale: .35}, {at: .1, scale: .5, alpha: 1}, {at: .56, x: math.Cos(angle) * distance * .58, y: math.Sin(angle)*distance*.58 - 22, rotate: 180 + float64(i)*7, scale: 1, alpha: 1}, {at: 1, x: math.Cos(angle) * distance, y: math.Sin(angle)*distance + 42, rotate: 540 + float64(i)*15, scale: .72}}, [4]float64{.12, .72, .24, 1})
-		ui.Box(c.Key(i)).Absolute().Left(x+float32(p.x)).Top(heroH/2+float32(p.y)).Size(5, 8).Radius(2).Background(colors[i%len(colors)]).Scale(float32(p.scale), float32(p.scale)).Rotate(float32(p.rotate)).Opacity(float32(p.alpha)).IgnoreInput(true)
-	}
-	c.After(time.Second / 60)
 }
