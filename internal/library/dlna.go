@@ -21,7 +21,7 @@ func BrowseDLNA(ctx context.Context, device dlna.Device, objectID string) ([]Sav
 			subtitles = append(subtitles, object)
 			continue
 		}
-		entry := Entry{Name: object.Name, Path: object.URL, DeviceID: device.ID, ObjectID: object.ID, Subtitle: object.Subtitle, Size: object.Size, Modified: object.Modified}
+		entry := Entry{Name: object.Name, Path: object.URL, DeviceID: device.ID, ObjectID: object.ID, ParentID: objectID, Subtitle: object.Subtitle, Size: object.Size, Modified: object.Modified}
 		item := SavedItem{Entry: entry, Folder: object.Folder, Duration: object.Duration}
 		if !object.Folder && object.Subtitle == "" {
 			unmatched = append(unmatched, len(items))

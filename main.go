@@ -34,6 +34,8 @@ type application struct {
 	homeAnimation                             homeAnimationClock
 	scanning                                  bool
 	importGeneration                          uint64
+	playbackRestoreCancel                     context.CancelFunc
+	playlistSnapshot                          *playlistSnapshot
 	menuLocale                                string
 	dialogOpen                                bool
 	expandedFolders                           map[string]bool
@@ -268,10 +270,8 @@ func main() {
 		a.pendingPaths = nil
 		if len(initialPaths) > 0 {
 			a.importPaths(initialPaths, false)
-		} else if a.preferences.RecordPlaybackHistory && a.preferences.AutoResume && state.LastFile != "" {
-			if _, err := os.Stat(state.LastFile); err == nil {
-				a.importPaths([]string{state.LastFile}, false)
-			}
+		} else if a.preferences.RecordPlaybackHistory && a.preferences.AutoResume && a.stored.LastPlayback != nil {
+			a.openSavedPlayback(*a.stored.LastPlayback)
 		}
 		a.persist()
 	})
@@ -303,6 +303,7 @@ func (a *application) importPaths(paths []string, appendOnly bool) {
 			if len(entries) == 0 {
 				if len(subtitles) > 0 {
 					a.subtitlePaths = append(a.subtitlePaths, subtitles...)
+					a.playlistSnapshot = nil
 					a.loadSubtitle(subtitles[0])
 				} else {
 					a.notice = a.t("media.noVideos")
@@ -341,13 +342,11 @@ func (a *application) playEntry(index int) {
 	a.scrubbing, a.dragging = false, false
 	a.player.Open(media.Source{URL: entry.Path, Start: start})
 	a.window.SetTitle(entry.Name + " — " + appInfo.Name)
-	if entry.DeviceID == "" && a.preferences.RecordPlaybackHistory && a.preferences.AutoResume {
-		a.stored.LastFile = entry.Path
-	} else {
-		a.stored.LastFile = ""
-	}
-	if a.rememberRecentFile(entry) {
-		addSystemRecentFile(entry.Path)
+	a.rememberStartupPlayback(entry)
+	if a.rememberRecentMedia(entry) {
+		if entry.DeviceID == "" {
+			addSystemRecentFile(entry.Path)
+		}
 		a.refreshMenu()
 	}
 	a.persist()

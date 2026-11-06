@@ -54,12 +54,12 @@ func (h videoHistory) automaticProjection() (projection.Mode, bool) {
 }
 
 type storedState struct {
-	Preferences preferences
-	History     map[string]videoHistory
-	LastFile    string
-	RecentFiles []string
-	Libraries   []library.Saved
-	DLNAUUID    string `json:",omitempty"`
+	Preferences  preferences
+	History      map[string]videoHistory
+	LastPlayback *savedPlayback `json:",omitempty"`
+	RecentMedia  []savedPlayback
+	Libraries    []library.Saved
+	DLNAUUID     string `json:",omitempty"`
 }
 
 func defaultPreferences() preferences {
@@ -122,28 +122,19 @@ func loadState(path string) storedState {
 		state.History[key] = history
 	}
 	if !p.RecordPlaybackHistory || !p.AutoResume {
-		state.LastFile = ""
-	}
-	var recent []string
-	for _, path := range state.RecentFiles {
-		if filepath.IsAbs(path) && !slices.Contains(recent, path) && len(recent) < 10 {
-			recent = append(recent, path)
+		state.LastPlayback = nil
+	} else if state.LastPlayback != nil {
+		item, valid := state.LastPlayback.normalized()
+		state.LastPlayback = nil
+		if valid {
+			state.LastPlayback = &item
 		}
 	}
-	state.RecentFiles = recent
+	state.RecentMedia = normalizeRecentMedia(state.RecentMedia)
 	state.Libraries = library.NormalizeSaved(state.Libraries)
 	return state
 }
 
-func rememberFile(recent []string, path string) []string {
-	out := []string{path}
-	for _, previous := range recent {
-		if previous != path && len(out) < 10 {
-			out = append(out, previous)
-		}
-	}
-	return out
-}
 func saveState(path string, state storedState) error {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

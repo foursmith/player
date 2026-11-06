@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"runtime"
 
 	"github.com/egoist/mygo"
@@ -16,11 +15,11 @@ func (a *application) refreshMenu() {
 	}
 	settings := action("common.settings", "CmdOrCtrl+,", a.openSettings)
 	recent := []*mygo.MenuItem{}
-	for _, path := range a.stored.RecentFiles {
-		recent = append(recent, &mygo.MenuItem{Label: filepath.Base(path), Click: func(*mygo.MenuItem, *mygo.Window) {
+	for _, item := range a.stored.RecentMedia {
+		recent = append(recent, &mygo.MenuItem{Label: item.Name, Click: func(*mygo.MenuItem, *mygo.Window) {
 			a.window.Update(func() {
 				a.showWindow()
-				a.importPaths([]string{path}, false)
+				a.openSavedPlayback(item)
 			})
 		}})
 	}

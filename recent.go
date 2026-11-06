@@ -9,17 +9,39 @@ import (
 	"github.com/foursmith/player/internal/library"
 )
 
-func (a *application) rememberRecentFile(entry library.Entry) bool {
-	if entry.DeviceID != "" || !a.preferences.RecentFilesEnabled {
+func normalizeRecentMedia(items []savedPlayback) []savedPlayback {
+	var out []savedPlayback
+	seen := map[string]bool{}
+	for _, item := range items {
+		item, valid := item.normalized()
+		if !valid {
+			continue
+		}
+		key := item.key()
+		if !seen[key] && len(out) < 10 {
+			seen[key] = true
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func (a *application) rememberRecentMedia(entry library.Entry) bool {
+	if !a.preferences.RecentFilesEnabled {
 		return false
 	}
-	a.stored.RecentFiles = rememberFile(a.stored.RecentFiles, entry.Path)
+	item, valid := a.playbackRecord(entry)
+	if !valid {
+		return false
+	}
+	a.stored.RecentMedia = normalizeRecentMedia(append([]savedPlayback{item}, a.stored.RecentMedia...))
 	return true
 }
 
 func (a *application) clearRecentFiles() {
-	a.stored.RecentFiles = nil
-	a.stored.LastFile = ""
+	a.cancelPlaybackRestore()
+	a.stored.RecentMedia = nil
+	a.stored.LastPlayback = nil
 	if mygo.App.IsReady() {
 		clearSystemRecentFiles()
 	}
@@ -46,10 +68,12 @@ func (a *application) restoreSystemRecentFiles() {
 		return
 	}
 	// AppKit puts each added file first, so replay oldest to newest.
-	for i := len(a.stored.RecentFiles) - 1; i >= 0; i-- {
-		path := a.stored.RecentFiles[i]
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			addSystemRecentFile(path)
+	for i := len(a.stored.RecentMedia) - 1; i >= 0; i-- {
+		item := a.stored.RecentMedia[i]
+		if item.DeviceID == "" {
+			if info, err := os.Stat(item.Path); err == nil && !info.IsDir() {
+				addSystemRecentFile(item.Path)
+			}
 		}
 	}
 }

@@ -52,9 +52,10 @@ func (a *application) resetPreferences() {
 }
 
 func (a *application) updateHistoryRecording() {
-	a.stored.LastFile = ""
-	if a.preferences.RecordPlaybackHistory && a.preferences.AutoResume && a.selected >= 0 && a.selected < len(a.entries) && a.entries[a.selected].DeviceID == "" {
-		a.stored.LastFile = a.entries[a.selected].Path
+	if a.selected >= 0 && a.selected < len(a.entries) {
+		a.rememberStartupPlayback(a.entries[a.selected])
+	} else {
+		a.stored.LastPlayback = nil
 	}
 	a.persist()
 }

@@ -15,6 +15,7 @@ type playlistRow struct {
 }
 
 func (a *application) invalidatePlaylist() {
+	a.playlistSnapshot = nil
 	a.playlistTreeValid = false
 	a.playlistRowsValid = false
 }
@@ -104,6 +105,7 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 	})
 }
 func (a *application) cancelImports() {
+	a.cancelPlaybackRestore()
 	a.importGeneration++
 	a.pendingPaths = nil
 	a.openFilesAt = time.Time{}
@@ -158,6 +160,7 @@ func importedPlaylist(current, incoming []library.Entry, selected int, appendOnl
 func (a *application) applyImportedEntries(entries []library.Entry, subtitles []string, appendOnly bool, startPath string) {
 	queue, selected, play := importedPlaylist(a.entries, entries, a.selected, appendOnly)
 	if !appendOnly {
+		a.resetPlayback()
 		a.clearPlaylistDLNA()
 		a.playlistTree = nil
 		for i, entry := range queue {
@@ -166,7 +169,6 @@ func (a *application) applyImportedEntries(entries []library.Entry, subtitles []
 				break
 			}
 		}
-		a.resetPlayback()
 		a.subtitlePaths = nil
 		a.expandedFolders = map[string]bool{}
 	}
@@ -216,6 +218,6 @@ func (a *application) resetPlayback() {
 		a.pipWindow.Close()
 	}
 	a.window.SetTitle(appInfo.Name)
-	a.stored.LastFile = ""
+	a.stored.LastPlayback = nil
 	a.persist()
 }

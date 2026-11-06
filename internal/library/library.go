@@ -22,8 +22,8 @@ import (
 )
 
 type Entry struct {
-	Name, Path, Group, Root, Subtitle, DeviceID, ObjectID string
-	Size, Modified                                        int64
+	Name, Path, Group, Root, Subtitle, DeviceID, ObjectID, ParentID string
+	Size, Modified                                                  int64
 }
 
 type Node struct {

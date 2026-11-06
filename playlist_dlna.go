@@ -13,6 +13,7 @@ import (
 type playlistDLNASource struct {
 	saved   library.Saved
 	folders map[string]*playlistDLNAFolder
+	flat    bool // A directly opened video keeps its original flat queue row.
 }
 
 type playlistDLNAFolder struct {
@@ -83,6 +84,7 @@ func (a *application) addDLNAPlaylist(saved library.Saved, appendOnly bool) {
 		a.playlistDLNA[saved.DeviceID] = source
 	}
 	source.saved = saved
+	source.flat = false
 	folder := source.remember(a.catalog.directoryPath)
 	if a.catalog.error == "" && (!a.catalog.loading || len(a.catalog.items) > 0) {
 		source.update(folder, a.catalog.items)
@@ -92,6 +94,7 @@ func (a *application) addDLNAPlaylist(saved library.Saved, appendOnly bool) {
 	}
 	a.playlistExpanded = true
 	a.invalidatePlaylist()
+	a.persist()
 }
 
 func (a *application) playlistDLNAFolder(id string) (*playlistDLNASource, *playlistDLNAFolder) {
@@ -104,6 +107,7 @@ func (a *application) playlistDLNAFolder(id string) (*playlistDLNASource, *playl
 }
 
 func (a *application) togglePlaylistFolder(id string) {
+	a.playlistSnapshot = nil
 	a.expandedFolders[id] = !a.expandedFolders[id]
 	a.playlistRowsValid = false
 	source, folder := a.playlistDLNAFolder(id)
@@ -128,6 +132,7 @@ func (a *application) loadPlaylistDLNAFolder(source *playlistDLNASource, folder 
 		source.update(folder, items)
 		a.entries = mergeEntries(a.entries, library.PlayableEntries(items))
 		a.invalidatePlaylist()
+		a.persist()
 	})
 }
 
@@ -142,6 +147,9 @@ func (a *application) buildPlaylistTree() []library.Node {
 	owned := map[string]bool{}
 	children := map[string][]library.Node{}
 	for _, source := range a.playlistDLNA {
+		if source.flat {
+			continue
+		}
 		rootID := playlistDLNAFolderID(source.saved.DeviceID, "0")
 		children[""] = append(children[""], library.Node{ID: rootID, Name: source.saved.Name, Index: -1, Folder: true})
 		for id, folder := range source.folders {

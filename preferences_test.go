@@ -59,28 +59,30 @@ func TestStoredStateRejectsCorruptionAndInvalidHistory(t *testing.T) {
 }
 
 func TestRecentFilesOrderLimitAndValidation(t *testing.T) {
-	recent := []string{}
+	recent := []savedPlayback{}
 	for i := range 12 {
-		recent = rememberFile(recent, filepath.Join(t.TempDir(), fmt.Sprintf("%d.mp4", i)))
+		path := filepath.Join(t.TempDir(), fmt.Sprintf("%d.mp4", i))
+		item := savedPlayback{Path: path, Playlist: &playlistSnapshot{Entries: []playlistEntryReference{{Path: path}}}}
+		recent = normalizeRecentMedia(append([]savedPlayback{item}, recent...))
 	}
 	old := recent[5]
-	recent = rememberFile(recent, old)
+	recent = normalizeRecentMedia(append([]savedPlayback{old}, recent...))
 	if len(recent) != 10 || recent[0] != old || slices.Contains(recent[1:], old) {
 		t.Fatal(recent)
 	}
 	path := filepath.Join(t.TempDir(), "state.json")
-	state := storedState{LastFile: old, RecentFiles: []string{old, old, "https://nas/video.mp4", "relative.mp4"}}
+	state := storedState{LastPlayback: &old, RecentMedia: []savedPlayback{old, old, {Path: "https://nas/video.mp4"}, {Path: "relative.mp4"}}}
 	if err := saveState(path, state); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadState(path).RecentFiles; !reflect.DeepEqual(got, []string{old}) {
+	if got := loadState(path).RecentMedia; !reflect.DeepEqual(got, []savedPlayback{old}) {
 		t.Fatal(got)
 	}
-	state.RecentFiles = nil
+	state.RecentMedia = nil
 	if err := saveState(path, state); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadState(path).RecentFiles; len(got) != 0 {
-		t.Fatalf("LastFile repopulated cleared recent files: %v", got)
+	if got := loadState(path).RecentMedia; len(got) != 0 {
+		t.Fatalf("Startup playback repopulated cleared recent files: %v", got)
 	}
 }

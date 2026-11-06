@@ -149,12 +149,18 @@ func main() {
 	paths := flag.Args()
 	if *recent != "" {
 		data, err := os.ReadFile(*recent)
-		var state struct{ RecentFiles []string }
+		var state struct {
+			RecentMedia []struct{ Path, DeviceID string }
+		}
 		if err != nil || json.Unmarshal(data, &state) != nil {
 			fmt.Fprintln(os.Stderr, "cannot read recent media list")
 			os.Exit(1)
 		}
-		paths = append(paths, state.RecentFiles...)
+		for _, item := range state.RecentMedia {
+			if item.DeviceID == "" && item.Path != "" {
+				paths = append(paths, item.Path)
+			}
+		}
 	}
 	if len(paths) == 0 {
 		fmt.Fprintln(os.Stderr, "provide media paths or -recent state.json")

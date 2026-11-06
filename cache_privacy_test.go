@@ -22,7 +22,7 @@ func TestPlaybackHistoryRetainsOnlyCurrentOpaqueIdentities(t *testing.T) {
 			fmt.Sprintf("%s:%d:%d", entry.Path, entry.Size, entry.Modified): {Position: 99},
 			strings.Repeat("z", 64): {Position: 100},
 		},
-		LastFile: entry.Path, RecentFiles: []string{entry.Path},
+		LastPlayback: &savedPlayback{Path: entry.Path}, RecentMedia: []savedPlayback{{Path: entry.Path}},
 	}
 	path := filepath.Join(t.TempDir(), "state.json")
 	if err := saveState(path, state); err != nil {
@@ -32,7 +32,7 @@ func TestPlaybackHistoryRetainsOnlyCurrentOpaqueIdentities(t *testing.T) {
 	if len(normalized.History) != 1 || normalized.History[key] != saved {
 		t.Fatal("history retained an invalid key or changed a current entry")
 	}
-	if normalized.LastFile != "" {
+	if normalized.LastPlayback != nil {
 		t.Fatal("startup restoration is disabled but its plaintext path was retained")
 	}
 	a := modeTestApplication(t)
@@ -60,28 +60,29 @@ func TestPlaybackHistoryRetainsOnlyCurrentOpaqueIdentities(t *testing.T) {
 	}
 }
 
-func TestStartupPathIsSavedOnlyWhenExplicitlyEnabled(t *testing.T) {
+func TestStartupPlaybackIsSavedOnlyWhenExplicitlyEnabled(t *testing.T) {
 	a := modeTestApplication(t)
+	a.entries[0].Path = filepath.Join(t.TempDir(), "current.mp4")
 	entry := a.entries[0]
-	a.stored.LastFile = entry.Path
+	a.stored.LastPlayback = &savedPlayback{Path: entry.Path}
 	a.persist()
-	if a.stored.LastFile != "" {
+	if a.stored.LastPlayback != nil {
 		t.Fatal("disabled startup restoration retained a filename")
 	}
 	a.preferences.AutoResume = true
 	a.updateHistoryRecording()
-	if a.stored.LastFile != entry.Path {
+	if a.stored.LastPlayback == nil || a.stored.LastPlayback.Path != entry.Path {
 		t.Fatal("enabled startup restoration did not retain its required path")
 	}
 	a.clearRecentFiles()
 	a.persist()
-	if a.stored.LastFile != "" {
+	if a.stored.LastPlayback != nil {
 		t.Fatal("periodic saves repopulated a cleared startup restoration path")
 	}
 	a.updateHistoryRecording()
 	a.preferences.AutoResume = false
 	a.updateHistoryRecording()
-	if a.stored.LastFile != "" {
+	if a.stored.LastPlayback != nil {
 		t.Fatal("turning startup restoration off left its plaintext path behind")
 	}
 }

@@ -99,14 +99,14 @@ func TestClearRecentFilesPreservesPlaybackCache(t *testing.T) {
 	key := library.Identity(entry)
 	saved := videoHistory{Position: 42, AutoProjection: "sbs_180_eqr", ProjectionManual: true, Projection: projection.SBS180}
 	a.stored.History[key] = saved
-	a.stored.LastFile = entry.Path
-	a.stored.RecentFiles = []string{entry.Path}
+	a.stored.LastPlayback = &savedPlayback{Path: entry.Path}
+	a.stored.RecentMedia = []savedPlayback{{Path: entry.Path}}
 	a.clearRecentFiles()
-	if a.stored.History[key] != saved || a.stored.LastFile != "" || len(a.stored.RecentFiles) != 0 {
+	if a.stored.History[key] != saved || a.stored.LastPlayback != nil || len(a.stored.RecentMedia) != 0 {
 		t.Fatalf("clearing recent files changed playback cache or left visible history: %+v", a.stored)
 	}
 	a.recordPlaybackHistory(entry, media.State{URL: entry.Path, Position: 100})
-	if a.stored.History[key].Position != 100 || len(a.stored.RecentFiles) != 0 {
+	if a.stored.History[key].Position != 100 || len(a.stored.RecentMedia) != 0 {
 		t.Fatal("clearing recent files interrupted resume caching or repopulated recent history")
 	}
 }
@@ -126,7 +126,7 @@ func TestResetPreferencesKeepsPlaybackHistory(t *testing.T) {
 	if !reflect.DeepEqual(a.preferences, defaultPreferences()) || a.stored.History["saved"] != history {
 		t.Fatal("reset did not restore preferences while preserving history")
 	}
-	if a.stored.LastFile != "" {
+	if a.stored.LastPlayback != nil {
 		t.Fatal("reset kept a plaintext startup path with startup restoration disabled")
 	}
 }

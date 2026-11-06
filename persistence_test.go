@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -15,20 +16,22 @@ func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	w := newStateWriter(path, nil)
 	state := storedState{Preferences: defaultPreferences(), History: map[string]videoHistory{}}
-	state.RecentFiles = []string{filepath.Join(t.TempDir(), "original.mp4")}
+	state.RecentMedia = []savedPlayback{{Name: "original.mp4", Path: filepath.Join(t.TempDir(), "original.mp4")}}
+	state.RecentMedia[0].Playlist = &playlistSnapshot{Entries: []playlistEntryReference{{Name: "original.mp4", Path: state.RecentMedia[0].Path}}}
 	originalFolder := filepath.Join(t.TempDir(), "offline")
-	state.Libraries = []library.Saved{{ID: "collection", Name: "Original", Paths: []string{state.RecentFiles[0]}, Folders: []string{originalFolder}}}
+	state.Libraries = []library.Saved{{ID: "collection", Name: "Original", Paths: []string{state.RecentMedia[0].Path}, Folders: []string{originalFolder}}}
 	state.Preferences.Shortcuts = map[string]keyChord{"playPause": {Key: ui.KeyP}}
-	originalRecent := state.RecentFiles[0]
+	originalRecent := state.RecentMedia[0]
 	for i := range 100 {
 		state.History[library.Identity(library.Entry{Path: "video"})] = videoHistory{Position: float64(i)}
 		w.Submit(state)
 	}
 	// Mutating UI state after submission cannot change the saved snapshot.
 	state.History[library.Identity(library.Entry{Path: "video"})] = videoHistory{Position: 999}
-	state.RecentFiles[0] = filepath.Join(t.TempDir(), "mutated.mp4")
+	state.RecentMedia[0].Path = filepath.Join(t.TempDir(), "mutated.mp4")
+	state.RecentMedia[0].Playlist = &playlistSnapshot{Entries: []playlistEntryReference{{Name: "mutated.mp4", Path: state.RecentMedia[0].Path}}}
 	state.Libraries[0].Name = "Mutated"
-	state.Libraries[0].Paths[0] = state.RecentFiles[0]
+	state.Libraries[0].Paths[0] = state.RecentMedia[0].Path
 	state.Libraries[0].Folders[0] = filepath.Join(t.TempDir(), "mutated-folder")
 	state.Preferences.Shortcuts["playPause"] = keyChord{Key: ui.KeyJ}
 	if err := w.Close(); err != nil {
@@ -40,10 +43,10 @@ func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
 	if got := loadState(path).Preferences.Shortcuts["playPause"]; got.Key != ui.KeyP {
 		t.Fatalf("shortcuts shared mutable state: %+v", got)
 	}
-	if got := loadState(path).RecentFiles; len(got) != 1 || got[0] != originalRecent {
+	if got := loadState(path).RecentMedia; len(got) != 1 || !reflect.DeepEqual(got[0], originalRecent) {
 		t.Fatalf("recent files shared mutable UI state: %v", got)
 	}
-	if got := loadState(path).Libraries; len(got) != 1 || got[0].Name != "Original" || len(got[0].Paths) != 1 || got[0].Paths[0] != originalRecent || len(got[0].Folders) != 1 || got[0].Folders[0] != originalFolder {
+	if got := loadState(path).Libraries; len(got) != 1 || got[0].Name != "Original" || len(got[0].Paths) != 1 || got[0].Paths[0] != originalRecent.Path || len(got[0].Folders) != 1 || got[0].Folders[0] != originalFolder {
 		t.Fatalf("library records shared mutable UI state: %+v", got)
 	}
 }

@@ -35,7 +35,11 @@ func newStateWriter(path string, failed func(error)) *stateWriter {
 
 func (w *stateWriter) Submit(state storedState) {
 	state.History = maps.Clone(state.History)
-	state.RecentFiles = slices.Clone(state.RecentFiles)
+	if state.LastPlayback != nil {
+		item := *state.LastPlayback
+		state.LastPlayback = &item
+	}
+	state.RecentMedia = slices.Clone(state.RecentMedia)
 	state.Libraries = library.CloneSaved(state.Libraries)
 	state.Preferences.Shortcuts = maps.Clone(state.Preferences.Shortcuts)
 	select {
@@ -57,10 +61,11 @@ func (a *application) persist() {
 		return
 	}
 	if !a.preferences.RecordPlaybackHistory || !a.preferences.AutoResume {
-		a.stored.LastFile = ""
+		a.stored.LastPlayback = nil
 	}
 	if a.selected >= 0 && a.selected < len(a.entries) {
 		a.recordPlaybackHistory(a.entries[a.selected], a.player.Snapshot())
+		a.updatePlaybackPlaylists()
 	}
 	if len(a.stored.History) > 10000 {
 		keys := make([]string, 0, len(a.stored.History))

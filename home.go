@@ -2,7 +2,6 @@ package main
 
 import (
 	"math"
-	"path/filepath"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -87,13 +86,13 @@ func (a *application) home(c *ui.Context) {
 			ui.Column(c).AlignItems(ui.Center).Gap(24).Children(func() {
 				ui.RichText(c, ui.Span{Text: a.t("common.tagline"), Italic: true, Size: 11, Weight: 500, LetterSpacing: 2.1, Color: ui.RGBA(245, 255, 252, .42)})
 				a.pickers(c, actionsWidth, false)
-				if a.preferences.RecentFilesEnabled && a.height >= 640 && len(a.stored.RecentFiles) > 0 {
+				if a.preferences.RecentFilesEnabled && a.height >= 640 && len(a.stored.RecentMedia) > 0 {
 					ui.Column(c.Key("recent")).Width(actionsWidth).Gap(4).Children(func() {
 						smallText(c, a.t("media.recentFiles"), .42).Padding(4, 8)
-						for _, path := range a.stored.RecentFiles[:min(3, len(a.stored.RecentFiles))] {
-							ui.Button(c.Key(path), "").FillWidth().Height(30).Padding(0, 8).Background(ui.Transparent).Border(0, ui.Transparent).Radius(8).Label(filepath.Base(path)).Children(func() {
-								ui.Text(c, filepath.Base(path)).FontSize(11).TextColor(white(.7)).SingleLine().FillWidth().MinWidth(0)
-							}).OnClick(func() { a.importPaths([]string{path}, false) })
+						for _, item := range a.stored.RecentMedia[:min(3, len(a.stored.RecentMedia))] {
+							ui.Button(c.Key(item.key()), "").FillWidth().Height(30).Padding(0, 8).Background(ui.Transparent).Border(0, ui.Transparent).Radius(8).Label(item.Name).Children(func() {
+								ui.Text(c, item.Name).FontSize(11).TextColor(white(.7)).SingleLine().FillWidth().MinWidth(0)
+							}).OnClick(func() { a.openSavedPlayback(item) })
 						}
 					})
 				}

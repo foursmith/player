@@ -16,6 +16,7 @@ import (
 func TestHistoryControlsResumeAndRecordingIndependently(t *testing.T) {
 	a := modeTestApplication(t)
 	a.preferences.AutoResume = true
+	a.entries[0].Path = filepath.Join(t.TempDir(), "current.mp4")
 	entry := a.entries[0]
 	key := library.Identity(entry)
 	saved := videoHistory{Position: 42, Projection: projection.SBS180, ProjectionManual: true}
@@ -29,9 +30,9 @@ func TestHistoryControlsResumeAndRecordingIndependently(t *testing.T) {
 		t.Fatal("saved position was not restored")
 	}
 	a.preferences.RecordPlaybackHistory = false
-	a.stored.LastFile = entry.Path
+	a.stored.LastPlayback = &savedPlayback{Path: entry.Path}
 	a.updateHistoryRecording()
-	if start := a.prepareVideoMode(entry); start != 0 || a.modeManual || a.stored.LastFile != "" {
+	if start := a.prepareVideoMode(entry); start != 0 || a.modeManual || a.stored.LastPlayback != nil {
 		t.Fatal("disabled history was used to restore a video")
 	}
 	a.recordPlaybackHistory(entry, media.State{URL: entry.Path, Position: 100})
@@ -40,7 +41,7 @@ func TestHistoryControlsResumeAndRecordingIndependently(t *testing.T) {
 	}
 	a.preferences.RecordPlaybackHistory = true
 	a.updateHistoryRecording()
-	if a.stored.LastFile != entry.Path {
+	if a.stored.LastPlayback == nil || a.stored.LastPlayback.Path != entry.Path {
 		t.Fatal("reenabling history did not restore startup tracking")
 	}
 }
@@ -49,23 +50,24 @@ func TestRecentFilesRespectMenuPreferenceAndIndependentHistorySwitch(t *testing.
 	a := &application{preferences: defaultPreferences()}
 	first := library.Entry{Path: filepath.Join(t.TempDir(), "first.mp4")}
 	second := library.Entry{Path: filepath.Join(t.TempDir(), "second.mp4")}
-	if !a.rememberRecentFile(first) || !a.rememberRecentFile(second) {
+	a.entries = []library.Entry{first, second}
+	if !a.rememberRecentMedia(first) || !a.rememberRecentMedia(second) {
 		t.Fatal("enabled recent-file preference did not record played local files")
 	}
-	if !a.rememberRecentFile(first) || a.stored.RecentFiles[0] != first.Path || len(a.stored.RecentFiles) != 2 {
+	if !a.rememberRecentMedia(first) || a.stored.RecentMedia[0].Path != first.Path || len(a.stored.RecentMedia) != 2 {
 		t.Fatal("replaying a file did not move it to the top without duplication")
 	}
 	a.preferences.RecentFilesEnabled = false
-	before := append([]string(nil), a.stored.RecentFiles...)
-	if a.rememberRecentFile(second) || !reflect.DeepEqual(before, a.stored.RecentFiles) {
+	before := append([]savedPlayback(nil), a.stored.RecentMedia...)
+	if a.rememberRecentMedia(second) || !reflect.DeepEqual(before, a.stored.RecentMedia) {
 		t.Fatal("disabled recent files still recorded playback or discarded the old list")
 	}
 	a.preferences.RecordPlaybackHistory = false
 	a.preferences.RecentFilesEnabled = true
-	if !a.rememberRecentFile(second) {
+	if !a.rememberRecentMedia(second) {
 		t.Fatal("playback-history switch incorrectly disabled the separate recent-file preference")
 	}
-	if a.rememberRecentFile(library.Entry{Path: "https://nas/video.mp4", DeviceID: "nas"}) {
+	if a.rememberRecentMedia(library.Entry{Path: "https://nas/video.mp4", DeviceID: "nas"}) {
 		t.Fatal("DLNA URL was added to local recent files")
 	}
 }
@@ -122,8 +124,8 @@ func TestClearingHistoryAlsoRemovesPreservedRecentFilesAcrossRestart(t *testing.
 	// Turning the recent menu off retains the old list; clearing history
 	// must erase that list too, so startup or reenabling cannot replay it.
 	a.preferences.RecentFilesEnabled = false
-	a.stored.RecentFiles = []string{filepath.Join(t.TempDir(), "old.mp4")}
-	a.stored.LastFile = a.stored.RecentFiles[0]
+	a.stored.RecentMedia = []savedPlayback{{Path: filepath.Join(t.TempDir(), "old.mp4")}}
+	a.stored.LastPlayback = &savedPlayback{Path: a.stored.RecentMedia[0].Path}
 	cacheKey := library.Identity(library.Entry{Path: "old"})
 	saved := videoHistory{Position: 42, AutoProjection: "sbs_180_eqr"}
 	a.stored.History[cacheKey] = saved
@@ -133,7 +135,7 @@ func TestClearingHistoryAlsoRemovesPreservedRecentFilesAcrossRestart(t *testing.
 		t.Fatal(err)
 	}
 	reloaded := loadState(path)
-	if reloaded.History[cacheKey] != saved || len(reloaded.RecentFiles) != 0 || reloaded.LastFile != "" {
+	if reloaded.History[cacheKey] != saved || len(reloaded.RecentMedia) != 0 || reloaded.LastPlayback != nil {
 		t.Fatalf("recent history survived clearing or the resume cache was lost: %+v", reloaded)
 	}
 	if reloaded.Preferences.RecentFilesEnabled {
