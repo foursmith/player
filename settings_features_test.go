@@ -24,6 +24,7 @@ func TestNewPreferencesRoundTripAndValidation(t *testing.T) {
 	state.Preferences.ResumePlaybackPosition = false
 	state.Preferences.RecordPlaybackHistory = false
 	state.Preferences.RecentFilesEnabled = false
+	state.Preferences.QuitOnWindowClose = false
 	state.Preferences.Shortcuts = map[string]keyChord{"playPause": {Key: ui.KeyP, Mods: ui.Shift}}
 	if err := saveState(path, state); err != nil {
 		t.Fatal(err)
@@ -119,6 +120,7 @@ func TestResetPreferencesKeepsPlaybackHistory(t *testing.T) {
 	a.preferences.RecentFilesEnabled = false
 	a.preferences.ProjectionAI = false
 	a.preferences.VRDragSensitivity = 2
+	a.preferences.QuitOnWindowClose = false
 	a.preferences.Shortcuts = map[string]keyChord{"playPause": {Key: ui.KeyP}}
 	a.resetPreferences()
 	if !reflect.DeepEqual(a.preferences, defaultPreferences()) || a.stored.History["saved"] != history {

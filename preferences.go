@@ -32,6 +32,7 @@ type preferences struct {
 	RepeatMode             string              `json:"repeatMode"`
 	Locale                 string              `json:"locale"`
 	Appearance             mygo.ThemeSource    `json:"appearance"`
+	QuitOnWindowClose      bool                `json:"quitOnWindowClose"`
 	Shortcuts              map[string]keyChord `json:"shortcuts,omitempty"`
 }
 type videoHistory struct {
@@ -68,6 +69,7 @@ func defaultPreferences() preferences {
 		VRDragSensitivity: 1, CenteringResumeDelay: 1, ProjectionAI: true,
 		ResumePlaybackPosition: true, RecordPlaybackHistory: true, RecentFilesEnabled: true,
 		SubtitlesEnabled: true, RepeatMode: "file", Locale: "en", Appearance: mygo.ThemeDark, LibraryAutoRefresh: true,
+		QuitOnWindowClose: true,
 	}
 }
 func loadState(path string) storedState {

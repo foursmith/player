@@ -49,7 +49,6 @@ func (a *application) openCatalog() {
 			a.catalogWindow.Restore()
 		}
 		a.catalogWindow.Show()
-		a.catalogWindow.Focus()
 		return
 	}
 	a.catalogWindow = mygo.NewWindow(mygo.WindowOptions{

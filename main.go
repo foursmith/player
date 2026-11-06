@@ -230,7 +230,11 @@ func main() {
 			a.pipSurface.Close()
 		}
 	})
-	mygo.App.OnWindowAllClosed(mygo.App.Quit)
+	mygo.App.OnActivate(func(bool) {
+		if a.window != nil && !a.shutdown && !a.window.IsVisible() {
+			a.showWindow()
+		}
+	})
 	mygo.App.WhenReady(func() {
 		a.window = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: 1200, Height: 800, MinWidth: 360, MinHeight: 320, UseContentSize: true, TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: "#000000", Transparent: video.TransparentWindow, Hidden: true, Content: ui.View(a.render)})
 		a.window.SetWindowButtonsTheme(mygo.ThemeDark)
@@ -252,15 +256,7 @@ func main() {
 		a.window.OnReadyToShow(a.window.Show)
 		a.refreshVideoOnReveal(a.window, 0)
 		a.window.OnFileDrop(func(event *mygo.FileDropEvent) { a.importPaths(event.Paths, false) })
-		a.window.OnClose(func(*mygo.CloseEvent) {
-			a.persist()
-			if a.catalogWindow != nil {
-				a.catalogWindow.Close()
-			}
-			if a.pipWindow != nil {
-				a.pipWindow.Close()
-			}
-		})
+		a.window.OnClose(a.closePlayerWindow)
 		a.refreshMenu()
 		a.restoreSystemRecentFiles()
 		initialPaths := append(append([]string{}, options.paths...), a.pendingPaths...)
@@ -277,14 +273,6 @@ func main() {
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func (a *application) showWindow() {
-	if a.window.IsMinimized() {
-		a.window.Restore()
-	}
-	a.window.Show()
-	a.window.Focus()
 }
 
 func (a *application) activity(delay time.Duration) { a.controlsUntil = time.Now().Add(delay) }
@@ -363,6 +351,7 @@ func (a *application) choose(directory, appendOnly bool) {
 	if a.dialogOpen {
 		return
 	}
+	a.showWindow()
 	a.dialogOpen = true
 	window, ctx := a.window, a.ctx
 	title := a.t("media.openFiles")

@@ -15,7 +15,6 @@ func (a *application) openSettings() {
 			a.settingsWindow.Restore()
 		}
 		a.settingsWindow.Show()
-		a.settingsWindow.Focus()
 		return
 	}
 	a.settingsWindow = mygo.NewWindow(mygo.WindowOptions{
@@ -295,6 +294,12 @@ func (a *application) generalSettings(c *ui.Context) {
 			a.preferences.Appearance = []mygo.ThemeSource{mygo.ThemeSystem, mygo.ThemeDark, mygo.ThemeLight}[i]
 			a.applyAppearance()
 		})
+	})
+	a.sectionTitle(c, "settings.appBehavior")
+	settingsGroup(c).Children(func() {
+		if a.toggleSetting(c, "settings.quitOnWindowClose", "settings.quitOnWindowCloseDescription", &a.preferences.QuitOnWindowClose, false) {
+			a.persist()
+		}
 	})
 	a.historySettings(c)
 	a.sectionTitle(c, "settings.data")

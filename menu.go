@@ -18,7 +18,10 @@ func (a *application) refreshMenu() {
 	recent := []*mygo.MenuItem{}
 	for _, path := range a.stored.RecentFiles {
 		recent = append(recent, &mygo.MenuItem{Label: filepath.Base(path), Click: func(*mygo.MenuItem, *mygo.Window) {
-			a.window.Update(func() { a.importPaths([]string{path}, false) })
+			a.window.Update(func() {
+				a.showWindow()
+				a.importPaths([]string{path}, false)
+			})
 		}})
 	}
 	if len(recent) > 0 {
@@ -27,6 +30,8 @@ func (a *application) refreshMenu() {
 		recent = append(recent, &mygo.MenuItem{Label: a.t("media.noRecent"), Disabled: true})
 	}
 	file := []*mygo.MenuItem{
+		action("media.showPlayer", "", a.showWindow),
+		mygo.Separator(),
 		action("media.openFiles", "CmdOrCtrl+O", func() { a.choose(false, false) }),
 		action("media.openFolder", "CmdOrCtrl+Shift+O", func() { a.choose(true, false) }),
 	}
@@ -48,14 +53,10 @@ func (a *application) refreshMenu() {
 	var items []*mygo.MenuItem
 	if runtime.GOOS == "darwin" {
 		mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			action("media.openFiles", "", func() {
-				a.showWindow()
-				a.choose(false, false)
-			}),
-			action("media.openFolder", "", func() {
-				a.showWindow()
-				a.choose(true, false)
-			}),
+			action("media.showPlayer", "", a.showWindow),
+			mygo.Separator(),
+			action("media.openFiles", "", func() { a.choose(false, false) }),
+			action("media.openFolder", "", func() { a.choose(true, false) }),
 		}))
 		items = append(items, &mygo.MenuItem{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleAbout}, mygo.Separator(), settings, mygo.Separator(),
