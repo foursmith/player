@@ -56,7 +56,7 @@ func (a *application) openCatalog() {
 		Title: a.t("library.title"), Width: 920, Height: 600,
 		MinWidth: 800, MinHeight: 460, UseContentSize: true,
 		TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: windowBackground(mygo.Theme.IsDark()),
-		DisableFullScreen: true, Parent: a.window, StateKey: "library", Hidden: true,
+		DisableFullScreen: true, StateKey: "library", Hidden: true,
 		Content: ui.View(a.catalogView),
 	})
 	window := a.catalogWindow

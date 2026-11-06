@@ -254,6 +254,9 @@ func main() {
 		a.window.OnFileDrop(func(event *mygo.FileDropEvent) { a.importPaths(event.Paths, false) })
 		a.window.OnClose(func(*mygo.CloseEvent) {
 			a.persist()
+			if a.catalogWindow != nil {
+				a.catalogWindow.Close()
+			}
 			if a.pipWindow != nil {
 				a.pipWindow.Close()
 			}
