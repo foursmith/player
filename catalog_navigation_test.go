@@ -20,7 +20,7 @@ func TestCollectionFolderActionsLayoutAndOfflineControls(t *testing.T) {
 		t.Run(locale, func(t *testing.T) {
 			a := modeTestApplication(t)
 			a.preferences.Locale = locale
-			root := filepath.Join(string(filepath.Separator), "Media")
+			root := t.TempDir()
 			series, empty, offline := filepath.Join(root, "Series"), filepath.Join(root, "Empty"), filepath.Join(root, "Offline")
 			direct, clip := filepath.Join(root, "direct.mp4"), filepath.Join(series, "clip.mp4")
 			a.stored.Libraries = []library.Saved{{ID: "collection", Name: "Weekend videos", Paths: []string{direct}}}

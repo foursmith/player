@@ -6,6 +6,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -100,7 +101,7 @@ func TestPreviewCacheReusesOpaquePrivateFilesAndInvalidatesReplacedVideos(t *tes
 	}
 	path := filepath.Join(dir, library.Identity(entry)+".jpg")
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm()&0077 != 0 {
+	if err != nil || runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		t.Fatal("preview is missing or accessible to other users", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, library.Identity(entry)+".json"), []byte(`{}`), 0600); err != nil {

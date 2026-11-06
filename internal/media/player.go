@@ -95,6 +95,11 @@ func (p *Player) Seek(seconds float64) {
 		p.send(command{kind: "seek"})
 	}
 }
+func (p *Player) hasPendingSeek() bool {
+	p.seekMu.Lock()
+	defer p.seekMu.Unlock()
+	return p.seekPending
+}
 func (p *Player) SetVolume(volume float64) {
 	p.send(command{kind: "volume", value: math.Max(0, math.Min(1, volume))})
 }
@@ -312,9 +317,21 @@ func (p *Player) run() {
 			}
 			publish()
 		case <-ticks:
+			if p.hasPendingSeek() {
+				continue
+			}
 			// Feed audio independently of video decode-ahead: interleaved MP4
 			// chunks may put the next audio packet behind many video packets.
-			if err := decoder.bufferAudio(.25); err != nil {
+			// Publish the first picture before prefetching future audio chunks;
+			// the next tick fills audio before ordinary decode-ahead resumes.
+			audioAhead := .25
+			if first {
+				audioAhead = 0
+			}
+			if err := decoder.bufferAudio(audioAhead, p.hasPendingSeek); err != nil {
+				if err == errSeekPending {
+					continue
+				}
 				if errors.Is(err, context.Canceled) {
 					continue
 				}
@@ -328,9 +345,11 @@ func (p *Player) run() {
 			now := clock()
 			ahead := len(queue) > 0 && queue[len(queue)-1].PTS()-now >= .12*state.Rate
 			if !drained && len(queue) < 16 && (!ahead || len(queue) == 0) {
-				frame, err := decoder.Next()
+				frame, err := decoder.next(p.hasPendingSeek)
 				if err == io.EOF {
 					drained = true
+				} else if err == errSeekPending {
+					continue
 				} else if err != nil {
 					if errors.Is(err, context.Canceled) {
 						continue

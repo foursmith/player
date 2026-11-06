@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/net/ipv4"
 )
 
 func TestSSDPCompatibilityAndBoundedResponseWindows(t *testing.T) {
@@ -80,8 +78,8 @@ func TestSSDPResponderUsesReceivingInterfaceAfterAnnouncementDeadline(t *testing
 	if err := sender.SetWriteDeadline(time.Now().Add(-time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	packet := ipv4.NewPacketConn(listener)
-	if err := packet.SetControlMessage(ipv4.FlagInterface, true); err != nil {
+	packet, err := newDiscoveryPacket(listener)
+	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

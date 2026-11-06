@@ -347,7 +347,7 @@ func TestAudioPrefetchPreservesVideoAndClearsOnSeek(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := d.bufferAudio(2); err != nil {
+		if err := d.bufferAudio(2, nil); err != nil {
 			t.Fatal(err)
 		}
 		frame, err := d.Next()
@@ -384,6 +384,8 @@ func TestPlaybackDecoderReordersConvertsAndSeeks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
+	var converter RGBAConverter
+	defer converter.Close()
 	// The default x264 fixture contains B pictures. Exercise the playback
 	// decoder, including the final delayed pictures and hardware readback.
 	for i := 0; i < 30; i++ {
@@ -394,15 +396,13 @@ func TestPlaybackDecoderReordersConvertsAndSeeks(t *testing.T) {
 		if math.Abs(frame.PTS()-float64(i)/30) > .0001 {
 			t.Errorf("picture %d reordered incorrectly: %v", i, frame.PTS())
 		}
-		if i == 0 {
-			img, err := frame.RGBA(80, 40)
-			if err != nil {
-				t.Fatal(err)
-			}
-			pixel := img.RGBAAt(40, 20)
-			if pixel.R < 200 || pixel.G > 35 || pixel.B > 35 {
-				t.Errorf("wrong playback color: %+v", pixel)
-			}
+		img, err := converter.Convert(frame, 80, 40)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pixel := img.RGBAAt(40, 20)
+		if pixel.R < 200 || pixel.G > 35 || pixel.B > 35 {
+			t.Errorf("wrong playback color: %+v", pixel)
 		}
 		frame.Close()
 	}
@@ -421,6 +421,10 @@ func TestPlaybackDecoderReordersConvertsAndSeeks(t *testing.T) {
 	if frame.PTS() < .45 || frame.PTS() > .49 {
 		t.Fatalf("inaccurate playback seek: %v", frame.PTS())
 	}
+	if _, err := converter.Convert(frame, 80, 40); err != nil {
+		t.Fatal("converter failed after seeking", err)
+	}
+	t.Log("playback decoder:", d.Metadata().Decoder)
 }
 
 func TestCancellationStopsBufferedMedia(t *testing.T) {
@@ -432,7 +436,7 @@ func TestCancellationStopsBufferedMedia(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	if err := d.bufferAudio(2); err != nil {
+	if err := d.bufferAudio(2, nil); err != nil {
 		t.Fatal(err)
 	}
 	frame, err := d.Next()
@@ -450,7 +454,7 @@ func TestCancellationStopsBufferedMedia(t *testing.T) {
 	if err := d.Seek(.5); !errors.Is(err, context.Canceled) {
 		t.Fatalf("seek ignored cancellation: %v", err)
 	}
-	if err := d.bufferAudio(2); !errors.Is(err, context.Canceled) {
+	if err := d.bufferAudio(2, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("prefetch ignored cancellation: %v", err)
 	}
 }

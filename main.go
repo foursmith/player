@@ -232,7 +232,7 @@ func main() {
 	})
 	mygo.App.OnWindowAllClosed(mygo.App.Quit)
 	mygo.App.WhenReady(func() {
-		a.window = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: 1200, Height: 800, MinWidth: 360, MinHeight: 320, UseContentSize: true, TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: "#000000", Hidden: true, Content: ui.View(a.render)})
+		a.window = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: 1200, Height: 800, MinWidth: 360, MinHeight: 320, UseContentSize: true, TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: "#000000", Transparent: video.TransparentWindow, Hidden: true, Content: ui.View(a.render)})
 		a.window.SetWindowButtonsTheme(mygo.ThemeDark)
 		a.windowRef.Store(a.window)
 		a.window.OnFocus(func() {
@@ -467,7 +467,7 @@ func (a *application) togglePip() {
 			}
 		}
 	}
-	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: width, Height: height, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
+	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: width, Height: height, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Transparent: video.TransparentWindow, Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
 	a.pipWindow.SetWindowButtonsTheme(mygo.ThemeDark)
 	a.pipWindowRef.Store(a.pipWindow)
 	a.refreshVideoOnReveal(a.pipWindow, 1)

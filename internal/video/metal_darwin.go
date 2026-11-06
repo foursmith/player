@@ -19,6 +19,8 @@ import (
 //go:embed projection.metal
 var metalSource string
 
+const TransparentWindow = false
+
 // Scalar layout shared with Params in projection.metal.
 type metalParameters struct {
 	Yaw, Pitch, Zoom, Forward                  float32

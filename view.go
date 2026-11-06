@@ -23,6 +23,9 @@ func (a *application) render(c *ui.Context) {
 		}
 	}
 	state := a.player.Snapshot()
+	if state.URL == "" {
+		video.ReleaseFrame(a.surface)
+	}
 	a.usePlayerTheme(c, state.URL != "")
 	a.resolveVideoMode(state)
 	if state.Generation != a.lastGeneration {
@@ -155,6 +158,7 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 	stage.Draw(func(p *ui.Painter, r ui.Rect) {
 		frame := a.player.Frame()
 		if frame == nil {
+			p.Fill(r, ui.RGB(0, 0, 0), 0)
 			return
 		}
 		defer frame.Close()

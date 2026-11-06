@@ -19,11 +19,17 @@ DMG 复用应用主页的深海背景、薄荷色调与斜体标语，两个名�
 
 仅在明确需要应用包时执行 `just build`，统一覆盖 `build/` 中对应平台的现有产物，不为每次修改另建测试包。日常开发使用已有开发实例及相关检查、测试；若固定目录中的应用正在运行，先处理运行占用，不另建输出目录。协作规则见 [AGENTS.md](AGENTS.md)。
 
-macOS 使用 VideoToolbox + CVPixelBuffer + Metal，视频帧不经过 Go 的 RGBA 拷贝；检测和缩略图读取画面到 CPU。Windows/Linux 代码保留 FFmpeg 硬件解码与 MyGo GPU 投影路径，但当前输出需经过 RGBA 上传，尚未实现 D3D11/VAAPI 纹理直接共享。当前本机验证平台为 macOS arm64。
+macOS 使用 VideoToolbox + CVPixelBuffer + Metal，Windows 使用 D3D11VA + D3D11 + DirectComposition。两者的硬解画面都保留在 GPU 上，原生视频层绘制在 UI 下方，支持主窗口和画中画；颜色转换、2D 适配及 VR 投影均由 GPU 执行。Windows 视频层和 UI 共用 MyGo 的内容子窗口，分别占用下层和上层合成树，避免视频被内容子窗口裁掉。Windows 将解码器纹理数组中的当前画面在 GPU 内复制到可采样的 NV12/P010/P016 纹理，不执行整帧 CPU 回读或 RGBA 上传。检测先在 GPU 上生成所需的小尺寸视图，再回读给模型；缩略图仍使用独立解码器。已在 macOS arm64 验证原生应用，在 Windows amd64 运行原生 GPU 自动化测试及 8K Main10 片源性能检查。
+
+Linux 及便携回退路径复用 FFmpeg 转换器、硬件帧回读缓冲和两张交替使用的 RGBA 图像，避免高分辨率视频逐帧分配整张图像；画面更新前保留上一张图像，主窗口与画中画各自维护缓冲，关闭视频返回首页后释放缓冲。Linux 尚未实现 VAAPI 纹理直接共享。Windows 的软件解码格式保留 RGBA 上传，原生呈现失败时保留便携回退。各转换路径遵循片源的 BT.709、BT.601、BT.2020 色彩矩阵与全/有限范围标记。FFmpeg 根据本机 CPU 自动选择视频解码线程数，硬件解码器打开失败时释放硬件状态并以软件解码器重试。
+
+Windows D3D11 硬解使用片内线程，避免帧线程在启动和定位后增加输出延迟。精确定位时保留所有参考画面，只跳过目标前的非参考画面，目标附近恢复完整解码；H.264 与 HEVC Main10 的目标及后续画面已与完整解码逐帧对照。播放器优先发布首帧，再预读后续音频；连续拖动会在解码和音频预读循环中让出旧定位请求，直接处理最新目标。长 GOP 的参考画面仍须解码，定位延迟取决于片源和显卡。
 
 视频画面跟随片源时间戳更新，使用屏幕原生像素比例渲染。AB 标记用于循环播放所选片段。
 
 构建仅支持本机平台：在 macOS、Windows 或 Linux 上运行 `just build`，统一输出到 `build/<系统>-<架构>/`。不提供交叉编译、其他平台运行库自动下载或跨架构打包流程。Windows/Linux 的播放与打包尚未通过实机验收。
+
+Windows amd64 已运行原生自动化测试，覆盖 H.264/AAC 播放、暂停、倍速、B 帧顺序、进度定位、HEVC Main10、中文和空格路径、硬解打开失败后的软件回退及 DLNA 协议；本机 H.264 和 HEVC Main10 样本均已走 D3D11VA 硬解。D3D11 测试将 8/10 位硬解纹理的七种投影输出与 CPU 参考像素对照，并覆盖窗口缩放、清理后重播、解码与截图并发以及软件格式。测试样本编码器需要提供 `libx264` 和 `libx265`。Windows SSDP 通过 Winsock 的 IP_PKTINFO 读取请求实际进入的网卡，回复使用该网卡地址，支持多网卡。高分辨率性能仍取决于显卡、驱动和片源码率，HDR 色调映射及电视/VR 设备互通仍需验证；YUV 色彩矩阵处理不等于 HDR 色调映射。
 
 FFmpeg、SDL3 和 LiteRT 通过 purego 动态调用。FFmpeg 绑定固定为 **FFmpeg 9** 的 ABI：avutil 61、avcodec/avformat 63、avfilter 12、swscale 10、swresample 7；加载时校验主版本。`scripts/ffmpeg-abi.py` 仅用于升级绑定时根据本机开发头文件重新生成 64 位结构体布局。
 

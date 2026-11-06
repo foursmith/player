@@ -8,10 +8,17 @@ import (
 	"image"
 )
 
-// Paint draws surfaces sharing MyGo's GPU renderer. macOS is composited below it.
+// Paint draws surfaces sharing MyGo's GPU renderer; native layers draw below it.
 func Paint(surface Surface, p *ui.Painter, r ui.Rect) {
 	if drawable, ok := surface.(interface{ Paint(*ui.Painter, ui.Rect) }); ok {
 		drawable.Paint(p, r)
+	}
+}
+
+// ReleaseFrame drops presentation resources while keeping the surface reusable.
+func ReleaseFrame(surface Surface) {
+	if buffered, ok := surface.(interface{ Clear() }); ok {
+		buffered.Clear()
 	}
 }
 
@@ -42,16 +49,17 @@ func Fragment(dst vec4,pos vec2)vec4{
 // rgbaSurface is used when direct hardware-texture sharing is unavailable.
 // Projection still runs on MyGo's platform GPU backend.
 type rgbaSurface struct {
-	bitmap *ui.Bitmap
-	serial uint64
-	params Parameters
-	aspect float64
+	converter media.RGBAConverter
+	bitmap    *ui.Bitmap
+	serial    uint64
+	params    Parameters
+	aspect    float64
 }
 
 func (r *rgbaSurface) Present(frame *media.Frame, p Parameters, width, height, scale float64) error {
 	if r.bitmap == nil || frame.ID() != r.serial {
 		w, h := frame.Size()
-		img, err := frame.RGBA(w, h)
+		img, err := r.converter.Convert(frame, w, h)
 		if err != nil {
 			return err
 		}
@@ -139,4 +147,9 @@ func (r *rgbaSurface) Capture(frame *media.Frame, p Parameters, width, height in
 	}
 	return out, nil
 }
-func (r *rgbaSurface) Close() { r.bitmap = nil }
+func (r *rgbaSurface) Clear() {
+	r.converter.Close()
+	r.bitmap = nil
+	r.serial = 0
+}
+func (r *rgbaSurface) Close() { r.Clear() }

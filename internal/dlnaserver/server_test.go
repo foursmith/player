@@ -114,9 +114,9 @@ func fetch(t *testing.T, method, address, byteRange string, status int) ([]byte,
 
 func TestClientBrowseHierarchyPlaybackAndSubtitles(t *testing.T) {
 	dir := t.TempDir()
-	file := filepath.Join(dir, "Season & 2", "片段 #2 & <test>.mp4")
+	file := filepath.Join(dir, "Season & 2", "片段 #2 & 'test'.mp4")
 	writeFile(t, file, "0123456789")
-	writeFile(t, filepath.Join(filepath.Dir(file), "片段 #2 & <test>.srt"), "1\n00:00:00,000 --> 00:00:01,000\nCaption")
+	writeFile(t, filepath.Join(filepath.Dir(file), "片段 #2 & 'test'.srt"), "1\n00:00:00,000 --> 00:00:01,000\nCaption")
 	writeFile(t, filepath.Join(dir, "private.txt"), "not shared")
 	s, base := fixture(t, []library.Saved{
 		{ID: "folder", Name: "Movies & <TV>", Folder: dir, ShareDLNA: true},

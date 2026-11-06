@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"image"
 	"io"
 	"math"
 	"runtime"
@@ -94,6 +93,7 @@ type Decoder struct {
 	filter, source, sink                                  unsafe.Pointer
 	output                                                unsafe.Pointer
 	audioInitialized                                      bool
+	prerollDiscard                                        bool
 	draining, inputEOF, audioEOF                          bool
 	rate, audioStart, audioSamples, seekTarget, startTime float64
 }
@@ -261,7 +261,32 @@ func (d *Decoder) openCodec(index int32, hardware bool) (*avCodecContext, error)
 			break
 		}
 	}
-	if ret := av.codec.Open(ctx, codec, nil); ret < 0 {
+	var options unsafe.Pointer
+	if index == d.videoStream {
+		// libavcodec defaults to one decoding thread. Let it choose a suitable
+		// count for software playback, including driver/profile fallbacks.
+		av.util.DictSet(&options, "threads", "0", 0)
+		if d.hardwareName == "d3d11va" && ctx.HwDeviceCtx != nil {
+			// Frame threads add a picture of delay per thread before first
+			// output and after every flush. D3D11 already decodes on the GPU;
+			// slice threads avoid that latency and still allow a software
+			// get_format fallback to parallelize supported slices/WPP.
+			av.util.DictSet(&options, "thread_type", "slice", 0)
+		}
+	}
+	ret := av.codec.Open(ctx, codec, unsafe.Pointer(&options))
+	av.util.DictFree(&options)
+	if ret < 0 {
+		if hardware && d.hardware != nil {
+			// Drivers may advertise a codec but reject its profile, bit depth or
+			// resolution when opening it. Release the rejected device before
+			// retrying once with a fresh software-only codec context.
+			av.codec.Free(&ctx)
+			av.util.BufferUnref(&d.hardware)
+			d.cancellation.hardwareFormat.Store(-1)
+			d.hardwareName = ""
+			return d.openCodec(index, false)
+		}
 		return fail(ret)
 	}
 	return ctx, nil
@@ -298,10 +323,20 @@ func (d *Decoder) Metadata() Metadata {
 	}
 	return Metadata{Width: int(d.video.Width), Height: int(d.video.Height), Duration: duration, FrameRate: fps, Decoder: name, Spherical: d.spherical(), Stereo: d.stereo()}
 }
-func (d *Decoder) Next() (*Frame, error) {
+
+// Only the player uses this yield signal; it keeps the decoder alive so the
+// latest seek can flush it, rather than finishing an obsolete long GOP first.
+var errSeekPending = errors.New("decode superseded by a pending seek")
+
+func (d *Decoder) Next() (*Frame, error) { return d.next(nil) }
+
+func (d *Decoder) next(interrupted func() bool) (*Frame, error) {
 	for {
 		if err := d.ctx.Err(); err != nil {
 			return nil, err
+		}
+		if interrupted != nil && interrupted() {
+			return nil, errSeekPending
 		}
 		var ret int32
 		if d.pipeline != nil {
@@ -355,6 +390,10 @@ func (d *Decoder) Next() (*Frame, error) {
 			if d.pipeline != nil {
 				ret = d.pipeline.send(d.packet)
 			} else {
+				if err := d.prepareVideoPacket(d.packet); err != nil {
+					av.codec.PacketUnref(d.packet)
+					return nil, err
+				}
 				ret = av.codec.Send(d.video, d.packet)
 			}
 			if ret < 0 && ret != avAgain {
@@ -377,6 +416,33 @@ func (d *Decoder) Next() (*Frame, error) {
 			return nil, d.failure(ret)
 		}
 	}
+}
+
+func (d *Decoder) prepareVideoPacket(packet *avPacket) error {
+	// Decode every reference picture, but let FFmpeg skip non-reference
+	// preroll pictures that can never be displayed. Use presentation time,
+	// not decode time: reordered B pictures at the target must remain intact.
+	// Missing timestamps and the final 50ms use normal decoding as well.
+	discard := d.hardwareName == "d3d11va" && d.cancellation.hardwareFormat.Load() != -1 &&
+		(d.video.CodecId == avH264 || d.video.CodecId == avHEVC) &&
+		d.seekTarget > 0 && packet.Pts != avNoTimestamp &&
+		float64(packet.Pts)*ratio(d.stream(d.videoStream).TimeBase)-d.startTime < d.seekTarget-.05
+	return d.setPrerollDiscard(discard)
+}
+
+func (d *Decoder) setPrerollDiscard(discard bool) error {
+	if discard == d.prerollDiscard {
+		return nil
+	}
+	value := int64(0) // AVDISCARD_DEFAULT
+	if discard {
+		value = 8 // AVDISCARD_NONREF: reference B pictures are still decoded.
+	}
+	if ret := av.util.OptionInt(unsafe.Pointer(d.video), "skip_frame", value, 0); ret < 0 {
+		return d.failure(ret)
+	}
+	d.prerollDiscard = discard
+	return nil
 }
 func (d *Decoder) clearPackets() {
 	for _, packet := range d.packets {
@@ -418,6 +484,9 @@ func (d *Decoder) seek(seconds float64, precise bool) error {
 	}
 	d.clearPackets()
 	av.codec.PacketUnref(d.packet)
+	if err := d.setPrerollDiscard(false); err != nil {
+		return err
+	}
 	av.codec.Flush(d.video)
 	if d.pipeline != nil {
 		if ret := d.pipeline.reset(); ret < 0 {
@@ -521,35 +590,6 @@ func (f *Frame) Native() unsafe.Pointer {
 		return unsafe.Pointer(f.ptr.Data[3])
 	}
 	return nil
-}
-func (f *Frame) RGBA(width, height int) (*image.RGBA, error) {
-	if width < 1 || height < 1 {
-		return nil, errors.New("invalid output size")
-	}
-	src := f.ptr
-	if src.HwFramesCtx != nil {
-		software := av.util.FrameAlloc()
-		if software == nil {
-			return nil, errors.New("cannot allocate software video frame")
-		}
-		defer av.util.FrameFree(&software)
-		if ret := av.util.TransferFrame(software, src, 0); ret < 0 {
-			return nil, mediaError(ret)
-		}
-		src = software
-	}
-	scale := av.scale.Create(src.Width, src.Height, src.Format, int32(width), int32(height), av.util.PixelFormat("rgba"), 2, nil, nil, nil)
-	if scale == nil {
-		return nil, errors.New("cannot create FFmpeg frame converter")
-	}
-	defer av.scale.Free(scale)
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	planes := [4]*byte{&img.Pix[0]}
-	strides := [4]int32{int32(img.Stride)}
-	if ret := av.scale.Scale(scale, &src.Data[0], &src.Linesize[0], 0, src.Height, &planes[0], &strides[0]); ret < 0 {
-		return nil, mediaError(ret)
-	}
-	return img, nil
 }
 func (d *Decoder) sideData(kind int32) *avSideData {
 	p := d.stream(d.videoStream).Codecpar
@@ -708,7 +748,7 @@ func (d *Decoder) finishAudio() error {
 
 // Demux ahead while retaining compressed video packets, bounded at 32 MiB.
 // This supplies audio through long interleaving gaps without retaining 8K frames.
-func (d *Decoder) bufferAudio(seconds float64) error {
+func (d *Decoder) bufferAudio(seconds float64, interrupted func() bool) error {
 	if err := d.ctx.Err(); err != nil {
 		return err
 	}
@@ -718,6 +758,9 @@ func (d *Decoder) bufferAudio(seconds float64) error {
 	for d.packetBytes < 32*1024*1024 && float64(av.sdl.Queued(d.output)) < seconds*48000*8 {
 		if err := d.ctx.Err(); err != nil {
 			return err
+		}
+		if interrupted != nil && interrupted() {
+			return errSeekPending
 		}
 		ret := av.format.Read(d.format, d.packet)
 		if ret == avEOF {

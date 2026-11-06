@@ -3,6 +3,7 @@ package native
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/windows"
 )
@@ -10,7 +11,12 @@ import (
 func openLibrary(path string) (uintptr, error) {
 	flags := uintptr(windows.LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)
 	// Absolute paths also search beside the DLL for its private dependencies.
-	if len(path) > 2 && (path[1] == ':' || path[0] == '\\') {
+	if strings.ContainsAny(path, `/\`) {
+		var err error
+		path, err = filepath.Abs(path)
+		if err != nil {
+			return 0, err
+		}
 		flags |= windows.LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
 	}
 	handle, err := windows.LoadLibraryEx(path, 0, flags)

@@ -45,9 +45,14 @@ func (link networkLink) send(data []byte, remote net.Addr) error {
 type discovery struct {
 	server   *Server
 	listener *net.UDPConn
-	packet   *ipv4.PacketConn
+	packet   discoveryPacket
 	links    []networkLink
 	wg       sync.WaitGroup
+}
+
+type discoveryPacket interface {
+	JoinGroup(*net.Interface, net.Addr) error
+	ReadFrom([]byte) (int, *ipv4.ControlMessage, net.Addr, error)
 }
 
 func startDiscovery(s *Server) (*discovery, error) {
@@ -82,8 +87,7 @@ func startDiscovery(s *Server) (*discovery, error) {
 			if d.listener == nil {
 				d.listener, err = net.ListenMulticastUDP("udp4", &iface, group)
 				if err == nil {
-					d.packet = ipv4.NewPacketConn(d.listener)
-					err = d.packet.SetControlMessage(ipv4.FlagInterface, true)
+					d.packet, err = newDiscoveryPacket(d.listener)
 					if err != nil {
 						d.listener.Close()
 						d.listener = nil

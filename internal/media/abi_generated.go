@@ -139,13 +139,21 @@ type avComponent struct {
 	Depth int32 // offset 16
 }
 
+type avHWDevice struct {
+	_     [16]byte
+	Hwctx unsafe.Pointer // offset 16
+	_     [16]byte
+}
+
 type avHWFrames struct {
-	_        [60]byte
-	Format   int32 // offset 60
-	SwFormat int32 // offset 64
-	Width    int32 // offset 68
-	Height   int32 // offset 72
-	_        [4]byte
+	_         [16]byte
+	DeviceCtx *avHWDevice // offset 16
+	_         [36]byte
+	Format    int32 // offset 60
+	SwFormat  int32 // offset 64
+	Width     int32 // offset 68
+	Height    int32 // offset 72
+	_         [4]byte
 }
 
 type avBuffer struct {

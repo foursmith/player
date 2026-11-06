@@ -31,6 +31,7 @@ type utilAPI struct {
 	SampleName    func(int32) string
 	Rescale       func(int64, avRational, avRational) int64
 	Strdup        func(string) *byte
+	OptionInt     func(unsafe.Pointer, string, int64, int32) int32
 }
 
 type codecAPI struct {
@@ -78,10 +79,12 @@ type filterAPI struct {
 }
 
 type scaleAPI struct {
-	Version func() uint32
-	Create  func(int32, int32, int32, int32, int32, int32, int32, unsafe.Pointer, unsafe.Pointer, unsafe.Pointer) unsafe.Pointer
-	Scale   func(unsafe.Pointer, **byte, *int32, int32, int32, **byte, *int32) int32
-	Free    func(unsafe.Pointer)
+	Version      func() uint32
+	Create       func(int32, int32, int32, int32, int32, int32, int32, unsafe.Pointer, unsafe.Pointer, unsafe.Pointer) unsafe.Pointer
+	Scale        func(unsafe.Pointer, **byte, *int32, int32, int32, **byte, *int32) int32
+	Free         func(unsafe.Pointer)
+	Coefficients func(int32) *int32
+	Colorspace   func(unsafe.Pointer, *int32, int32, *int32, int32, int32, int32, int32) int32
 }
 
 type sdlSpec struct{ Format, Channels, Frequency int32 }
@@ -117,7 +120,7 @@ func bindLibrary(name string, major int, api any, names ...string) error {
 }
 
 var loadMedia = sync.OnceValue(func() error {
-	if err := bindLibrary("avutil", 61, &av.util, "avutil_version", "av_version_info", "av_strerror", "av_frame_alloc", "av_frame_free", "av_frame_unref", "av_frame_move_ref", "av_frame_clone", "av_buffer_ref", "av_buffer_unref", "av_dict_set", "av_dict_free", "av_hwdevice_find_type_by_name", "av_hwdevice_ctx_create", "av_pix_fmt_desc_get", "av_get_pix_fmt", "av_hwframe_transfer_data", "av_channel_layout_describe", "av_get_sample_fmt_name", "av_rescale_q", "av_strdup"); err != nil {
+	if err := bindLibrary("avutil", 61, &av.util, "avutil_version", "av_version_info", "av_strerror", "av_frame_alloc", "av_frame_free", "av_frame_unref", "av_frame_move_ref", "av_frame_clone", "av_buffer_ref", "av_buffer_unref", "av_dict_set", "av_dict_free", "av_hwdevice_find_type_by_name", "av_hwdevice_ctx_create", "av_pix_fmt_desc_get", "av_get_pix_fmt", "av_hwframe_transfer_data", "av_channel_layout_describe", "av_get_sample_fmt_name", "av_rescale_q", "av_strdup", "av_opt_set_int"); err != nil {
 		return err
 	}
 	if err := bindLibrary("avcodec", 63, &av.codec, "avcodec_version", "avcodec_find_decoder", "avcodec_alloc_context3", "avcodec_parameters_to_context", "avcodec_open2", "avcodec_free_context", "avcodec_get_hw_config", "avcodec_receive_frame", "avcodec_send_packet", "avcodec_flush_buffers", "av_packet_alloc", "av_packet_free", "av_packet_unref", "av_packet_move_ref", "av_packet_side_data_get"); err != nil {
@@ -129,7 +132,7 @@ var loadMedia = sync.OnceValue(func() error {
 	if err := bindLibrary("avfilter", 12, &av.filter, "avfilter_version", "avfilter_graph_alloc", "avfilter_graph_free", "avfilter_get_by_name", "avfilter_graph_create_filter", "avfilter_inout_alloc", "avfilter_inout_free", "avfilter_graph_parse_ptr", "avfilter_graph_config", "av_buffersrc_add_frame_flags", "av_buffersink_get_frame"); err != nil {
 		return err
 	}
-	if err := bindLibrary("swscale", 10, &av.scale, "swscale_version", "sws_getContext", "sws_scale", "sws_freeContext"); err != nil {
+	if err := bindLibrary("swscale", 10, &av.scale, "swscale_version", "sws_getContext", "sws_scale", "sws_freeContext", "sws_getCoefficients", "sws_setColorspaceDetails"); err != nil {
 		return err
 	}
 	for _, lib := range []struct {

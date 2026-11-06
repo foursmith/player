@@ -107,7 +107,8 @@ func TestSampleLongGOPReplacesRepeatedBlackKeyframes(t *testing.T) {
 	}
 	replaced := false
 	for _, info := range traces[1:] {
-		if info.Stage != "frame" || info.Err != nil || info.Attempt < 1 || math.IsNaN(info.PTS) || info.Elapsed <= 0 {
+		// A fast sample can finish within one Windows timer tick.
+		if info.Stage != "frame" || info.Err != nil || info.Attempt < 1 || math.IsNaN(info.PTS) || info.Elapsed < 0 {
 			t.Fatalf("invalid frame trace: %+v", info)
 		}
 		if info.ReplacedDuplicate {
