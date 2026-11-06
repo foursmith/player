@@ -8,16 +8,33 @@ type avRational struct{ Num, Den int32 }
 type avInterrupt struct{ Callback, Opaque uintptr }
 
 type avFormat struct {
-	_                 [44]byte
+	_                 [32]byte
+	Pb                *avIO // offset 32
+	_                 [4]byte
 	NbStreams         uint32     // offset 44
 	Streams           **avStream // offset 48
 	_                 [40]byte
 	StartTime         int64 // offset 96
 	Duration          int64 // offset 104
 	BitRate           int64 // offset 112
-	_                 [96]byte
+	_                 [8]byte
+	Flags             int32 // offset 128
+	_                 [84]byte
 	InterruptCallback avInterrupt // offset 216
 	_                 [248]byte
+}
+
+type avIO struct {
+	_        [8]byte
+	Buffer   unsafe.Pointer // offset 8
+	_        [8]byte
+	BufPtr   unsafe.Pointer // offset 24
+	BufEnd   unsafe.Pointer // offset 32
+	_        [32]byte
+	Pos      int64 // offset 72
+	_        [64]byte
+	Seekable int32 // offset 144
+	_        [60]byte
 }
 
 type avStream struct {
@@ -211,6 +228,11 @@ const (
 	avHEVC                = 172
 	avAttachedPic         = 1024
 	avHWPixelFlag         = 8
+	avCustomIO            = 128
+	avSeekSize            = 65536
+	avSeekForce           = 131072
+	avIORead              = 1
+	avIOSeekable          = 1
 	avKeepRef             = 8
 	avSphericalData       = 21
 	avStereoData          = 6

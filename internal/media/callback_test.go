@@ -11,7 +11,7 @@ import (
 func TestFFmpegCallbackWindowsSignatures(t *testing.T) {
 	// Windows compiles callbacks at runtime, so a cross-link check cannot find
 	// an invalid signature. Check that contract even on non-Windows CI hosts.
-	for name, callback := range map[string]any{"interrupt": mediaInterrupt, "pixel format": hardwarePixelFormat} {
+	for name, callback := range map[string]any{"interrupt": mediaInterrupt, "pixel format": hardwarePixelFormat, "HTTP read": httpRead, "HTTP seek": httpSeek} {
 		t.Run(name, func(t *testing.T) {
 			typeOf := reflect.TypeOf(callback)
 			if typeOf.NumOut() != 1 || typeOf.Out(0).Kind() != reflect.Uintptr {

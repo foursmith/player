@@ -32,6 +32,8 @@ type utilAPI struct {
 	Rescale       func(int64, avRational, avRational) int64
 	Strdup        func(string) *byte
 	OptionInt     func(unsafe.Pointer, string, int64, int32) int32
+	Malloc        func(uintptr) unsafe.Pointer
+	Free          func(unsafe.Pointer)
 }
 
 type codecAPI struct {
@@ -62,6 +64,16 @@ type formatAPI struct {
 	Close    func(**avFormat)
 	Seek     func(*avFormat, int32, int64, int64, int64, int32) int32
 	Rate     func(*avFormat, *avStream, *avFrame) avRational
+}
+
+type ioAPI struct {
+	Open    func(**avIO, string, int32, *avInterrupt, *unsafe.Pointer) int32
+	Close   func(**avIO) int32
+	Size    func(*avIO) int64
+	Seek    func(*avIO, int64, int32) int64
+	Partial func(*avIO, *byte, int32) int32
+	Alloc   func(unsafe.Pointer, int32, int32, uintptr, uintptr, uintptr, uintptr) *avIO
+	Free    func(**avIO)
 }
 
 type filterAPI struct {
@@ -106,6 +118,7 @@ var av struct {
 	util   utilAPI
 	codec  codecAPI
 	format formatAPI
+	io     ioAPI
 	filter filterAPI
 	scale  scaleAPI
 	sdl    sdlAPI
@@ -120,13 +133,16 @@ func bindLibrary(name string, major int, api any, names ...string) error {
 }
 
 var loadMedia = sync.OnceValue(func() error {
-	if err := bindLibrary("avutil", 61, &av.util, "avutil_version", "av_version_info", "av_strerror", "av_frame_alloc", "av_frame_free", "av_frame_unref", "av_frame_move_ref", "av_frame_clone", "av_buffer_ref", "av_buffer_unref", "av_dict_set", "av_dict_free", "av_hwdevice_find_type_by_name", "av_hwdevice_ctx_create", "av_pix_fmt_desc_get", "av_get_pix_fmt", "av_hwframe_transfer_data", "av_channel_layout_describe", "av_get_sample_fmt_name", "av_rescale_q", "av_strdup", "av_opt_set_int"); err != nil {
+	if err := bindLibrary("avutil", 61, &av.util, "avutil_version", "av_version_info", "av_strerror", "av_frame_alloc", "av_frame_free", "av_frame_unref", "av_frame_move_ref", "av_frame_clone", "av_buffer_ref", "av_buffer_unref", "av_dict_set", "av_dict_free", "av_hwdevice_find_type_by_name", "av_hwdevice_ctx_create", "av_pix_fmt_desc_get", "av_get_pix_fmt", "av_hwframe_transfer_data", "av_channel_layout_describe", "av_get_sample_fmt_name", "av_rescale_q", "av_strdup", "av_opt_set_int", "av_malloc", "av_free"); err != nil {
 		return err
 	}
 	if err := bindLibrary("avcodec", 63, &av.codec, "avcodec_version", "avcodec_find_decoder", "avcodec_alloc_context3", "avcodec_parameters_to_context", "avcodec_open2", "avcodec_free_context", "avcodec_get_hw_config", "avcodec_receive_frame", "avcodec_send_packet", "avcodec_flush_buffers", "av_packet_alloc", "av_packet_free", "av_packet_unref", "av_packet_move_ref", "av_packet_side_data_get"); err != nil {
 		return err
 	}
 	if err := bindLibrary("avformat", 63, &av.format, "avformat_version", "avformat_alloc_context", "avformat_open_input", "avformat_find_stream_info", "av_find_best_stream", "av_read_frame", "avformat_close_input", "avformat_seek_file", "av_guess_frame_rate"); err != nil {
+		return err
+	}
+	if err := bindLibrary("avformat", 63, &av.io, "avio_open2", "avio_closep", "avio_size", "avio_seek", "avio_read_partial", "avio_alloc_context", "avio_context_free"); err != nil {
 		return err
 	}
 	if err := bindLibrary("avfilter", 12, &av.filter, "avfilter_version", "avfilter_graph_alloc", "avfilter_graph_free", "avfilter_get_by_name", "avfilter_graph_create_filter", "avfilter_inout_alloc", "avfilter_inout_free", "avfilter_graph_parse_ptr", "avfilter_graph_config", "av_buffersrc_add_frame_flags", "av_buffersink_get_frame"); err != nil {

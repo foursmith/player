@@ -21,6 +21,7 @@ type cancellation struct {
 	value          atomic.Int32
 	hardwareFormat atomic.Int32
 	token          uintptr
+	input          *httpInput
 }
 
 var callbackTokens atomic.Uint64
@@ -149,6 +150,12 @@ func openContext(ctx context.Context, source Source, outputAudio, analysis bool)
 	d.format.InterruptCallback = avInterrupt{interruptCallback, d.cancellation.token}
 	var options unsafe.Pointer
 	av.util.DictSet(&options, "rw_timeout", "10000000", 0)
+	if outputAudio && isHTTP(source.URL) {
+		if err := d.openHTTP(source.URL); err != nil {
+			av.util.DictFree(&options)
+			return nil, err
+		}
+	}
 	ret := av.format.Open(&d.format, source.URL, nil, &options)
 	av.util.DictFree(&options)
 	if ret < 0 {
@@ -564,6 +571,9 @@ func (d *Decoder) Close() {
 	av.codec.Free(&d.audio)
 	av.util.BufferUnref(&d.hardware)
 	av.format.Close(&d.format)
+	if d.cancellation.input != nil {
+		d.cancellation.input.close()
+	}
 	d.cancellation.close()
 	d.cancellation = nil
 }
