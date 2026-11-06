@@ -13,7 +13,11 @@ type avFormat struct {
 	_                 [4]byte
 	NbStreams         uint32     // offset 44
 	Streams           **avStream // offset 48
-	_                 [40]byte
+	_                 [16]byte
+	NbChapters        uint32 // offset 72
+	_                 [4]byte
+	Chapters          **avChapter // offset 80
+	_                 [8]byte
 	StartTime         int64 // offset 96
 	Duration          int64 // offset 104
 	BitRate           int64 // offset 112
@@ -22,6 +26,19 @@ type avFormat struct {
 	_                 [84]byte
 	InterruptCallback avInterrupt // offset 216
 	_                 [248]byte
+}
+
+type avChapter struct {
+	_        [8]byte
+	TimeBase avRational     // offset 8
+	Start    int64          // offset 16
+	End      int64          // offset 24
+	Metadata unsafe.Pointer // offset 32
+}
+
+type avDictionaryEntry struct {
+	Key   *byte // offset 0
+	Value *byte // offset 8
 }
 
 type avIO struct {
@@ -48,7 +65,8 @@ type avStream struct {
 	Duration    int64 // offset 48
 	_           [8]byte
 	Disposition int32 // offset 64
-	_           [148]byte
+	Discard     int32 // offset 68
+	_           [144]byte
 }
 
 type avCodecContext struct {
@@ -227,6 +245,8 @@ const (
 	avH264                = 27
 	avHEVC                = 172
 	avAttachedPic         = 1024
+	avTimedThumbnails     = 2048
+	avDiscardAll          = 48
 	avHWPixelFlag         = 8
 	avCustomIO            = 128
 	avSeekSize            = 65536

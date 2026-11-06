@@ -135,8 +135,7 @@ func (p *Player) run() {
 		copy := state
 		p.state.Store(&copy)
 		// New pictures and timestamps change the paint input, not the UI.
-		previous.Position, previous.FrameID = copy.Position, copy.FrameID
-		if p.changed != nil && previous != copy {
+		if p.changed != nil && playbackViewChanged(previous, copy) {
 			p.changed()
 		}
 	}
@@ -412,4 +411,12 @@ func (p *Player) run() {
 			publish()
 		}
 	}
+}
+
+// Chapters and other container metadata are immutable within a source
+// generation. A codec fallback can still change the decoder description.
+func playbackViewChanged(a, b State) bool {
+	return a.URL != b.URL || a.Generation != b.Generation || a.Volume != b.Volume || a.Rate != b.Rate ||
+		a.Playing != b.Playing || a.Loading != b.Loading || a.Ended != b.Ended || a.Error != b.Error ||
+		a.Metadata.Decoder != b.Metadata.Decoder
 }

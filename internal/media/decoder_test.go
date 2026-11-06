@@ -26,30 +26,18 @@ func spatialFixture(t *testing.T, stereo byte, half bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	box := func(kind string, payload []byte) []byte {
-		out := make([]byte, 8, 8+len(payload))
-		binary.BigEndian.PutUint32(out, uint32(8+len(payload)))
-		copy(out[4:], kind)
-		return append(out, payload...)
-	}
 	bounds := make([]byte, 20)
 	if half {
 		binary.BigEndian.PutUint32(bounds[12:16], 0x40000000)
 		binary.BigEndian.PutUint32(bounds[16:20], 0x40000000)
 	}
-	projection := box("proj", append(box("prhd", make([]byte, 16)), box("equi", bounds)...))
-	spherical := box("sv3d", append(box("svhd", append(make([]byte, 4), []byte("Foursmith test\x00")...)), projection...))
-	extra := append(box("st3d", []byte{0, 0, 0, 0, stereo}), spherical...)
+	projection := mp4Atom("proj", append(mp4Atom("prhd", make([]byte, 16)), mp4Atom("equi", bounds)...))
+	spherical := mp4Atom("sv3d", append(mp4Atom("svhd", append(make([]byte, 4), []byte("Foursmith test\x00")...)), projection...))
+	extra := append(mp4Atom("st3d", []byte{0, 0, 0, 0, stereo}), spherical...)
 	inserted := false
 	var rewrite func([]byte) []byte
 	rewrite = func(input []byte) []byte {
-		var output []byte
-		for len(input) >= 8 {
-			size := int(binary.BigEndian.Uint32(input))
-			if size < 8 || size > len(input) {
-				t.Fatal("invalid fixture atom")
-			}
-			kind, payload := string(input[4:8]), input[8:size]
+		return mp4Children(t, input, func(kind string, payload []byte) []byte {
 			switch kind {
 			case "moov", "trak", "mdia", "minf", "stbl":
 				payload = rewrite(payload)
@@ -59,10 +47,8 @@ func spatialFixture(t *testing.T, stereo byte, half bool) string {
 				payload = append(bytes.Clone(payload), extra...)
 				inserted = true
 			}
-			output = append(output, box(kind, payload)...)
-			input = input[size:]
-		}
-		return append(output, input...)
+			return mp4Atom(kind, payload)
+		})
 	}
 	data = rewrite(data)
 	if !inserted {

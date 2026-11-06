@@ -17,9 +17,11 @@ parser.add_argument('--check', action='store_true', help='verify the checked-in 
 args = parser.parse_args()
 
 STRUCTS = {
-    'avFormat': ('AVFormatContext', {'pb': '*avIO', 'flags': 'int32', 'nb_streams': 'uint32', 'streams': '**avStream', 'start_time': 'int64', 'duration': 'int64', 'bit_rate': 'int64', 'interrupt_callback': 'avInterrupt'}),
+    'avFormat': ('AVFormatContext', {'pb': '*avIO', 'flags': 'int32', 'nb_streams': 'uint32', 'streams': '**avStream', 'start_time': 'int64', 'duration': 'int64', 'bit_rate': 'int64', 'nb_chapters': 'uint32', 'chapters': '**avChapter', 'interrupt_callback': 'avInterrupt'}),
+    'avChapter': ('AVChapter', {'time_base': 'avRational', 'start': 'int64', 'end': 'int64', 'metadata': 'unsafe.Pointer'}),
+    'avDictionaryEntry': ('AVDictionaryEntry', {'key': '*byte', 'value': '*byte'}),
     'avIO': ('AVIOContext', {'buffer': 'unsafe.Pointer', 'buf_ptr': 'unsafe.Pointer', 'buf_end': 'unsafe.Pointer', 'pos': 'int64', 'seekable': 'int32'}),
-    'avStream': ('AVStream', {'index': 'int32', 'codecpar': '*avParameters', 'time_base': 'avRational', 'duration': 'int64', 'disposition': 'int32'}),
+    'avStream': ('AVStream', {'index': 'int32', 'codecpar': '*avParameters', 'time_base': 'avRational', 'duration': 'int64', 'disposition': 'int32', 'discard': 'int32'}),
     'avCodecContext': ('AVCodecContext', {'codec': '*avCodec', 'codec_id': 'int32', 'opaque': 'uintptr', 'get_format': 'uintptr', 'width': 'int32', 'height': 'int32', 'pkt_timebase': 'avRational', 'hw_device_ctx': '*avBuffer', 'sample_rate': 'int32', 'sample_fmt': 'int32', 'ch_layout': 'avChannelLayout'}),
     'avFrame': ('AVFrame', {'data': '[8]*byte', 'linesize': '[8]int32', 'buf': '[8]*avBuffer', 'color_range': 'int32', 'color_primaries': 'int32', 'color_trc': 'int32', 'colorspace': 'int32', 'chroma_location': 'int32', 'width': 'int32', 'height': 'int32', 'nb_samples': 'int32', 'format': 'int32', 'pts': 'int64', 'best_effort_timestamp': 'int64', 'sample_rate': 'int32', 'hw_frames_ctx': '*avBuffer'}),
     'avPacket': ('AVPacket', {'data': '*byte', 'size': 'int32', 'stream_index': 'int32', 'pts': 'int64', 'dts': 'int64', 'duration': 'int64', 'flags': 'int32'}),
@@ -41,7 +43,7 @@ CONSTANTS = {
     'avEOF': 'AVERROR_EOF', 'avNoTimestamp': 'AV_NOPTS_VALUE',
     'avExternal': 'AVERROR_EXTERNAL', 'avNoMemory': 'AVERROR(ENOMEM)', 'avPacketKey': 'AV_PKT_FLAG_KEY', 'avColorFull': 'AVCOL_RANGE_JPEG', 'avExit': 'AVERROR_EXIT', 'avVideo': 'AVMEDIA_TYPE_VIDEO', 'avAudio': 'AVMEDIA_TYPE_AUDIO',
     'avH264': 'AV_CODEC_ID_H264', 'avHEVC': 'AV_CODEC_ID_HEVC',
-    'avAttachedPic': 'AV_DISPOSITION_ATTACHED_PIC', 'avHWPixelFlag': 'AV_PIX_FMT_FLAG_HWACCEL',
+    'avAttachedPic': 'AV_DISPOSITION_ATTACHED_PIC', 'avTimedThumbnails': 'AV_DISPOSITION_TIMED_THUMBNAILS', 'avDiscardAll': 'AVDISCARD_ALL', 'avHWPixelFlag': 'AV_PIX_FMT_FLAG_HWACCEL',
     'avCustomIO': 'AVFMT_FLAG_CUSTOM_IO', 'avSeekSize': 'AVSEEK_SIZE', 'avSeekForce': 'AVSEEK_FORCE', 'avIORead': 'AVIO_FLAG_READ', 'avIOSeekable': 'AVIO_SEEKABLE_NORMAL',
     'avKeepRef': 'AV_BUFFERSRC_FLAG_KEEP_REF', 'avSphericalData': 'AV_PKT_DATA_SPHERICAL',
     'avStereoData': 'AV_PKT_DATA_STEREO3D', 'avEquirectangular': 'AV_SPHERICAL_EQUIRECTANGULAR',

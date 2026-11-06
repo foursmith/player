@@ -97,6 +97,7 @@ type Decoder struct {
 	prerollDiscard                                        bool
 	draining, inputEOF, audioEOF                          bool
 	rate, audioStart, audioSamples, seekTarget, startTime float64
+	chapters                                              []Chapter
 }
 type Frame struct {
 	ptr    *avFrame
@@ -115,6 +116,8 @@ type Metadata struct {
 	Duration, FrameRate float64
 	Decoder             string
 	Spherical, Stereo   string
+	Chapters            []Chapter
+	HasChapterArtwork   bool
 }
 
 func Version() string {
@@ -150,7 +153,7 @@ func openContext(ctx context.Context, source Source, outputAudio, analysis bool)
 	d.format.InterruptCallback = avInterrupt{interruptCallback, d.cancellation.token}
 	var options unsafe.Pointer
 	av.util.DictSet(&options, "rw_timeout", "10000000", 0)
-	if outputAudio && isHTTP(source.URL) {
+	if isHTTP(source.URL) {
 		if err := d.openHTTP(source.URL); err != nil {
 			av.util.DictFree(&options)
 			return nil, err
@@ -167,9 +170,20 @@ func openContext(ctx context.Context, source Source, outputAudio, analysis bool)
 	if d.format.StartTime != avNoTimestamp {
 		d.startTime = float64(d.format.StartTime) / 1e6
 	}
+	d.chapters = readChapters(d.format, d.startTime)
 	d.videoStream = av.format.Best(d.format, avVideo, -1, -1, nil, 0)
 	if d.videoStream < 0 {
 		return nil, mediaError(d.videoStream)
+	}
+	if outputAudio {
+		d.audioStream = av.format.Best(d.format, avAudio, -1, -1, nil, 0)
+	}
+	// Silent readers must not fetch distant audio chunks during precise seeks.
+	// Playback also skips subtitle and artwork tracks read by separate owners.
+	for _, stream := range unsafe.Slice(d.format.Streams, int(d.format.NbStreams)) {
+		if stream.Index != d.videoStream && stream.Index != d.audioStream {
+			stream.Discard = avDiscardAll
+		}
 	}
 	stream := d.stream(d.videoStream)
 	hardware := !analysis || stream.Codecpar.CodecId != avH264
@@ -187,9 +201,6 @@ func openContext(ctx context.Context, source Source, outputAudio, analysis bool)
 		if d.video, err = d.openCodec(d.videoStream, false); err != nil {
 			return nil, err
 		}
-	}
-	if outputAudio {
-		d.audioStream = av.format.Best(d.format, avAudio, -1, -1, nil, 0)
 	}
 	if d.audioStream >= 0 {
 		if d.audio, err = d.openCodec(d.audioStream, false); err != nil {
@@ -328,7 +339,7 @@ func (d *Decoder) Metadata() Metadata {
 	} else if d.hardware != nil && d.cancellation.hardwareFormat.Load() != -1 {
 		name = d.hardwareName
 	}
-	return Metadata{Width: int(d.video.Width), Height: int(d.video.Height), Duration: duration, FrameRate: fps, Decoder: name, Spherical: d.spherical(), Stereo: d.stereo()}
+	return Metadata{Width: int(d.video.Width), Height: int(d.video.Height), Duration: duration, FrameRate: fps, Decoder: name, Spherical: d.spherical(), Stereo: d.stereo(), Chapters: d.chapters, HasChapterArtwork: chapterArtworkStream(d.format) != nil}
 }
 
 // Only the player uses this yield signal; it keeps the decoder alive so the

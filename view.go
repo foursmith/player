@@ -56,7 +56,7 @@ func (a *application) render(c *ui.Context) {
 	}
 	held := a.controlsHeld
 	a.controlsHeld = false
-	visible := state.URL == "" || state.Loading || a.adjustmentsOpen || a.projectionOpen || held || c.Now().Before(a.controlsUntil)
+	visible := state.URL == "" || state.Loading || a.adjustmentsOpen || a.projectionOpen || a.scrubbing || a.seekUI.chaptersOpen || held || c.Now().Before(a.controlsUntil)
 	a.controlsVisible = visible
 	if state.Playing && !state.Loading && (visible || a.debugOpen) {
 		interval := 250 * time.Millisecond
@@ -94,6 +94,7 @@ func (a *application) render(c *ui.Context) {
 			}
 			if state.URL != "" {
 				a.controls(c, state)
+				a.timelinePreview(c, state)
 				a.controlPopovers(c)
 			}
 		}
@@ -268,6 +269,10 @@ func (a *application) stageInput(event ui.InputEvent, aspect float64, pip bool) 
 	point := ui.Point{X: event.X, Y: event.Y}
 	switch event.Kind {
 	case ui.InputPointerDown:
+		if a.seekUI.chaptersOpen {
+			a.seekUI.chaptersOpen = false
+			return true
+		}
 		if a.projectionOpen || a.adjustmentsOpen {
 			a.projectionOpen = false
 			a.adjustmentsOpen = false
@@ -360,6 +365,15 @@ func (a *application) zoom(scale, aspect float64) {
 	a.setView(next, aspect)
 }
 func (a *application) keyboard(c *ui.Context) {
+	if a.scrubbing && c.Shortcut(0, ui.KeyEscape) {
+		a.scrubbing = false
+		a.seekUI.fine = false
+		return
+	}
+	if a.seekUI.chaptersOpen && c.Shortcut(0, ui.KeyEscape) {
+		a.seekUI.chaptersOpen = false
+		return
+	}
 	if a.projectionOpen {
 		for _, step := range []struct {
 			key   ui.Key
@@ -418,34 +432,36 @@ func (a *application) controls(c *ui.Context, state media.State) {
 	panel := ui.Themed(c.Key("controls"), darkPlayerTheme).Bind(&a.controlsPanel).Absolute().Left(pad).Right(pad).Bottom(pad).MaxWidth(1152).Margin(0, ui.Auto).Padding(inset).Gap(12).Transition(ui.ElementTransition{Duration: 300 * time.Millisecond, Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}})
 	hold(a, panel)
 	panel.Children(func() {
-		ui.Row(c).FillWidth().Gap(gap).AlignItems(ui.Center).Children(func() {
-			name, label := "play", "controls.play"
-			if state.Playing {
-				name, label = "pause", "controls.pause"
-			}
-			a.iconControl(c, name, a.t(label), iconStyle{playSize, 26, floatingIcon}, false, a.player.Toggle)
-			if len(a.entries) > 1 {
-				a.iconControl(c, "skip-forward", a.t("controls.nextVideo"), iconStyle{buttonSize, 18, floatingIcon}, false, func() { a.next(false) })
-			}
-			ui.Spacer(c).Grow(1)
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				if len(a.cues) > 0 {
-					a.iconControl(c, "subtitles", a.t("controls.showSubtitles"), iconStyle{buttonSize, 18, floatingIcon}, a.preferences.SubtitlesEnabled, func() { a.preferences.SubtitlesEnabled = !a.preferences.SubtitlesEnabled; a.persist() })
+		if !a.scrubbing || !a.seekUI.fine {
+			ui.Row(c).FillWidth().Gap(gap).AlignItems(ui.Center).Children(func() {
+				name, label := "play", "controls.play"
+				if state.Playing {
+					name, label = "pause", "controls.pause"
 				}
-				a.iconControl(c, "projection-"+projection.IDs[a.mode], a.projectionLabel(int(a.mode)), iconStyle{buttonSize, 18, floatingIcon}, false, func() {
-					a.projectionOpen = !a.projectionOpen
-					a.projectionFocused = int(a.mode)
-					a.adjustmentsOpen = false
-				}).Bind(&a.projectionButton)
-				a.iconControl(c, "sliders", a.t("controls.adjustVolumeSpeed"), iconStyle{buttonSize, 18, floatingIcon}, false, func() { a.adjustmentsOpen = !a.adjustmentsOpen; a.projectionOpen = false }).Bind(&a.adjustmentsButton)
-				a.iconControl(c, "picture-in-picture", a.t("controls.enterPip"), iconStyle{buttonSize, 18, floatingIcon}, a.pipWindow != nil, a.togglePip)
-				name = "corners-out"
-				if a.window.IsFullScreen() {
-					name = "corners-in"
+				a.iconControl(c, name, a.t(label), iconStyle{playSize, 26, floatingIcon}, false, a.player.Toggle)
+				if len(a.entries) > 1 {
+					a.iconControl(c, "skip-forward", a.t("controls.nextVideo"), iconStyle{buttonSize, 18, floatingIcon}, false, func() { a.next(false) })
 				}
-				a.iconControl(c, name, a.t("controls.enterFullscreen"), iconStyle{buttonSize, 18, floatingIcon}, a.window.IsFullScreen(), a.window.ToggleFullScreen)
+				ui.Spacer(c).Grow(1)
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					if len(a.cues) > 0 {
+						a.iconControl(c, "subtitles", a.t("controls.showSubtitles"), iconStyle{buttonSize, 18, floatingIcon}, a.preferences.SubtitlesEnabled, func() { a.preferences.SubtitlesEnabled = !a.preferences.SubtitlesEnabled; a.persist() })
+					}
+					a.iconControl(c, "projection-"+projection.IDs[a.mode], a.projectionLabel(int(a.mode)), iconStyle{buttonSize, 18, floatingIcon}, false, func() {
+						a.projectionOpen = !a.projectionOpen
+						a.projectionFocused = int(a.mode)
+						a.adjustmentsOpen = false
+					}).Bind(&a.projectionButton)
+					a.iconControl(c, "sliders", a.t("controls.adjustVolumeSpeed"), iconStyle{buttonSize, 18, floatingIcon}, false, func() { a.adjustmentsOpen = !a.adjustmentsOpen; a.projectionOpen = false }).Bind(&a.adjustmentsButton)
+					a.iconControl(c, "picture-in-picture", a.t("controls.enterPip"), iconStyle{buttonSize, 18, floatingIcon}, a.pipWindow != nil, a.togglePip)
+					name = "corners-out"
+					if a.window.IsFullScreen() {
+						name = "corners-in"
+					}
+					a.iconControl(c, name, a.t("controls.enterFullscreen"), iconStyle{buttonSize, 18, floatingIcon}, a.window.IsFullScreen(), a.window.ToggleFullScreen)
+				})
 			})
-		})
+		}
 		a.timeline(c, state)
 	})
 }
@@ -511,113 +527,6 @@ func (a *application) controlPopovers(c *ui.Context) {
 			})
 		})
 	}
-}
-func (a *application) timeline(c *ui.Context, state media.State) {
-	if state.Metadata.Duration <= 0 {
-		return
-	}
-	ui.Column(c.Key("timeline")).Gap(8).Children(func() {
-		track := ui.Box(c).Bind(&a.timelineHandle).Height(20).FillWidth().Focusable().Role(ui.RoleSlider).Range(0, state.Metadata.Duration, state.Position).Label(a.t("timeline.playbackPosition"))
-		track.HandleInput(func(e ui.InputEvent) bool {
-			bounds := a.timelineHandle.Bounds(c)
-			at := projection.Clamp(float64(e.X/max(1, bounds.W)), 0, 1) * state.Metadata.Duration
-			switch e.Kind {
-			case ui.InputPointerDown:
-				if e.Button == 0 {
-					a.scrubbing = true
-					a.scrubTime = at
-					a.activity(mouseHideDelay)
-					return true
-				}
-			case ui.InputPointerMove:
-				if a.scrubbing {
-					a.scrubTime = at
-					a.player.Seek(at)
-					return true
-				}
-			case ui.InputKeyDown:
-				if e.Key == ui.KeyLeft {
-					a.player.Seek(state.Position - 0.1)
-					return true
-				}
-				if e.Key == ui.KeyRight {
-					a.player.Seek(state.Position + 0.1)
-					return true
-				}
-			case ui.InputPointerUp:
-				if a.scrubbing {
-					a.scrubbing = false
-					a.player.Seek(at)
-					a.activity(mouseHideDelay)
-					return true
-				}
-			}
-			return false
-		})
-		if a.scrubbing || track.Hovered() {
-			a.controlsHeld = true
-		}
-		track.Draw(func(p *ui.Painter, r ui.Rect) {
-			y := r.Y + r.H/2
-			current := a.player.Snapshot()
-			position := current.Position
-			if a.scrubbing {
-				position = a.scrubTime
-			} else if current.Playing && !current.Loading {
-				p.AnimationFrame()
-			}
-			paintGlassTrack(p, r, float32(position/state.Metadata.Duration))
-			for _, marker := range []struct {
-				value *float64
-				color ui.Color
-			}{{a.loopA, ui.Hex("#fcd34d")}, {a.loopB, ui.Hex("#bae6fd")}} {
-				if marker.value != nil {
-					x := r.X + r.W*float32(*marker.value/state.Metadata.Duration)
-					p.Fill(ui.Rect{X: x - 1, Y: y - 7, W: 2, H: 14}, marker.color, 1)
-				}
-			}
-		})
-		ui.Row(c).FillWidth().Gap(6).Children(func() {
-			smallText(c, formatTime(state.Position), .48).Font("monospace")
-			for i, label := range []string{"A", "B"} {
-				text := label
-				if i == 0 && a.loopA != nil {
-					text += " " + formatTime(*a.loopA)
-				}
-				if i == 1 && a.loopB != nil {
-					text += " " + formatTime(*a.loopB)
-				}
-				button := ui.Button(c, text).Font("monospace").FontSize(9).Height(20).Padding(0, 6).Radius(6).Border(0, ui.Transparent).Background(ink(c, .06))
-				if i == 0 && a.loopA != nil {
-					button.Background(ui.Hex("#fcd34d").Alpha(.14)).TextColor(ui.Hex("#fde68a"))
-				}
-				if i == 1 && a.loopB != nil {
-					button.Background(ui.Hex("#7dd3fc").Alpha(.14)).TextColor(ui.Hex("#bae6fd"))
-				}
-				if i == 1 && a.loopA == nil {
-					button.Disabled(true)
-				}
-				if button.Clicked() {
-					point := state.Position
-					if i == 0 {
-						a.loopA = &point
-						a.loopB = nil
-					} else if a.loopA != nil && point > *a.loopA {
-						a.loopB = &point
-					}
-				}
-				if i == 0 {
-					if a.loopA != nil {
-						a.iconButton(c, "x", a.t("timeline.clearLoop"), 20, false, func() { a.loopA = nil; a.loopB = nil })
-					} else {
-						ui.Box(c).Width(8).Height(1).Background(ink(c, .15))
-					}
-				}
-			}
-			ui.Spacer(c).Grow(1)
-			smallText(c, formatTime(state.Metadata.Duration), .6).Font("monospace")
-		})
-	})
 }
 func (a *application) adjustments(c *ui.Context) {
 	anchor, controls := a.adjustmentsButton.Bounds(c), a.controlsPanel.Bounds(c)

@@ -25,8 +25,7 @@ func Thumbnail(ctx context.Context, source string) (Preview, error) {
 	defer d.Close()
 	m := d.Metadata()
 	preview := Preview{MediaInfo: library.MediaInfo{Duration: m.Duration, Width: m.Width, Height: m.Height}}
-	scale := min(240/float64(max(1, m.Width)), 135/float64(max(1, m.Height)))
-	w, h := max(1, int(math.Round(float64(m.Width)*scale))), max(1, int(math.Round(float64(m.Height)*scale)))
+	w, h := thumbnailSize(m.Width, m.Height)
 	var result *image.RGBA
 	for _, fraction := range []float64{.1, .35, .65} {
 		at := m.Duration * fraction
@@ -75,6 +74,11 @@ func Thumbnail(ctx context.Context, source string) (Preview, error) {
 	}
 	preview.Image = result
 	return preview, nil
+}
+
+func thumbnailSize(width, height int) (int, int) {
+	scale := min(240/float64(max(1, width)), 135/float64(max(1, height)))
+	return max(1, int(math.Round(float64(width)*scale))), max(1, int(math.Round(float64(height)*scale)))
 }
 
 func thumbnailVisible(img *image.RGBA) bool {

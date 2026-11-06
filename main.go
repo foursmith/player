@@ -49,6 +49,8 @@ type application struct {
 	adjustmentsButton                         ui.Handle
 	scrubbing                                 bool
 	scrubTime                                 float64
+	seekUI                                    seekInteraction
+	seekPreviews                              *seekPreviews
 	tracker                                   tracking.Tracker
 	inference                                 *inferenceWorker
 	lastTrackingAt                            float64
@@ -214,6 +216,7 @@ func main() {
 		}
 		a.cancelCatalogRead()
 		a.stopCatalogThumbnails()
+		a.stopSeekPreviews()
 		a.cancelModeDetection()
 		a.cancelSubtitle()
 		if err := a.stateWriter.Close(); err != nil {
@@ -321,6 +324,8 @@ func (a *application) playEntry(index int) {
 	}
 	a.persist()
 	a.cancelModeDetection()
+	a.stopSeekPreviews()
+	a.seekUI = seekInteraction{}
 	a.selected = index
 	a.view = projection.DefaultView()
 	a.flatView = video.FlatView{}

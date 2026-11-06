@@ -199,6 +199,8 @@ func (a *application) closeVideo() {
 func (a *application) resetPlayback() {
 	a.persist()
 	a.cancelModeDetection()
+	a.stopSeekPreviews()
+	a.seekUI = seekInteraction{}
 	a.detectMode = false
 	a.cancelSubtitle()
 	a.player.Reset()

@@ -22,6 +22,7 @@ type utilAPI struct {
 	BufferUnref   func(**avBuffer)
 	DictSet       func(*unsafe.Pointer, string, string, int32) int32
 	DictFree      func(*unsafe.Pointer)
+	DictGet       func(unsafe.Pointer, string, *avDictionaryEntry, int32) *avDictionaryEntry
 	DeviceType    func(string) int32
 	DeviceCreate  func(**avBuffer, int32, *byte, unsafe.Pointer, int32) int32
 	PixelDesc     func(int32) *avPixelDesc
@@ -133,7 +134,7 @@ func bindLibrary(name string, major int, api any, names ...string) error {
 }
 
 var loadMedia = sync.OnceValue(func() error {
-	if err := bindLibrary("avutil", 61, &av.util, "avutil_version", "av_version_info", "av_strerror", "av_frame_alloc", "av_frame_free", "av_frame_unref", "av_frame_move_ref", "av_frame_clone", "av_buffer_ref", "av_buffer_unref", "av_dict_set", "av_dict_free", "av_hwdevice_find_type_by_name", "av_hwdevice_ctx_create", "av_pix_fmt_desc_get", "av_get_pix_fmt", "av_hwframe_transfer_data", "av_channel_layout_describe", "av_get_sample_fmt_name", "av_rescale_q", "av_strdup", "av_opt_set_int", "av_malloc", "av_free"); err != nil {
+	if err := bindLibrary("avutil", 61, &av.util, "avutil_version", "av_version_info", "av_strerror", "av_frame_alloc", "av_frame_free", "av_frame_unref", "av_frame_move_ref", "av_frame_clone", "av_buffer_ref", "av_buffer_unref", "av_dict_set", "av_dict_free", "av_dict_get", "av_hwdevice_find_type_by_name", "av_hwdevice_ctx_create", "av_pix_fmt_desc_get", "av_get_pix_fmt", "av_hwframe_transfer_data", "av_channel_layout_describe", "av_get_sample_fmt_name", "av_rescale_q", "av_strdup", "av_opt_set_int", "av_malloc", "av_free"); err != nil {
 		return err
 	}
 	if err := bindLibrary("avcodec", 63, &av.codec, "avcodec_version", "avcodec_find_decoder", "avcodec_alloc_context3", "avcodec_parameters_to_context", "avcodec_open2", "avcodec_free_context", "avcodec_get_hw_config", "avcodec_receive_frame", "avcodec_send_packet", "avcodec_flush_buffers", "av_packet_alloc", "av_packet_free", "av_packet_unref", "av_packet_move_ref", "av_packet_side_data_get"); err != nil {
