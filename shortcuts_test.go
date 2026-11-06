@@ -52,7 +52,7 @@ func TestCustomShortcutRunsActionAndReplacesDefault(t *testing.T) {
 	a.preferences.Volume = .5
 	a.preferences.Shortcuts = map[string]keyChord{"volumeUp": {Key: ui.KeyP}}
 	view := ui.NewTester(func(c *ui.Context) {
-		transparentTheme(c)
+		c.SetTheme(darkPlayerTheme)
 		ui.Box(c).Fill().Focusable().AutoFocus()
 		a.playbackKeyboard(c)
 	}, 320, 200)

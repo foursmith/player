@@ -136,7 +136,7 @@ func (a *application) catalogSharingButton(c *ui.Context, saved library.Saved) {
 	}
 	button := glassAction(c.Key("dlna-sharing-toggle"), "source-dlna", "DLNA").Label(a.t("sharing.title")).Role(ui.RoleSwitch).Checked(saved.ShareDLNA)
 	if saved.ShareDLNA {
-		button.Background(accent.Alpha(.12)).TextColor(accent)
+		button.Background(c.Theme().Accent.Alpha(.12)).TextColor(c.Theme().Accent)
 	}
 	button.OnClick(func() { a.setCatalogDLNASharing(saved.ID, !saved.ShareDLNA) })
 }
@@ -159,7 +159,7 @@ func (a *application) catalogSharingStatus(c *ui.Context, saved library.Saved) {
 		return
 	}
 	ui.Column(c.Key("dlna-sharing")).FillWidth().Padding(0, 16, 6).Gap(3).Children(func() {
-		ui.Text(c, status).FontSize(10).TextColor(white(.45)).Padding(0, 12, 4).FillWidth().Wrap()
+		ui.Text(c, status).FontSize(10).TextColor(textColor(c, .45)).Padding(0, 12, 4).FillWidth().Wrap()
 		if a.dlnaSharing.error != "" {
 			glassAction(c, "rotate-ccw", a.t("sharing.retry")).AlignSelf(ui.Start).OnClick(func() {
 				a.dlnaSharing.error = ""

@@ -30,7 +30,7 @@ func text(_ value: String, center: CGFloat, top: CGFloat, size: CGFloat, color: 
     label.draw(at: CGPoint(x: center - label.size().width / 2, y: top))
 }
 
-// Static time-zero frame of the app's ocean shader in empty.go.
+// Static time-zero frame of the app's ocean shader in home.go.
 // Reuse its colors, noise, light shafts, caustics and vignette.
 func smooth(_ a: Double, _ b: Double, _ x: Double) -> Double {
     let t = min(1, max(0, (x - a) / (b - a)))

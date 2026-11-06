@@ -31,6 +31,7 @@ type application struct {
 	trackingSampleWidth, trackingSampleHeight int
 	presentation                              [2]presentationState
 	controlsVisible                           bool
+	homeAnimation                             homeAnimationClock
 	scanning                                  bool
 	importGeneration                          uint64
 	menuLocale                                string
@@ -130,6 +131,7 @@ func main() {
 	state := loadState(path)
 
 	a := &application{preferences: state.Preferences, stored: state, view: projection.DefaultView(), mode: projection.Flat, playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume, recognitionTest: options.recognitionTest}
+	mygo.Theme.SetSource(a.preferences.Appearance)
 	if a.recognitionTest {
 		log.Print("[recognition-test] enabled: saved video types bypassed; history types preserved")
 	}
@@ -137,6 +139,7 @@ func main() {
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
+	stopAppearanceUpdates := mygo.Theme.OnUpdated(a.refreshAppearance)
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.stateWriter = newStateWriter(path, func(err error) {
 		if w := a.windowRef.Load(); w != nil {
@@ -200,6 +203,7 @@ func main() {
 		}
 		a.persist()
 		a.shutdown = true
+		stopAppearanceUpdates()
 		sharing := a.dlnaSharing.server
 		a.cancel()
 		a.stopDLNASharing()
@@ -229,7 +233,16 @@ func main() {
 	mygo.App.OnWindowAllClosed(mygo.App.Quit)
 	mygo.App.WhenReady(func() {
 		a.window = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: 1200, Height: 800, MinWidth: 360, MinHeight: 320, UseContentSize: true, TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: "#000000", Hidden: true, Content: ui.View(a.render)})
+		a.window.SetWindowButtonsTheme(mygo.ThemeDark)
 		a.windowRef.Store(a.window)
+		a.window.OnFocus(func() {
+			a.homeAnimation.setFocused(time.Now(), true)
+			a.window.Invalidate()
+		})
+		a.window.OnBlur(func() {
+			a.homeAnimation.setFocused(time.Now(), false)
+			a.window.Invalidate()
+		})
 		a.inference = newInferenceWorker(a)
 		var err error
 		a.surface, err = video.New(a.window.NativeHandle())
@@ -455,6 +468,7 @@ func (a *application) togglePip() {
 		}
 	}
 	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: width, Height: height, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
+	a.pipWindow.SetWindowButtonsTheme(mygo.ThemeDark)
 	a.pipWindowRef.Store(a.pipWindow)
 	a.refreshVideoOnReveal(a.pipWindow, 1)
 	var err error

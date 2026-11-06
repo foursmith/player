@@ -29,6 +29,9 @@ func (a *application) restartAutomaticDetection() {
 func (a *application) resetPreferences() {
 	previous := a.preferences
 	a.preferences = defaultPreferences()
+	if previous.Appearance != a.preferences.Appearance {
+		a.applyAppearance()
+	}
 	a.setShortcutRecording("")
 	a.lastAudible = a.preferences.Volume
 	if a.player != nil {

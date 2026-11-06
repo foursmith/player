@@ -56,25 +56,25 @@ func (a *application) mediaPicker(c *ui.Context, width float32, items []mediaPic
 	sy = root.Animate("sy", sy, 72*time.Millisecond)
 	root.Children(func() {
 		ui.Box(c).Fill().Radius(mediaPickerHeight/2).Clip().Translate(dx, dy).Scale(sx, sy).Draw(func(p *ui.Painter, r ui.Rect) {
-			p.Fill(r, white(.05), mediaPickerHeight/2)
+			p.Fill(r, ink(c, .05), mediaPickerHeight/2)
 			paintGlassRim(p, r, mediaPickerHeight/2, .14)
 		}).Children(func() {
 			ui.Row(c).Fill().Children(func() {
 				for i, item := range items {
 					if i > 0 {
-						ui.Box(c).Width(1).Height(16).Background(white(.12))
+						ui.Box(c).Width(1).Height(16).Background(ink(c, .12))
 					}
 					button := ui.Button(c.Key(item.label), "").Grow(1).Height(mediaPickerHeight).Padding(0).Radius(0).Background(ui.Transparent).Border(0, ui.Transparent).FocusRing(false).Label(a.t(item.label))
-					background, foreground, scale := white(0), white(.82), float32(1)
+					background, foreground, scale := ink(c, 0), ink(c, .82), float32(1)
 					if button.Hovered() {
-						background, foreground = white(.07), white(1)
+						background, foreground = ink(c, .07), ink(c, 1)
 					}
 					if button.FocusVisible() {
-						background, foreground = white(.10), white(1)
+						background, foreground = ink(c, .10), ink(c, 1)
 					}
 					if button.Pressed() {
 						if c.Preferences().ReduceMotion {
-							background = white(.10)
+							background = ink(c, .10)
 						} else {
 							scale = .95
 						}

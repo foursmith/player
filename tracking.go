@@ -130,7 +130,10 @@ func (w *inferenceWorker) run(a *application) {
 		}
 	}
 }
-func trackingNow() float64 { return float64(time.Since(oceanStarted).Microseconds()) / 1000 }
+
+var trackingStarted = time.Now()
+
+func trackingNow() float64 { return float64(time.Since(trackingStarted).Microseconds()) / 1000 }
 func (a *application) trackingAspect() float64 {
 	if a.pipWindow != nil {
 		b := a.pipWindow.ContentBounds()

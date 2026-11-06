@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/egoist/mygo"
 	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/projection"
 )
@@ -30,6 +31,7 @@ type preferences struct {
 	SubtitlesEnabled       bool                `json:"subtitlesEnabled"`
 	RepeatMode             string              `json:"repeatMode"`
 	Locale                 string              `json:"locale"`
+	Appearance             mygo.ThemeSource    `json:"appearance"`
 	Shortcuts              map[string]keyChord `json:"shortcuts,omitempty"`
 }
 type videoHistory struct {
@@ -65,7 +67,7 @@ func defaultPreferences() preferences {
 		SplitCount: 2, PreferredSplitAspect: "1:1", FaceAutoCenter: true, ResumeAfterMovement: true,
 		VRDragSensitivity: 1, CenteringResumeDelay: 1, ProjectionAI: true,
 		ResumePlaybackPosition: true, RecordPlaybackHistory: true, RecentFilesEnabled: true,
-		SubtitlesEnabled: true, RepeatMode: "file", Locale: "en", LibraryAutoRefresh: true,
+		SubtitlesEnabled: true, RepeatMode: "file", Locale: "en", Appearance: mygo.ThemeDark, LibraryAutoRefresh: true,
 	}
 }
 func loadState(path string) storedState {
@@ -91,6 +93,9 @@ func loadState(path string) storedState {
 	}
 	if p.Locale != "zh-CN" && p.Locale != "ja" {
 		p.Locale = "en"
+	}
+	if p.Appearance != mygo.ThemeLight && p.Appearance != mygo.ThemeSystem {
+		p.Appearance = mygo.ThemeDark
 	}
 	if p.RepeatMode != "file" && p.RepeatMode != "folder" {
 		p.RepeatMode = "off"

@@ -51,12 +51,12 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 		selected := !node.Folder && node.Index == a.selected
 		row := ui.Button(c, "").FillWidth().Height(36).Padding(0).Background(ui.Transparent).Border(0, ui.Transparent).Radius(10).Label(node.Name)
 		if selected {
-			row.Background(white(.08))
+			row.Background(ink(c, .08))
 		}
 		row.Children(func() {
 			ui.Row(c).Fill().Padding(0, 8+float32(depth)*14).Gap(8).Children(func() {
 				name := "file-video"
-				color := white(.66)
+				color := ink(c, .66)
 				if node.Folder {
 					name = "folder"
 					if a.expandedFolders[node.ID] {
@@ -64,14 +64,14 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 					}
 				}
 				if selected {
-					color = accent
+					color = c.Theme().Accent
 				}
 				ui.Icon(c, icons[name]).Size(14, 14).TextColor(color)
 				ui.Text(c, node.Name).FontSize(11).TextColor(color).SingleLine().Grow(1).MinWidth(0)
 				if node.Folder {
-					ui.Icon(c, icons["caret-down"]).Size(10, 10).TextColor(white(.4))
+					ui.Icon(c, icons["caret-down"]).Size(10, 10).TextColor(textColor(c, .4))
 				} else if a.entries[node.Index].Subtitle != "" {
-					ui.Icon(c, icons["subtitles"]).Size(12, 12).TextColor(white(.4))
+					ui.Icon(c, icons["subtitles"]).Size(12, 12).TextColor(textColor(c, .4))
 				}
 			})
 		})

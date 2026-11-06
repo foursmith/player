@@ -9,9 +9,9 @@ func (a *application) about(c *ui.Context) {
 			ui.Text(c, appInfo.Name).FontSize(12).FontWeight(600).SingleLine()
 			smallText(c, a.t("common.tagline"), .4).FontSize(10).FillWidth().Wrap()
 		})
-		ui.Text(c, "v"+appInfo.Version).FontSize(9).TextColor(white(.45)).Background(white(.04)).Padding(3, 6).Radius(8)
+		ui.Text(c, "v"+appInfo.Version).FontSize(9).TextColor(textColor(c, .45)).Background(ink(c, .04)).Padding(3, 6).Radius(8)
 	})
-	ui.Divider(c).Background(white(.045))
+	ui.Divider(c).Background(ink(c, .045))
 	ui.Row(c).FillWidth().Padding(10, 12).Gap(4).Children(func() {
 		smallText(c, a.t("settings.by"), .42)
 		smallText(c, "ourongxing", .68)
@@ -25,7 +25,7 @@ func (a *application) about(c *ui.Context) {
 func (a *application) aboutAction(c *ui.Context, icon, label string, pressed bool, action func()) {
 	button := glassAction(c, icon, label).Height(24)
 	if pressed {
-		button.Background(accent.Alpha(.1)).TextColor(accent)
+		button.Background(c.Theme().Accent.Alpha(.1)).TextColor(c.Theme().Accent)
 	}
 	button.OnClick(action)
 }

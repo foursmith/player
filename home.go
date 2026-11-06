@@ -22,10 +22,31 @@ func Fragment(dst vec4,pos vec2)vec4{
  rays*=smoothstep(.02,.75,uv.y)*smoothstep(1.12,.62,uv.y);color+=vec3(.38,.81,.84)*rays*.14
  causticUv:=waterUv*vec2(8,6);waveA:=abs(sin(causticUv.x+sin(causticUv.y*.74+waterTime)));waveB:=abs(sin(causticUv.y*1.17-waterTime*.83+sin(causticUv.x*.63)));caustic:=pow(max(0,1-min(waveA,waveB)),5)*pow(depth,6)*(.45+fineCurrent*.55);color+=vec3(.72,.95,.93)*caustic*.16;color*=.7+(1-smoothstep(.28,.82,distance(uv,vec2(.5,.54))))*.3;return vec4(color,1)
 }`)
-var oceanStarted = time.Now()
 
-func (a *application) empty(c *ui.Context) {
-	t := c.Now().Sub(oceanStarted).Seconds()
+type homeAnimationClock struct {
+	elapsed time.Duration
+	started time.Time
+}
+
+func (clock *homeAnimationClock) setFocused(now time.Time, focused bool) {
+	if focused && clock.started.IsZero() {
+		clock.started = now
+	} else if !focused && !clock.started.IsZero() {
+		clock.elapsed += now.Sub(clock.started)
+		clock.started = time.Time{}
+	}
+}
+
+func (clock *homeAnimationClock) seconds(now time.Time) float64 {
+	elapsed := clock.elapsed
+	if !clock.started.IsZero() {
+		elapsed += now.Sub(clock.started)
+	}
+	return elapsed.Seconds()
+}
+
+func (a *application) home(c *ui.Context) {
+	t := a.homeAnimation.seconds(c.Now())
 	if c.Preferences().ReduceMotion {
 		t = 0
 	}
@@ -38,7 +59,7 @@ func (a *application) empty(c *ui.Context) {
 		heroW, heroH, logoSize = 280, 112, 96
 	}
 	actionsWidth := min(mediaOpenWidth, a.width-40)
-	ui.Box(c.Key("empty")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Draw(func(p *ui.Painter, r ui.Rect) { ocean.Draw(p, r, shader.Options{Uniforms: map[string]any{"Time": t}}) }).Children(func() {
+	ui.Box(c.Key("home")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Draw(func(p *ui.Painter, r ui.Rect) { ocean.Draw(p, r, shader.Options{Uniforms: map[string]any{"Time": t}}) }).Children(func() {
 		driftTime := math.Mod(t, 72) / 36
 		if driftTime > 1 {
 			driftTime = 2 - driftTime
@@ -46,14 +67,22 @@ func (a *application) empty(c *ui.Context) {
 		drift := motion(driftTime, []motionFrame{{at: 0, x: 16, y: -6}, {at: .28, x: -18, y: 1}, {at: .55, y: 8}, {at: .78, x: 18, y: 2}, {at: 1, x: -6, y: -8}}, [4]float64{.42, 0, .58, 1})
 		ui.Column(c).AlignItems(ui.Center).Gap(16).Children(func() {
 			ui.Box(c).Size(heroW, heroH).Translate(float32(drift.x), float32(drift.y)).Children(func() {
-				pose := motion(math.Mod(t, 18)/18, []motionFrame{{at: 0, x: 1, y: 1, rotate: -.2, scale: .998}, {at: .24, x: 1, y: 1, rotate: -.2, scale: .998}, {at: .48, x: 4, y: -2, rotate: .35, scale: 1.004}, {at: .56, x: -3, rotate: -.55, scale: .996}, {at: .63, x: -27, y: 1, rotate: -1.15, scale: 1.012}, {at: .70, x: -18, rotate: -.45, scale: 1.004}, {at: .84, x: 4, y: -1, rotate: .25, scale: 1}, {at: 1, x: 1, y: 1, rotate: -.2, scale: .998}}, [4]float64{.42, 0, .24, 1})
+				pose, littleFish := homeFishMotion(t)
 				ui.Image(c, logo).Size(logoSize, logoSize).Attach(ui.AnchorCenter, ui.AnchorCenter).Translate(float32(pose.x), float32(pose.y)).Rotate(float32(pose.rotate)).Scale(float32(pose.scale), float32(pose.scale))
 				for i, dot := range []struct {
 					x, y float32
 					key  string
-				}{{0, 24, "empty.noHeadset"}, {40, heroH - 6, "empty.portraitLayout"}, {heroW - 10, heroH - 38, "empty.portraitCentering"}, {heroW/2 - 72, -8, "empty.autoFramedVr"}, {-6, 130, "common.appName"}} {
-					ui.Box(c.Key(i)).Absolute().Left(dot.x+float32(math.Sin(t/(2+float64(i)))*12)).Top(dot.y+float32(math.Cos(t/(3+float64(i)))*4)).Size(6, 6).Radius(3).Background(ui.Hex("#b8f3ec")).Focusable().Label(a.t(dot.key))
+				}{{0, 24, "home.noHeadset"}, {40, heroH - 6, "home.portraitLayout"}, {heroW - 10, heroH - 38, "home.portraitCentering"}, {heroW/2 - 72, -8, "home.autoFramedVr"}, {-6, heroH/2 - 6, "common.appName"}} {
+					x, y := math.Sin(t/(2+float64(i)))*12, math.Cos(t/(3+float64(i)))*4
+					rotation, scale, opacity := float64(0), float64(1), float64(1)
+					if dot.key == "common.appName" {
+						x, y = littleFish.x, littleFish.y
+						rotation, scale, opacity = littleFish.rotate, littleFish.scale, littleFish.opacity
+					}
+					ui.Box(c.Key(i)).Absolute().Left(dot.x+float32(x)).Top(dot.y+float32(y)).Size(6, 6).Radius(3).Rotate(float32(rotation)).Scale(float32(scale), float32(scale)).Opacity(float32(opacity)).Background(ui.Hex("#b8f3ec")).Focusable().Label(a.t(dot.key))
 				}
+				rightDot := motion(math.Mod(t+4.2, 14.7)/14.7, []motionFrame{{at: 0}, {at: .38, x: -19, y: 5}, {at: .72, x: -10, y: 1}, {at: 1}}, [4]float64{.44, .03, .28, 1})
+				ui.Box(c.Key("upper-right-dot")).Absolute().Right(0).Top(66).Size(6, 6).Radius(3).Translate(float32(rightDot.x), float32(rightDot.y)).Background(ui.Hex("#b8f3ec"))
 			})
 			ui.Column(c).AlignItems(ui.Center).Gap(24).Children(func() {
 				ui.RichText(c, ui.Span{Text: a.t("common.tagline"), Italic: true, Size: 11, Weight: 500, LetterSpacing: 2.1, Color: ui.RGBA(245, 255, 252, .42)})
@@ -71,13 +100,43 @@ func (a *application) empty(c *ui.Context) {
 			})
 		})
 	})
-	if !c.Preferences().ReduceMotion {
+	if !a.homeAnimation.started.IsZero() && !c.Preferences().ReduceMotion {
 		// Keep the foreground motion in step with the display, rather than a timer.
 		c.AnimationFrame()
 	}
 }
 
-type motionFrame struct{ at, x, y, rotate, scale float64 }
+type motionFrame struct{ at, x, y, rotate, scale, opacity float64 }
+
+var homeBigFishFrames = []motionFrame{
+	{at: 0, x: 1, y: 1, rotate: -.2, scale: .998},
+	{at: .24, x: 1, y: 1, rotate: -.2, scale: .998},
+	{at: .48, x: 4, y: -2, rotate: .35, scale: 1.004},
+	{at: .56, x: -3, rotate: -.55, scale: .996},
+	{at: .63, x: -27, y: 1, rotate: -1.15, scale: 1.012},
+	{at: .70, x: -18, rotate: -.45, scale: 1.004},
+	{at: .84, x: 4, y: -1, rotate: .25, scale: 1},
+	{at: 1, x: 1, y: 1, rotate: -.2, scale: .998},
+}
+
+var homeLittleFishFrames = []motionFrame{
+	{at: 0, x: 3, y: -1, rotate: .2, scale: 1, opacity: 1},
+	{at: .24, x: 3, y: -1, rotate: .2, scale: 1, opacity: 1},
+	{at: .48, x: -2, y: 2, rotate: -.3, scale: 1, opacity: 1},
+	{at: .55, x: -5, y: 1, rotate: -.6, scale: 1, opacity: 1},
+	{at: .60, x: -24, y: -3, rotate: -1.2, scale: 1, opacity: 1},
+	{at: .63, x: -28, y: -2, rotate: -.8, scale: 1, opacity: 1},
+	{at: .67, x: 78, y: 1, rotate: 1.5, scale: .18, opacity: 0},
+	{at: .83, x: -44, y: 2, scale: .72, opacity: 0},
+	{at: .90, x: 3, y: -1, rotate: .2, scale: 1, opacity: 1},
+	{at: 1, x: 3, y: -1, rotate: .2, scale: 1, opacity: 1},
+}
+
+func homeFishMotion(seconds float64) (motionFrame, motionFrame) {
+	progress := math.Mod(seconds, 18) / 18
+	easing := [4]float64{.42, 0, .24, 1}
+	return motion(progress, homeBigFishFrames, easing), motion(progress, homeLittleFishFrames, easing)
+}
 
 func bezierProgress(x, a, b, c, d float64) float64 {
 	lo, hi := 0.0, 1.0
@@ -100,7 +159,11 @@ func motion(t float64, frames []motionFrame, ease [4]float64) motionFrame {
 		}
 		p := bezierProgress((t-left.at)/(right.at-left.at), ease[0], ease[1], ease[2], ease[3])
 		lerp := func(a, b float64) float64 { return a + (b-a)*p }
-		return motionFrame{t, lerp(left.x, right.x), lerp(left.y, right.y), lerp(left.rotate, right.rotate), lerp(left.scale, right.scale)}
+		return motionFrame{
+			at: t, x: lerp(left.x, right.x), y: lerp(left.y, right.y),
+			rotate: lerp(left.rotate, right.rotate), scale: lerp(left.scale, right.scale),
+			opacity: lerp(left.opacity, right.opacity),
+		}
 	}
 	return frames[len(frames)-1]
 }

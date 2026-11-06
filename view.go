@@ -14,7 +14,6 @@ import (
 )
 
 func (a *application) render(c *ui.Context) {
-	transparentTheme(c)
 	a.width, a.height = c.Size()
 	if !a.openFilesAt.IsZero() {
 		if c.Now().Before(a.openFilesAt) {
@@ -24,6 +23,7 @@ func (a *application) render(c *ui.Context) {
 		}
 	}
 	state := a.player.Snapshot()
+	a.usePlayerTheme(c, state.URL != "")
 	a.resolveVideoMode(state)
 	if state.Generation != a.lastGeneration {
 		a.lastGeneration = state.Generation
@@ -71,7 +71,7 @@ func (a *application) render(c *ui.Context) {
 			ui.Box(c).Fill().Background(ui.RGB(0, 0, 0)).Center().Children(func() { ui.Text(c, a.t("controls.playingInPip")).TextColor(white(.5)) })
 		}
 		if state.URL == "" {
-			a.empty(c)
+			a.home(c)
 		}
 		if !a.window.IsFullScreen() {
 			bar := c.TitleBar()
@@ -97,7 +97,7 @@ func (a *application) render(c *ui.Context) {
 			}
 			panel(c, 12).Absolute().Attach(ui.AnchorTop, ui.AnchorTop).Top(70).MaxWidth(a.width - 40).Padding(12).Children(func() {
 				ui.Row(c).Gap(8).Children(func() {
-					ui.Text(c, message).FontSize(11).TextColor(ui.Hex("#fecaca")).Wrap().MaxWidth(a.width - 130)
+					ui.Text(c, message).FontSize(11).TextColor(c.Theme().Danger).Wrap().MaxWidth(a.width - 130)
 					a.iconButton(c, "x", a.t("settings.close"), 24, false, func() { a.notice = "" })
 				})
 			})
@@ -120,7 +120,7 @@ func topContentInset(c *ui.Context) float32 {
 
 func (a *application) topControls(c *ui.Context) {
 	inset := topContentMargin + topControlPadding
-	ui.Row(c.Key("top-actions")).Absolute().Top(topContentInset(c) + topControlPadding).Left(inset).Right(inset).Height(topControlSize).Gap(topControlPadding).AlignItems(ui.Center).PassThrough().Children(func() {
+	ui.Themed(c.Key("top-actions"), darkPlayerTheme).Row().Absolute().Top(topContentInset(c) + topControlPadding).Left(inset).Right(inset).Height(topControlSize).Gap(topControlPadding).AlignItems(ui.Center).PassThrough().Children(func() {
 		if !a.playlistExpanded && len(a.entries) > 0 {
 			a.iconButton(c, "playlist", a.t("playlist.open"), topControlSize, false, func() { a.playlistExpanded = true })
 		}
@@ -137,7 +137,7 @@ func (a *application) topControls(c *ui.Context) {
 
 func (a *application) renderStage(c *ui.Context, pip bool) {
 	if pip {
-		transparentTheme(c)
+		c.SetTheme(darkPlayerTheme)
 	}
 	width, height := c.Size()
 	state := a.player.Snapshot()
@@ -350,7 +350,7 @@ func (a *application) controls(c *ui.Context, state media.State) {
 	if a.width < 640 {
 		pad, inset, buttonSize, playSize, gap = 12, 8, 44, 56, 8
 	}
-	panel := ui.Column(c.Key("controls")).Bind(&a.controlsPanel).Absolute().Left(pad).Right(pad).Bottom(pad).MaxWidth(1152).Margin(0, ui.Auto).Padding(inset).Gap(12).Transition(ui.ElementTransition{Duration: 300 * time.Millisecond, Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}})
+	panel := ui.Themed(c.Key("controls"), darkPlayerTheme).Bind(&a.controlsPanel).Absolute().Left(pad).Right(pad).Bottom(pad).MaxWidth(1152).Margin(0, ui.Auto).Padding(inset).Gap(12).Transition(ui.ElementTransition{Duration: 300 * time.Millisecond, Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}})
 	hold(a, panel)
 	panel.Children(func() {
 		ui.Row(c).FillWidth().Gap(gap).AlignItems(ui.Center).Children(func() {
@@ -407,9 +407,9 @@ func (a *application) controlPopovers(c *ui.Context) {
 					}
 					label := a.projectionLabel(i)
 					selected := a.mode == projection.Mode(i)
-					color := white(.68)
+					color := ink(c, .68)
 					if selected {
-						color = white(1)
+						color = ink(c, 1)
 					}
 					button := ui.Button(c, "").Bind(&a.projectionItems[i]).FillWidth().Height(36).FontSize(12).Padding(0, 10).Background(ui.Transparent).Border(0, ui.Transparent).Radius(12).Label(label)
 					button.Children(func() {
@@ -417,12 +417,12 @@ func (a *application) controlPopovers(c *ui.Context) {
 							ui.Icon(c, icons["projection-"+projection.IDs[i]]).Size(18, 18).TextColor(color)
 							ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(color).Grow(1).MinWidth(0).Wrap()
 							if selected {
-								ui.Icon(c, icons["check"]).Size(16, 16).TextColor(white(.72))
+								ui.Icon(c, icons["check"]).Size(16, 16).TextColor(textColor(c, .72))
 							}
 						})
 					})
 					if selected {
-						button.Background(white(.12))
+						button.Background(ink(c, .12))
 						button.AutoFocus()
 					}
 					if button.Clicked() {
@@ -430,13 +430,13 @@ func (a *application) controlPopovers(c *ui.Context) {
 						a.projectionOpen = false
 					}
 				}
-				ui.Divider(c).Background(white(.07))
+				ui.Divider(c).Background(ink(c, .07))
 				label := a.t("projection.redetect")
 				button := ui.Button(c, "").Bind(&a.projectionItems[len(projection.IDs)]).FillWidth().Height(36).Padding(0, 10).Background(ui.Transparent).Border(0, ui.Transparent).Radius(12).Label(label)
 				button.Children(func() {
 					ui.Row(c).Fill().Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, icons["rotate-ccw"]).Size(18, 18).TextColor(white(.68))
-						ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(white(.68))
+						ui.Icon(c, icons["rotate-ccw"]).Size(18, 18).TextColor(textColor(c, .68))
+						ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(textColor(c, .68))
 					})
 				})
 				if button.Clicked() {
@@ -519,7 +519,7 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 				if i == 1 && a.loopB != nil {
 					text += " " + formatTime(*a.loopB)
 				}
-				button := ui.Button(c, text).Font("monospace").FontSize(9).Height(20).Padding(0, 6).Radius(6).Border(0, ui.Transparent).Background(white(.06))
+				button := ui.Button(c, text).Font("monospace").FontSize(9).Height(20).Padding(0, 6).Radius(6).Border(0, ui.Transparent).Background(ink(c, .06))
 				if i == 0 && a.loopA != nil {
 					button.Background(ui.Hex("#fcd34d").Alpha(.14)).TextColor(ui.Hex("#fde68a"))
 				}
@@ -542,7 +542,7 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 					if a.loopA != nil {
 						a.iconButton(c, "x", a.t("timeline.clearLoop"), 20, false, func() { a.loopA = nil; a.loopB = nil })
 					} else {
-						ui.Box(c).Width(8).Height(1).Background(white(.15))
+						ui.Box(c).Width(8).Height(1).Background(ink(c, .15))
 					}
 				}
 			}

@@ -55,12 +55,12 @@ func (a *application) openCatalog() {
 	a.catalogWindow = mygo.NewWindow(mygo.WindowOptions{
 		Title: a.t("library.title"), Width: 920, Height: 600,
 		MinWidth: 800, MinHeight: 460, UseContentSize: true,
-		TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: windowBackground,
+		TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: windowBackground(mygo.Theme.IsDark()),
 		DisableFullScreen: true, Parent: a.window, StateKey: "library", Hidden: true,
 		Content: ui.View(a.catalogView),
 	})
 	window := a.catalogWindow
-	window.SetWindowButtonsTheme(mygo.ThemeDark)
+	window.SetWindowButtonsTheme(a.preferences.Appearance)
 	window.OnReadyToShow(window.Show)
 	window.OnFocus(window.Invalidate)
 	window.OnClosed(func() {
