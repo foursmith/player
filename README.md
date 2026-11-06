@@ -11,7 +11,9 @@ just test
 just build
 ```
 
-以上命令在本仓库根目录执行。构建产物位于 `build/darwin-arm64/Foursmith Player.app`。`just build` 收集本机 FFmpeg/SDL 的动态依赖，加入 LiteRT C 运行库，再重新执行本机临时签名。正式分发仍需开发者证书签名和公证。
+以上命令在本仓库根目录执行。`just build` 收集本机 FFmpeg/SDL 的动态依赖，加入 LiteRT C 运行库，再重新执行本机临时签名，并在 macOS 生成自定义 DMG。Apple Silicon 产物为 `build/darwin-arm64/Foursmith Player.app` 和 `build/darwin-arm64/foursmith-player-0.2.6-arm64.dmg`；名称、版本与文件名前缀读取 `mygo.json`，校验和写入 `build/SHA256SUMS`。正式分发仍需开发者证书签名和公证。
+
+DMG 复用应用主页的深海背景、薄荷色调与斜体标语，两个名称底板使用透明白色叠加和顶部高光，保留 Finder 原生名称及拖入 Applications 的安装方式。`just preview-dmg` 生成 `build/dmg-preview.png`，不构建应用；背景包含 600×400 和 1200×800 两种分辨率，由 `scripts/dmg-artwork.swift` 使用系统字体和 AppKit 绘制。Finder 布局由 `assets/dmg/layout.dmg` 统一维护；修改应用名称或布局时，用 `uv run --with ds-store==1.3.1 python scripts/dmg-layout.py` 重新生成模板，普通构建无需 Python 或 Finder 自动化权限。
 
 图标、模型和三语文案由原生项目的 `assets/` 独立维护，应用名称与版本读取 `mygo.json`。
 

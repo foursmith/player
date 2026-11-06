@@ -12,6 +12,10 @@ build: deps
     ./scripts/native-env go tool mygo build -skip-dmg -skip-installer -o build
     ./scripts/native-env go run ./cmd/package -out build
 
+# 预览 DMG 背景与安装布局，不构建应用
+preview-dmg:
+    swift -O scripts/dmg-artwork.swift build/.dmg-artwork build/dmg-preview.png
+
 # 获取固定版本的人脸检测运行库并校验 SHA-256
 deps:
     go run ./cmd/deps

@@ -1,5 +1,6 @@
 {
   "name": "Foursmith Player",
+  "slug": "foursmith-player",
   "identifier": "com.foursmith.player",
   "version": "0.2.6",
   "out": "build",

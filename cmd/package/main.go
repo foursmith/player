@@ -1,4 +1,4 @@
-// package makes the MyGo macOS bundle independent of Homebrew at runtime.
+// package bundles native dependencies and creates the macOS installer.
 package main
 
 import (
@@ -14,6 +14,10 @@ import (
 )
 
 var output = flag.String("out", "build", "MyGo output directory")
+
+type packageConfig struct {
+	Name, Slug, Version string
+}
 
 func main() {
 	flag.Parse()
@@ -66,7 +70,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	var config struct{ Name string }
+	var config packageConfig
 	if err := json.Unmarshal(manifest, &config); err != nil {
 		return err
 	}
@@ -158,5 +162,5 @@ func run() error {
 		return err
 	}
 	fmt.Printf("Packaged %d native libraries: %s\n", len(seen), bundle)
-	return nil
+	return buildDMG(bundle, config)
 }
