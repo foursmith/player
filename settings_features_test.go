@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/library"
 )
 
 func TestNewPreferencesRoundTripAndValidation(t *testing.T) {

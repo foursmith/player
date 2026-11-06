@@ -17,7 +17,7 @@ type seekInteraction struct {
 }
 
 func (a *application) timeline(c *ui.Context, state media.State) {
-	if state.Metadata.Duration <= 0 {
+	if state.NoSeek || state.Metadata.Duration <= 0 {
 		return
 	}
 	fine := a.scrubbing && a.seekUI.fine
@@ -161,6 +161,9 @@ func (a *application) moveScrub(e ui.InputEvent, width float32, m media.Metadata
 }
 
 func (a *application) timelineInput(e ui.InputEvent, width float32, state media.State) bool {
+	if state.NoSeek {
+		return false
+	}
 	switch e.Kind {
 	case ui.InputPointerDown:
 		if e.Button != 0 {

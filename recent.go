@@ -1,6 +1,6 @@
 package main
 
-import "github.com/foursmith/player/internal/library"
+import "github.com/foursmith/player/library"
 
 func normalizeRecentMedia(items []savedPlayback) []savedPlayback {
 	var out []savedPlayback

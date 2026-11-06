@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 func TestCatalogReadDeliversQueuedResultsUnlessCanceled(t *testing.T) {
@@ -20,7 +20,7 @@ func TestCatalogReadDeliversQueuedResultsUnlessCanceled(t *testing.T) {
 	for _, canceled := range []bool{false, true} {
 		queued := make(chan func(), 1)
 		completed := false
-		cancel := readCatalog(context.Background(), library.Saved{Paths: []string{path}}, func(update func()) { queued <- update }, func(items []library.SavedItem, err error) {
+		cancel := readCatalog(context.Background(), library.Source{ID: "test", Name: "Test", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{path}})}, "", func(update func()) { queued <- update }, func(_ library.Source, items []library.Item, err error) {
 			completed = true
 			if err != nil || len(items) != 1 || items[0].Error != nil || items[0].Entry.Path != path {
 				t.Errorf("scan result was lost: %+v %v", items, err)
@@ -45,12 +45,12 @@ func TestCatalogReadDeliversQueuedResultsUnlessCanceled(t *testing.T) {
 func TestSavedLibrariesSurviveHistoryClearingAndPreferenceReset(t *testing.T) {
 	a := modeTestApplication(t)
 	dir := t.TempDir()
-	want := []library.Saved{
-		{ID: "folder", Name: "Offline disk", Folder: filepath.Join(dir, "offline")},
-		{ID: "collection", Name: "Favorites", Paths: []string{filepath.Join(dir, "clip.mp4")}},
-		{ID: "empty", Name: "Empty collection"},
+	want := []library.Source{
+		{ID: "folder", Name: "Offline disk", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folder: filepath.Join(dir, "offline")})},
+		{ID: "collection", Name: "Favorites", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{filepath.Join(dir, "clip.mp4")}})},
+		{ID: "empty", Name: "Empty collection", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{})},
 	}
-	a.stored.Libraries = library.CloneSaved(want)
+	a.stored.Libraries = library.CloneSources(want)
 	a.clearRecentFiles()
 	a.resetPreferences()
 	path := filepath.Join(dir, "state.json")
@@ -71,11 +71,11 @@ func TestCatalogSearchAndRenameAcrossLocales(t *testing.T) {
 			a := modeTestApplication(t)
 			a.preferences.Locale = locale
 			dir := t.TempDir()
-			a.stored.Libraries = []library.Saved{{ID: "collection", Name: "Favorites", Paths: []string{filepath.Join(dir, "Cloud.mp4"), filepath.Join(dir, "missing.mp4")}}}
+			a.stored.Libraries = []library.Source{{ID: "collection", Name: "Favorites", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{filepath.Join(dir, "Cloud.mp4"), filepath.Join(dir, "missing.mp4")}})}}
 			a.catalog.selected, a.catalog.name = "collection", "Favorites"
-			a.catalog.items = []library.SavedItem{
-				{Entry: library.Entry{Path: a.stored.Libraries[0].Paths[0]}},
-				{Entry: library.Entry{Path: a.stored.Libraries[0].Paths[1]}, Error: os.ErrNotExist},
+			a.catalog.items = []library.Item{
+				{Entry: library.Entry{Path: a.stored.Libraries[0].Local().Paths[0]}},
+				{Entry: library.Entry{Path: a.stored.Libraries[0].Local().Paths[1]}, Error: os.ErrNotExist},
 			}
 			a.filterCatalog()
 			view := ui.NewTester(a.catalogView, 800, 460)
@@ -96,7 +96,7 @@ func TestCatalogSearchAndRenameAcrossLocales(t *testing.T) {
 			}
 			view.TypeKey(ui.Cmd, ui.KeyA, "")
 			view.Type("missing")
-			if !reflect.DeepEqual(a.catalog.visible, []int{1}) || len(a.stored.Libraries[0].Paths) != 2 {
+			if !reflect.DeepEqual(a.catalog.visible, []int{1}) || len(a.stored.Libraries[0].Local().Paths) != 2 {
 				t.Fatal("search discarded an unavailable file")
 			}
 			for _, key := range []string{"library.playAll", "library.append", "library.addPlaylist", "library.savePlaylist"} {

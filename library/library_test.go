@@ -69,7 +69,7 @@ func TestSubtitleAssignment(t *testing.T) {
 	}
 }
 func TestRootPlaybackIncludesRemoteVideosWithStableRowKeys(t *testing.T) {
-	entries := []Entry{{Name: "root.mp4", Path: "r"}, {Name: "inside.mp4", Path: "v", DeviceID: "dlna-nas", ObjectID: "video"}}
+	entries := []Entry{{Name: "root.mp4", Path: "r"}, {Name: "inside.mp4", Path: "v", SourceID: "dlna-nas", ItemID: "video"}}
 	tree := Tree(entries)
 	if len(tree) != 2 || tree[0].Folder || tree[0].ID != Identity(entries[1]) {
 		t.Fatal("remote videos must be queue rows with stable identities", tree)

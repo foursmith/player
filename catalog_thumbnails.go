@@ -7,8 +7,9 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/thumbnail"
+	"github.com/foursmith/player/library"
 )
 
 type catalogPreview struct {
@@ -58,6 +59,10 @@ func (a *application) startCatalogThumbnails() {
 	if dir != "" {
 		cache.Dir = filepath.Join(dir, "thumbnails")
 	}
+	source := library.Source{}
+	if selected := a.selectedCatalog(); selected != nil {
+		source = library.CloneSources([]library.Source{*selected})[0]
+	}
 	go func() {
 		for {
 			select {
@@ -65,7 +70,18 @@ func (a *application) startCatalogThumbnails() {
 				return
 			case entry := <-jobs:
 				loadCtx, stop := context.WithTimeout(ctx, 6*time.Second)
-				preview, err := cache.Load(loadCtx, entry)
+				var preview media.Preview
+				var err error
+				if entry.SourceID != "" {
+					_, entry, err = resolveSourceEntry(loadCtx, source, entry, nil)
+				}
+				if err == nil {
+					if entry.Playback != nil && (entry.Playback.Live || !entry.Playback.Seekable) {
+						err = library.ErrUnsupported
+					} else {
+						preview, err = cache.Load(loadCtx, entry)
+					}
+				}
 				stop()
 				window.Update(func() {
 					if ctx.Err() != nil || a.shutdown {
@@ -107,7 +123,7 @@ func (t *catalogThumbnails) trim() {
 	}
 }
 
-func (a *application) catalogThumbnail(item library.SavedItem) *ui.Bitmap {
+func (a *application) catalogThumbnail(item library.Item) *ui.Bitmap {
 	t := a.catalog.thumbnails
 	if t == nil || item.Error != nil || item.Folder {
 		return nil

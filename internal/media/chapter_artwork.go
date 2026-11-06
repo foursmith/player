@@ -32,7 +32,7 @@ func chapterArtworkStream(format *avFormat) *avStream {
 	return nil
 }
 
-func OpenChapterArtwork(ctx context.Context, source string) (_ *ChapterArtwork, err error) {
+func OpenChapterArtwork(ctx context.Context, source Source) (_ *ChapterArtwork, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -55,8 +55,11 @@ func OpenChapterArtwork(ctx context.Context, source string) (_ *ChapterArtwork, 
 	}
 	d.format.InterruptCallback = avInterrupt{interruptCallback, d.cancellation.token}
 	var options unsafe.Pointer
+	if source.Headers != "" {
+		av.util.DictSet(&options, "headers", source.Headers, 0)
+	}
 	av.util.DictSet(&options, "rw_timeout", "10000000", 0)
-	ret := av.format.Open(&d.format, source, nil, &options)
+	ret := av.format.Open(&d.format, source.URL, nil, &options)
 	av.util.DictFree(&options)
 	if ret < 0 {
 		return nil, mediaError(ret)

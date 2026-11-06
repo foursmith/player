@@ -492,7 +492,3 @@ func connect(ctx context.Context, id, location string, discover func(context.Con
 	}
 	return Device{}, fmt.Errorf("DLNA device is offline or unavailable")
 }
-
-func ReadSubtitle(ctx context.Context, address string) ([]byte, error) {
-	return readResponse(ctx, http.MethodGet, address, "", "")
-}

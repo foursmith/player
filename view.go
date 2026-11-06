@@ -26,7 +26,10 @@ func (a *application) render(c *ui.Context) {
 		video.ReleaseFrame(a.surface)
 	}
 	a.usePlayerTheme(c, state.URL != "")
-	a.resolveVideoMode(state)
+	a.refreshFailedPlayback(state)
+	if state.PlaybackID == a.playbackID {
+		a.resolveVideoMode(state)
+	}
 	if state.Generation != a.lastGeneration {
 		a.lastGeneration = state.Generation
 		a.tracker.Reset()

@@ -2,11 +2,12 @@ package main
 
 import (
 	"math"
+	"reflect"
 	"sort"
 	"strings"
 
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/library"
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )
@@ -16,7 +17,7 @@ type catalogTime struct {
 	progressKnown      bool
 }
 
-func (a *application) catalogPlaybackTime(item library.SavedItem) catalogTime {
+func (a *application) catalogPlaybackTime(item library.Item) catalogTime {
 	if item.Error != nil || item.Folder {
 		return catalogTime{}
 	}
@@ -54,7 +55,7 @@ func (a *application) catalogMatchesPlayback(entry library.Entry, state media.St
 		return false
 	}
 	active := a.entries[a.selected]
-	return state.URL == active.Path && library.Identity(active) == library.Identity(entry)
+	return state.PlaybackID == a.playbackID && state.URL == active.Path && library.Identity(active) == library.Identity(entry)
 }
 
 func (a *application) catalogTimeLabel(value catalogTime) string {
@@ -108,7 +109,7 @@ func (h videoHistory) watchStatus() int {
 	return catalogUnwatched
 }
 
-func (a *application) catalogHistory(item library.SavedItem) videoHistory {
+func (a *application) catalogHistory(item library.Item) videoHistory {
 	if !a.preferences.RecordPlaybackHistory || item.Error != nil || item.Folder {
 		return videoHistory{}
 	}
@@ -150,7 +151,7 @@ func (a *application) filterCatalog() {
 	}
 }
 
-func (a *application) catalogFilteredIndices(items []library.SavedItem, query string, filter int) []int {
+func (a *application) catalogFilteredIndices(items []library.Item, query string, filter int) []int {
 	// Keep row snapshots independent of a filter changed by a row action.
 	visible := make([]int, 0, len(items))
 	for i, item := range items {
@@ -203,7 +204,7 @@ func (a *application) catalogFilteredIndices(items []library.SavedItem, query st
 	return visible
 }
 
-func (a *application) setCatalogWatch(item library.SavedItem, override string) {
+func (a *application) setCatalogWatch(item library.Item, override string) {
 	if !a.preferences.RecordPlaybackHistory || item.Error != nil || item.Folder {
 		return
 	}
@@ -214,13 +215,13 @@ func (a *application) setCatalogWatch(item library.SavedItem, override string) {
 	a.persist()
 }
 
-func sameCatalogItems(left, right []library.SavedItem) bool {
+func sameCatalogItems(left, right []library.Item) bool {
 	if len(left) != len(right) {
 		return false
 	}
 	for i, item := range left {
 		other := right[i]
-		if item.Entry != other.Entry || item.Folder != other.Folder || item.Duration != other.Duration || (item.Error == nil) != (other.Error == nil) {
+		if !reflect.DeepEqual(item.Entry, other.Entry) || item.Folder != other.Folder || item.Duration != other.Duration || (item.Error == nil) != (other.Error == nil) {
 			return false
 		}
 	}

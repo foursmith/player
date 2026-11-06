@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func TestStartupPlaybackRestoresPlaylistWithoutRecentMenuAfterRestart(t *testing.T) {
@@ -16,7 +17,7 @@ func TestStartupPlaybackRestoresPlaylistWithoutRecentMenuAfterRestart(t *testing
 		t.Run(scenario, func(t *testing.T) {
 			remote := scenario != "local"
 			device, revision := dlnaCatalogFixture(t)
-			items, err := library.BrowseDLNA(context.Background(), device, "0")
+			items, err := browseDLNAFixture(context.Background(), device, "0")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -37,15 +38,15 @@ func TestStartupPlaybackRestoresPlaylistWithoutRecentMenuAfterRestart(t *testing
 			if remote {
 				a.selected = 1
 			}
-			saved := library.Saved{ID: device.ID, Name: device.Name, DeviceID: device.ID, Location: device.Location}
-			source := &playlistDLNASource{saved: saved, folders: map[string]*playlistDLNAFolder{}}
+			saved := library.Source{ID: device.ID, Name: device.Name, Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: device.ID, Location: device.Location})}
+			source := &playlistRemoteSource{saved: saved, folders: map[string]*playlistRemoteFolder{}}
 			source.update(source.folder("0"), items)
-			a.playlistDLNA = map[string]*playlistDLNASource{device.ID: source}
+			a.playlistRemote = map[string]*playlistRemoteSource{device.ID: source}
 			if scenario == "dlna-flat" {
-				a.playlistDLNA = nil
-				a.stored.Libraries = []library.Saved{saved}
+				a.playlistRemote = nil
+				a.stored.Libraries = []library.Source{saved}
 			}
-			a.expandedFolders = map[string]bool{dir: true, playlistDLNAFolderID(device.ID, "0"): true}
+			a.expandedFolders = map[string]bool{dir: true, playlistRemoteFolderID(device.ID, "0"): true}
 			a.invalidatePlaylist()
 			a.updateHistoryRecording()
 			entry := a.entries[a.selected]
@@ -89,7 +90,7 @@ func TestStartupPlaybackRestoresPlaylistWithoutRecentMenuAfterRestart(t *testing
 			}
 			if scenario == "dlna-flat" {
 				for _, node := range a.playlistModel() {
-					if node.ID == playlistDLNAFolderID(device.ID, "0") {
+					if node.ID == playlistRemoteFolderID(device.ID, "0") {
 						t.Fatal("startup restoration replaced a direct video row with a device tree")
 					}
 				}

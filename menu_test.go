@@ -8,7 +8,8 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func TestDockAndMenuBarShareRecentPlayback(t *testing.T) {
@@ -20,11 +21,11 @@ func TestDockAndMenuBarShareRecentPlayback(t *testing.T) {
 	}
 	a := modeTestApplication(t)
 	dir := t.TempDir()
-	a.stored.Libraries = []library.Saved{{ID: "nas", Name: "NAS", DeviceID: "nas", Location: "http://nas.local/device.xml"}}
+	a.stored.Libraries = []library.Source{{ID: "nas", Name: "NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "nas", Location: "http://nas.local/device.xml"})}}
 	a.entries = []library.Entry{
 		{Name: "local.mp4", Path: filepath.Join(dir, "local.mp4")},
 		{Name: "missing.mp4", Path: filepath.Join(dir, "missing.mp4")},
-		{Name: "NAS video.mp4", DeviceID: "nas", ObjectID: "movie", ParentID: "0"},
+		{Name: "NAS video.mp4", SourceID: "nas", ItemID: "movie", ParentID: "0"},
 	}
 	// Keep one local file unavailable: both menus must retain the same
 	// records and let reopening report availability, including for DLNA.

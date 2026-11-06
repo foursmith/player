@@ -22,7 +22,7 @@ func TestProbeReadsContainerInfoWithoutPlayback(t *testing.T) {
 				t.Fatalf("create MKV: %v %s", err, output)
 			}
 		}
-		info, err := Probe(context.Background(), path)
+		info, err := Probe(context.Background(), Source{URL: path})
 		if err != nil || info.Width != 320 || info.Height != 160 || math.Abs(info.Duration-1) > .1 {
 			t.Fatalf("container metadata missing for %s: %+v %v", extension, info, err)
 		}
@@ -39,7 +39,7 @@ func TestProbeCancellationInterruptsBlockedOpen(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { _, err := Probe(ctx, server.URL); done <- err }()
+	go func() { _, err := Probe(ctx, Source{URL: server.URL}); done <- err }()
 	select {
 	case <-started:
 	case <-time.After(3 * time.Second):

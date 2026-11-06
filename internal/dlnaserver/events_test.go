@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 type event struct {
@@ -74,7 +74,7 @@ func TestEventSubscriptionsInitialChangeRenewalAndUnsubscribe(t *testing.T) {
 		t.Fatalf("initial event incorrect: %+v", initial)
 	}
 	request("SUBSCRIBE", "/content/event", sid, "", 200)
-	s.SetSources([]library.Saved{{ID: "empty", Name: "Empty collection", ShareDLNA: true}})
+	s.SetSources([]library.Source{{ID: "empty", Name: "Empty collection", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{})}})
 	changed := receive()
 	if changed.headers.Get("SEQ") != "1" || !strings.Contains(changed.body, "<SystemUpdateID>1</SystemUpdateID>") {
 		t.Fatalf("change event incorrect: %+v", changed)

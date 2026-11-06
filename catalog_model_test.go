@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/library"
 )
 
 func TestCatalogShowsDurationBeforePlaybackWithoutCreatingHistory(t *testing.T) {
@@ -19,7 +19,7 @@ func TestCatalogShowsDurationBeforePlaybackWithoutCreatingHistory(t *testing.T) 
 	}
 	a := modeTestApplication(t)
 	entry := library.Entry{Name: "New video.mp4", Path: "/Media/New video.mp4", Size: 10, Modified: 20}
-	item := library.SavedItem{Entry: entry}
+	item := library.Item{Entry: entry}
 	key := library.Identity(entry)
 	a.catalog.thumbnails = &catalogThumbnails{images: map[string]catalogPreview{key: {duration: 125}}}
 	value := a.catalogPlaybackTime(item)
@@ -51,7 +51,7 @@ func TestWatchProgressCompletionAndManualOverrides(t *testing.T) {
 	a := modeTestApplication(t)
 	entry := a.entries[0]
 	key := library.Identity(entry)
-	item := library.SavedItem{Entry: entry}
+	item := library.Item{Entry: entry}
 	state := media.State{URL: entry.Path, Position: 25, Metadata: media.Metadata{Duration: 100}}
 	a.recordPlaybackHistory(entry, state)
 	if h := a.stored.History[key]; h.Duration != 100 || h.watchStatus() != catalogWatching {
@@ -83,7 +83,7 @@ func TestWatchProgressCompletionAndManualOverrides(t *testing.T) {
 
 func TestCatalogNaturalSortFiltersAndRecentPlayback(t *testing.T) {
 	a := modeTestApplication(t)
-	a.catalog.items = []library.SavedItem{
+	a.catalog.items = []library.Item{
 		{Entry: library.Entry{Path: "/media/Episode 10.mp4", Size: 20, Modified: 2}},
 		{Entry: library.Entry{Path: "/media/Episode 2.mp4", Size: 10, Modified: 3}},
 		{Entry: library.Entry{Path: "/media/Missing.mp4"}, Error: os.ErrNotExist},
@@ -116,7 +116,7 @@ func TestCatalogNaturalSortFiltersAndRecentPlayback(t *testing.T) {
 	if a.preferences.LibraryFilter != catalogAll || len(a.catalog.visible) != 3 {
 		t.Fatal("disabling history stranded the library in an unavailable watch filter")
 	}
-	unchanged := append([]library.SavedItem(nil), a.catalog.items...)
+	unchanged := append([]library.Item(nil), a.catalog.items...)
 	if !sameCatalogItems(a.catalog.items, unchanged) {
 		t.Fatal("an unchanged scan would unnecessarily rebuild the library")
 	}
@@ -136,9 +136,9 @@ func TestCatalogWatchMenusFiltersAndLayoutAcrossLocales(t *testing.T) {
 			a.preferences.Locale = locale
 			name, path := "Clouds — Episode 2.mp4", "/Media/Clouds — Episode 2.mp4"
 			entry := library.Entry{Name: name, Path: path, Size: 1000, Modified: 1}
-			a.stored.Libraries = []library.Saved{{ID: "collection", Name: "Weekend videos", Paths: []string{path, "/Media/Missing.mp4"}}}
+			a.stored.Libraries = []library.Source{{ID: "collection", Name: "Weekend videos", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{path, "/Media/Missing.mp4"}})}}
 			a.catalog.selected, a.catalog.name = "collection", "Weekend videos"
-			a.catalog.items = []library.SavedItem{{Entry: entry}, {Entry: library.Entry{Path: "/Media/Missing.mp4"}, Error: os.ErrNotExist}}
+			a.catalog.items = []library.Item{{Entry: entry}, {Entry: library.Entry{Path: "/Media/Missing.mp4"}, Error: os.ErrNotExist}}
 			key := library.Identity(entry)
 			a.stored.History[key] = videoHistory{Position: 754, Duration: 4800}
 			img := image.NewRGBA(image.Rect(0, 0, 160, 90))

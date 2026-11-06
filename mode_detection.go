@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/foursmith/player/internal/detection"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/native"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/library"
 )
 
 type modeDetectionTask struct {
@@ -26,9 +26,9 @@ func (a *application) prepareVideoMode(entry library.Entry) float64 {
 	a.mode = projection.Detect(entry.Name, "", "")
 	a.detectMode, a.modeManual = true, false
 	start := 0.0
-	if (entry.DeviceID == "" || entry.ObjectID != "") && a.preferences.RecordPlaybackHistory {
+	if (entry.SourceID == "" || entry.ItemID != "") && a.preferences.RecordPlaybackHistory {
 		if history, ok := a.stored.History[library.Identity(entry)]; ok {
-			if a.preferences.ResumePlaybackPosition {
+			if a.preferences.ResumePlaybackPosition && (entry.Playback == nil || !entry.Playback.Live && entry.Playback.Seekable) {
 				start = history.Position
 			}
 			if !a.recognitionTest {
@@ -39,6 +39,10 @@ func (a *application) prepareVideoMode(entry library.Entry) float64 {
 				}
 			}
 		}
+	}
+	if entry.Playback != nil && entry.Playback.Live {
+		start = 0
+		a.detectMode = false
 	}
 	if a.recognitionTest {
 		log.Printf("[recognition-test] open file=%q cache=bypassed initial=%s resume=%.3fs", entry.Path, projection.IDs[a.mode], start)
@@ -154,7 +158,7 @@ func analyzeVideoMode(ctx context.Context, entry library.Entry, metadata media.M
 			trace.printf("sample stage=%s attempt=%d requested=%.3fs pts=%.3fs strategy=%s duplicate_replaced=%t duplicate_pts=%.3fs size=%dx%d decoder=%s elapsed=%.2fms error=%v", info.Stage, info.Attempt, info.Requested, info.PTS, info.Strategy, info.ReplacedDuplicate, info.DuplicatePTS, info.Width, info.Height, info.Decoder, float64(info.Elapsed)/float64(time.Millisecond), info.Err)
 		}
 	}
-	sampleErr := media.SampleFrames(ctx, entry.Path, func(img *image.RGBA) bool {
+	sampleErr := media.SampleFrames(ctx, media.FromEntry(entry), func(img *image.RGBA) bool {
 		evidence := projection.AnalyzeFrame(img, aspect)
 		detector.Observe(evidence)
 		trace.printf("frame attempt=%d usable=%t rejection=%q rule=%s luma=%.5f variance=%.5f bright=%.5f stereo_layout=%s stereo_similarity=%.5f stereo_agreement=%.5f wide_disparity=%t accepted_frames=%d", attempt, evidence.Usable, evidence.Rejection, projection.IDs[evidence.Mode], evidence.MeanLuma, evidence.Variance, evidence.BrightFraction, projection.IDs[evidence.StereoLayout], evidence.Similarity, evidence.StereoAgreement, evidence.WideDisparity, detector.Samples)

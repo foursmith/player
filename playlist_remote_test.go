@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func TestDLNAPlaylistAddsWholeSourceWithoutReading(t *testing.T) {
@@ -23,25 +24,25 @@ func TestDLNAPlaylistAddsWholeSourceWithoutReading(t *testing.T) {
 	t.Cleanup(server.Close)
 	a := modeTestApplication(t)
 	a.expandedFolders = map[string]bool{}
-	saved := library.Saved{ID: "nas", Name: "My NAS", DeviceID: "device", Location: server.URL}
-	video := library.Entry{Name: "Episode 2.mp4", Path: server.URL + "/video", DeviceID: saved.DeviceID, ObjectID: "video"}
+	saved := library.Source{ID: "nas", Name: "My NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "device", Location: server.URL})}
+	video := library.Entry{Name: "Episode 2.mp4", Path: server.URL + "/video", SourceID: saved.ID, ItemID: "video"}
 	a.catalog.directoryPath = []catalogFolder{{id: "0"}, {id: "series", name: "Series"}}
-	a.catalog.items = []library.SavedItem{{Entry: video}, {Entry: library.Entry{Name: "Season 3", DeviceID: saved.DeviceID, ObjectID: "season3"}, Folder: true}}
+	a.catalog.items = []library.Item{{Entry: video}, {Entry: library.Entry{Name: "Season 3", SourceID: saved.ID, ItemID: "season3"}, Folder: true}}
 	for range 2 {
-		a.addDLNAPlaylist(saved, true)
+		a.addRemotePlaylist(saved, true)
 	}
-	if requests.Load() != 0 || len(a.playlistDLNA) != 1 || len(a.entries) != 2 || a.selected != 0 || !a.playlistExpanded {
+	if requests.Load() != 0 || len(a.playlistRemote) != 1 || len(a.entries) != 2 || a.selected != 0 || !a.playlistExpanded {
 		t.Fatal("adding a whole source read the NAS, duplicated content, or interrupted playback", requests.Load(), a.entries)
 	}
 	nodes := a.playlistModel()
-	if len(nodes) != 2 || nodes[0].ID != "current.mp4" || nodes[1].ID != playlistDLNAFolderID(saved.DeviceID, "0") || nodes[1].Name != saved.Name {
+	if len(nodes) != 2 || nodes[0].ID != "current.mp4" || nodes[1].ID != playlistRemoteFolderID(saved.ID, "0") || nodes[1].Name != saved.Name {
 		t.Fatal("a nested catalog added only its current directory instead of the device root", nodes)
 	}
 	root := nodes[1]
 	if len(root.Children) != 1 || root.Children[0].Name != "Series" || len(root.Children[0].Children) != 2 {
 		t.Fatal("cached directory ancestry or unloaded children were lost", root)
 	}
-	source := a.playlistDLNA[saved.DeviceID]
+	source := a.playlistRemote[saved.ID]
 	if source.folder("0").loaded || !source.folder("series").loaded || source.folder("season3").loaded {
 		t.Fatal("unknown directories were treated as fully loaded")
 	}
@@ -58,11 +59,11 @@ func TestDLNAPlaylistFolderOnlySourceRemainsVisibleAndPlayable(t *testing.T) {
 	a.entries, a.selected = nil, -1
 	a.expandedFolders = map[string]bool{}
 	a.width, a.height = 800, 600
-	saved := library.Saved{ID: "nas", Name: "My NAS", DeviceID: "device", Location: "http://nas/device.xml"}
-	a.stored.Libraries = []library.Saved{saved}
+	saved := library.Source{ID: "nas", Name: "My NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "device", Location: "http://nas/device.xml"})}
+	a.stored.Libraries = []library.Source{saved}
 	a.catalog.selected, a.catalog.name = saved.ID, saved.Name
 	a.catalog.directoryPath = []catalogFolder{{id: "0"}}
-	a.catalog.items = []library.SavedItem{{Entry: library.Entry{Name: "Series", DeviceID: saved.DeviceID, ObjectID: "series"}, Folder: true}}
+	a.catalog.items = []library.Item{{Entry: library.Entry{Name: "Series", SourceID: saved.ID, ItemID: "series"}, Folder: true}}
 	a.filterCatalog()
 	view := ui.NewTester(a.catalogView, 800, 600)
 	for _, key := range []string{"library.playAll", "library.append"} {
@@ -70,7 +71,7 @@ func TestDLNAPlaylistFolderOnlySourceRemainsVisibleAndPlayable(t *testing.T) {
 			t.Fatal("a source containing only directories disabled its playlist action", key, info)
 		}
 	}
-	a.addDLNAPlaylist(saved, true)
+	a.addRemotePlaylist(saved, true)
 	if len(a.playlistModel()) == 0 || len(a.entries) != 0 {
 		t.Fatal("an unloaded source disappeared because it had no cached videos")
 	}
@@ -81,9 +82,9 @@ func TestDLNAPlaylistFolderOnlySourceRemainsVisibleAndPlayable(t *testing.T) {
 		}
 	}
 	// Empty folders are still loaded snapshots and must not be fetched again.
-	source := a.playlistDLNA[saved.DeviceID]
+	source := a.playlistRemote[saved.ID]
 	source.update(source.folder("series"), nil)
-	a.togglePlaylistFolder(playlistDLNAFolderID(saved.DeviceID, "series"))
+	a.togglePlaylistFolder(playlistRemoteFolderID(saved.ID, "series"))
 	if !source.folder("series").loaded || source.folder("series").cancel != nil {
 		t.Fatal("an empty folder was read again")
 	}
@@ -93,7 +94,7 @@ func TestDLNAPlaylistLoadsExpandedFolderAndDiscardsClearedResults(t *testing.T) 
 	for _, cancel := range []bool{false, true} {
 		t.Run(map[bool]string{false: "loaded", true: "cleared"}[cancel], func(t *testing.T) {
 			device, _ := dlnaCatalogFixture(t)
-			items, err := library.BrowseDLNA(context.Background(), device, "0")
+			items, err := browseDLNAFixture(context.Background(), device, "0")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -101,14 +102,14 @@ func TestDLNAPlaylistLoadsExpandedFolderAndDiscardsClearedResults(t *testing.T) 
 			a.expandedFolders = map[string]bool{}
 			a.catalog.directoryPath = []catalogFolder{{id: "0"}}
 			a.catalog.items = items
-			a.addDLNAPlaylist(library.Saved{ID: device.ID, Name: device.Name, DeviceID: device.ID, Location: device.Location}, true)
-			source := a.playlistDLNA[device.ID]
+			a.addRemotePlaylist(library.Source{ID: device.ID, Name: device.Name, Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: device.ID, Location: device.Location})}, true)
+			source := a.playlistRemote[device.ID]
 			queued := make(chan func(), 1)
-			a.loadPlaylistDLNAFolder(source, source.folder("season"), func(update func()) { queued <- update })
+			a.loadPlaylistRemoteFolder(source, source.folder("season"), func(update func()) { queued <- update })
 			select {
 			case update := <-queued:
 				if cancel {
-					a.clearPlaylistDLNA()
+					a.clearPlaylistRemote()
 					a.entries = nil
 					a.invalidatePlaylist()
 				}
@@ -126,7 +127,7 @@ func TestDLNAPlaylistLoadsExpandedFolderAndDiscardsClearedResults(t *testing.T) 
 				t.Fatal("loading a directory changed playback or missed its videos", a.entries)
 			}
 			root := a.playlistModel()[1]
-			if len(root.Children) != 2 || !root.Children[0].Folder || len(root.Children[0].Children) != 1 || a.entries[root.Children[0].Children[0].Index].ObjectID != "episode10" {
+			if len(root.Children) != 2 || !root.Children[0].Folder || len(root.Children[0].Children) != 1 || a.entries[root.Children[0].Children[0].Index].ItemID != "episode10" {
 				t.Fatal("expanded videos did not retain their directory and queue index", root)
 			}
 			if a.entries[root.Children[1].Index].Subtitle == "" {
@@ -142,16 +143,16 @@ func TestDLNAPlaylistLoadsExpandedFolderAndDiscardsClearedResults(t *testing.T) 
 func TestDLNAPlaylistTreeRejectsCyclesAndDuplicateObjects(t *testing.T) {
 	a := modeTestApplication(t)
 	a.expandedFolders = map[string]bool{}
-	saved := library.Saved{ID: "nas", Name: "My NAS", DeviceID: "device"}
-	video := library.SavedItem{Entry: library.Entry{Name: "Video.mp4", Path: "http://nas/video", DeviceID: saved.DeviceID, ObjectID: "video"}}
+	saved := library.Source{ID: "nas", Name: "My NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "device", Location: "http://nas/device.xml"})}
+	video := library.Item{Entry: library.Entry{Name: "Video.mp4", Path: "http://nas/video", SourceID: saved.ID, ItemID: "video"}}
 	a.catalog.directoryPath = []catalogFolder{{id: "0"}}
-	a.catalog.items = []library.SavedItem{
-		{Entry: library.Entry{Name: "Back to root", DeviceID: saved.DeviceID, ObjectID: "0"}, Folder: true},
-		{Entry: library.Entry{Name: "Season 10", DeviceID: saved.DeviceID, ObjectID: "season10"}, Folder: true},
-		{Entry: library.Entry{Name: "Season 2", DeviceID: saved.DeviceID, ObjectID: "season2"}, Folder: true},
+	a.catalog.items = []library.Item{
+		{Entry: library.Entry{Name: "Back to root", SourceID: saved.ID, ItemID: "0"}, Folder: true},
+		{Entry: library.Entry{Name: "Season 10", SourceID: saved.ID, ItemID: "season10"}, Folder: true},
+		{Entry: library.Entry{Name: "Season 2", SourceID: saved.ID, ItemID: "season2"}, Folder: true},
 		video, video,
 	}
-	a.addDLNAPlaylist(saved, true)
+	a.addRemotePlaylist(saved, true)
 	root := a.playlistModel()[1]
 	if len(root.Children) != 3 || root.Children[0].Name != "Season 2" || root.Children[1].Name != "Season 10" || root.Children[2].Folder || root.Children[2].Index != 1 {
 		t.Fatal("a directory cycle or duplicate object produced extra playlist rows", root)
@@ -164,8 +165,8 @@ func TestDLNAPlaylistOfflineFolderCanBeRetried(t *testing.T) {
 	a.expandedFolders = map[string]bool{}
 	a.catalog.directoryPath = []catalogFolder{{id: "0"}}
 	a.catalog.error = "offline"
-	a.addDLNAPlaylist(library.Saved{ID: device.ID, Name: device.Name, DeviceID: device.ID, Location: device.Location}, true)
-	source := a.playlistDLNA[device.ID]
+	a.addRemotePlaylist(library.Source{ID: device.ID, Name: device.Name, Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: device.ID, Location: device.Location})}, true)
+	source := a.playlistRemote[device.ID]
 	folder := source.folder("0")
 	if folder.loaded {
 		t.Fatal("an offline catalog was cached as an empty directory")
@@ -177,7 +178,7 @@ func TestDLNAPlaylistOfflineFolderCanBeRetried(t *testing.T) {
 		} else {
 			revision.Store(0)
 		}
-		a.loadPlaylistDLNAFolder(source, folder, func(update func()) { queued <- update })
+		a.loadPlaylistRemoteFolder(source, folder, func(update func()) { queued <- update })
 		select {
 		case update := <-queued:
 			update()

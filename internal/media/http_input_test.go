@@ -52,7 +52,7 @@ func openTestHTTP(t *testing.T, ctx context.Context, address string) *Decoder {
 	d.stop = context.AfterFunc(ctx, d.cancellation.cancel)
 	t.Cleanup(d.Close)
 	d.format.InterruptCallback = avInterrupt{interruptCallback, d.cancellation.token}
-	if err := d.openHTTP(address); err != nil {
+	if err := d.openHTTP(address, ""); err != nil {
 		t.Fatal(err)
 	}
 	return d

@@ -4,6 +4,8 @@ Foursmith Player is licensed under GNU GPL version 3 or later. See `LICENSE`
 and `COPYRIGHT.txt`. Third-party software and assets retain their own licenses.
 
 - MyGo (version pinned in `go.mod`): https://github.com/egoist/mygo — MIT.
+- moejs (version pinned in `go.mod`): https://github.com/MoeForge/moejs — Apache-2.0,
+  with its bundled Unicode, ICU and V8 notices in `licenses/moejs-THIRD_PARTY_NOTICES.txt`.
 - purego: https://github.com/ebitengine/purego — Apache-2.0.
 - go-text/typesetting: https://github.com/go-text/typesetting — BSD-3-Clause,
   with HarfBuzz-derived code under its accompanying license.

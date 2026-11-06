@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 func TestMetadataSchedulerQueuesOnlyMissingUniqueFiles(t *testing.T) {
@@ -54,9 +54,9 @@ func TestMetadataSchedulerQueuesOnlyMissingUniqueFiles(t *testing.T) {
 func TestMetadataIndexDoesNotBlockBrowsingAndSharesCachedResults(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "clip.mp4")
 	writeFile(t, file, "video")
-	s, base := fixture(t, []library.Saved{
-		{ID: "first", Name: "First", Paths: []string{file}, ShareDLNA: true},
-		{ID: "second", Name: "Second", Paths: []string{file}, ShareDLNA: true},
+	s, base := fixture(t, []library.Source{
+		{ID: "first", Name: "First", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{file}})},
+		{ID: "second", Name: "Second", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{file}})},
 	})
 	started, release := make(chan struct{}, 2), make(chan struct{})
 	var calls atomic.Int32
@@ -129,7 +129,7 @@ func TestMetadataIndexDoesNotBlockBrowsingAndSharesCachedResults(t *testing.T) {
 func TestLateMetadataCannotRestoreUnsharedObjects(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "clip.mp4")
 	writeFile(t, file, "video")
-	s, _ := fixture(t, []library.Saved{{ID: "first", Name: "First", Paths: []string{file}, ShareDLNA: true}})
+	s, _ := fixture(t, []library.Source{{ID: "first", Name: "First", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{file}})}})
 	started, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	s.startMetadata(func(context.Context, library.Entry) (library.MediaInfo, error) {
 		close(started)

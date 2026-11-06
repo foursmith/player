@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/foursmith/player/internal/dlna"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func TestUnsharingOneLibraryPreservesOtherLibrariesAndTransfers(t *testing.T) {
@@ -30,11 +31,11 @@ func TestUnsharingOneLibraryPreservesOtherLibrariesAndTransfers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	sources := []library.Saved{
-		{ID: "first", Name: "First", Paths: []string{first}, ShareDLNA: true},
-		{ID: "second", Name: "Second", Paths: []string{second}, ShareDLNA: true},
-		{ID: "private", Name: "Private", Paths: []string{second}},
-		{ID: "remote", Name: "Remote", DeviceID: "nas", ShareDLNA: true},
+	sources := []library.Source{
+		{ID: "first", Name: "First", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{first}})},
+		{ID: "second", Name: "Second", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{second}})},
+		{ID: "private", Name: "Private", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{second}})},
+		{ID: "remote", Name: "Remote", ShareDLNA: true, Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "nas", Location: "http://nas/device.xml"})},
 	}
 	s, base := fixture(t, sources)
 	device, err := dlna.Connect(context.Background(), fmt.Sprintf("dlna-%x", sha256.Sum256([]byte(s.udn))), base+"/device.xml")

@@ -13,7 +13,7 @@ import (
 func TestThumbnailUsesSmallIndependentVideoFrame(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	preview, err := Thumbnail(ctx, fixture(t, false))
+	preview, err := Thumbnail(ctx, Source{URL: fixture(t, false)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestThumbnailUsesSmallIndependentVideoFrame(t *testing.T) {
 	}
 	canceled, stop := context.WithCancel(context.Background())
 	stop()
-	if _, err := Thumbnail(canceled, "/missing.mp4"); !errors.Is(err, context.Canceled) {
+	if _, err := Thumbnail(canceled, Source{URL: "/missing.mp4"}); !errors.Is(err, context.Canceled) {
 		t.Fatal("preview ignored cancellation", err)
 	}
 }
@@ -42,7 +42,7 @@ func TestThumbnailSkipsBlackIntroWithSparseKeyframes(t *testing.T) {
 	if out, err := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", filter, "-c:v", "libx264", "-g", "1000", "-sc_threshold", "0", "-pix_fmt", "yuv420p", source).CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %v: %s", err, out)
 	}
-	preview, err := Thumbnail(ctx, source)
+	preview, err := Thumbnail(ctx, Source{URL: source})
 	if err != nil || preview.Image.(*image.RGBA).RGBAAt(50, 30).R < 150 || preview.Duration < 5.9 {
 		t.Fatal("sparse keyframes left the preview on a black intro", err)
 	}

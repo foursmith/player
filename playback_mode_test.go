@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
 	"github.com/foursmith/player/internal/video"
+	"github.com/foursmith/player/library"
 )
 
 func modeTestApplication(t *testing.T) *application {

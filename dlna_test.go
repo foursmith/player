@@ -18,8 +18,9 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/dlna"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func dlnaCatalogFixture(t *testing.T) (dlna.Device, *atomic.Int64) {
@@ -60,7 +61,7 @@ func dlnaCatalogFixture(t *testing.T) (dlna.Device, *atomic.Int64) {
 
 func TestDLNALibraryBrowsingMetadataStableHistoryAndSavedSources(t *testing.T) {
 	device, revision := dlnaCatalogFixture(t)
-	items, err := library.BrowseDLNA(context.Background(), device, "0")
+	items, err := browseDLNAFixture(context.Background(), device, "0")
 	if err != nil || len(items) != 2 || !items[0].Folder || items[0].Name() != "Season 2" {
 		t.Fatal("DLNA root did not expose its folders and videos", items, err)
 	}
@@ -68,17 +69,17 @@ func TestDLNALibraryBrowsingMetadataStableHistoryAndSavedSources(t *testing.T) {
 	if movie.Name() != "Episode 2.mp4" || movie.Duration != 600 || movie.Entry.Size != 12345 || movie.Entry.Modified == 0 || !strings.HasSuffix(movie.Entry.Subtitle, "/captions.srt") {
 		t.Fatal("DLNA video metadata or subtitles were lost", movie)
 	}
-	children, err := library.BrowseDLNA(context.Background(), device, "season")
-	if err != nil || len(children) != 1 || children[0].Entry.ObjectID != "episode10" || children[0].Duration != 1200 {
+	children, err := browseDLNAFixture(context.Background(), device, "season")
+	if err != nil || len(children) != 1 || children[0].Entry.ItemID != "episode10" || children[0].Duration != 1200 {
 		t.Fatal("nested DLNA folder could not be browsed", children, err)
 	}
 	a := modeTestApplication(t)
 	a.entries = []library.Entry{movie.Entry}
 	a.recordPlaybackHistory(movie.Entry, media.State{URL: movie.Entry.Path, Position: 120, Metadata: media.Metadata{Duration: 600}})
-	a.stored.Libraries, _ = rememberDLNALibraries(nil, []dlna.Device{device})
+	a.stored.Libraries, _ = rememberDiscoveredLibraries(nil, discoveredDLNASources(device))
 	a.stored.Libraries[0].Name = "My collection of NAS videos"
 	revision.Add(1)
-	fresh, err := library.BrowseDLNA(context.Background(), device, "0")
+	fresh, err := browseDLNAFixture(context.Background(), device, "0")
 	if err != nil || fresh[1].Path == movie.Path || fresh[1].Key() != movie.Key() {
 		t.Fatal("renewed stream URL changed the stable video identity", fresh, err)
 	}
@@ -96,8 +97,8 @@ func TestDLNALibraryBrowsingMetadataStableHistoryAndSavedSources(t *testing.T) {
 		t.Fatal("watch filtering hid navigation folders or retained a watched video", a.catalog.visible)
 	}
 	device.Location += "?new-address"
-	a.stored.Libraries, _ = rememberDLNALibraries(a.stored.Libraries, []dlna.Device{device})
-	if len(a.stored.Libraries) != 1 || a.stored.Libraries[0].Name != "My collection of NAS videos" || a.stored.Libraries[0].Location != device.Location {
+	a.stored.Libraries, _ = rememberDiscoveredLibraries(a.stored.Libraries, discoveredDLNASources(device))
+	if len(a.stored.Libraries) != 1 || a.stored.Libraries[0].Name != "My collection of NAS videos" || providers.DLNAConnection(a.stored.Libraries[0]).Location != device.Location {
 		t.Fatal("rediscovery duplicated or renamed a saved DLNA source", a.stored.Libraries)
 	}
 	path := filepath.Join(t.TempDir(), "state.json")
@@ -123,14 +124,14 @@ func TestDLNALibraryBrowsingMetadataStableHistoryAndSavedSources(t *testing.T) {
 
 func TestDLNALibraryReadDeliversOfflineErrorsWithoutDeletingSource(t *testing.T) {
 	device, revision := dlnaCatalogFixture(t)
-	saved := library.Saved{ID: device.ID, Name: device.Name, DeviceID: device.ID, Location: device.Location}
+	saved := library.Source{ID: device.ID, Name: device.Name, Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: device.ID, Location: device.Location})}
 	for _, offline := range []bool{false, true} {
 		if offline {
 			revision.Store(-1)
 		}
 		queued := make(chan func(), 1)
 		completed := false
-		cancel := readDLNACatalog(context.Background(), saved, "0", func(update func()) { queued <- update }, func(d dlna.Device, items []library.SavedItem, err error) {
+		cancel := readCatalog(context.Background(), saved, "0", func(update func()) { queued <- update }, func(d library.Source, items []library.Item, err error) {
 			completed = true
 			if (err != nil) != offline || !offline && (d.ID != device.ID || len(items) != 2) {
 				t.Error("wrong DLNA read result", items, err)
@@ -143,7 +144,7 @@ func TestDLNALibraryReadDeliversOfflineErrorsWithoutDeletingSource(t *testing.T)
 			t.Fatal("DLNA read did not deliver its result")
 		}
 		cancel()
-		if !completed || len(library.NormalizeSaved([]library.Saved{saved})) != 1 {
+		if !completed || len(libraryPlugins.NormalizeSources([]library.Source{saved})) != 1 {
 			t.Fatal("offline DLNA source was discarded or its error was swallowed")
 		}
 	}
@@ -154,7 +155,7 @@ func TestDLNALibraryLayoutAcrossLocales(t *testing.T) {
 		t.Fatal(err)
 	}
 	device, _ := dlnaCatalogFixture(t)
-	items, err := library.BrowseDLNA(context.Background(), device, "0")
+	items, err := browseDLNAFixture(context.Background(), device, "0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestDLNALibraryLayoutAcrossLocales(t *testing.T) {
 		t.Run(locale, func(t *testing.T) {
 			a := modeTestApplication(t)
 			a.preferences.Locale = locale
-			a.stored.Libraries, _ = rememberDLNALibraries(nil, []dlna.Device{device})
+			a.stored.Libraries, _ = rememberDiscoveredLibraries(nil, discoveredDLNASources(device))
 			a.catalog.selected, a.catalog.name = device.ID, device.Name
 			a.catalog.directoryPath = []catalogFolder{{id: "0"}}
 			a.catalog.items = items
@@ -185,7 +186,7 @@ func TestDLNACatalogCancellationDiscardsQueuedResult(t *testing.T) {
 	device, _ := dlnaCatalogFixture(t)
 	queued := make(chan func(), 1)
 	completed := false
-	cancel := readDLNACatalog(context.Background(), library.Saved{DeviceID: device.ID, Location: device.Location}, "0", func(update func()) { queued <- update }, func(dlna.Device, []library.SavedItem, error) { completed = true })
+	cancel := readCatalog(context.Background(), library.Source{ID: device.ID, Name: device.Name, Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: device.ID, Location: device.Location})}, "0", func(update func()) { queued <- update }, func(library.Source, []library.Item, error) { completed = true })
 	select {
 	case update := <-queued:
 		cancel()
@@ -197,4 +198,22 @@ func TestDLNACatalogCancellationDiscardsQueuedResult(t *testing.T) {
 	if completed {
 		t.Fatal("a canceled folder selection applied an old DLNA result")
 	}
+}
+
+func browseDLNAFixture(ctx context.Context, device dlna.Device, parent string) ([]library.Item, error) {
+	source := providers.DLNASource(device.ID, device.Name, device.ID, device.Location)
+	session, err := libraryPlugins.Open(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	return library.ReadDirectory(ctx, session, parent)
+}
+
+func discoveredDLNASources(devices ...dlna.Device) []library.Source {
+	var sources []library.Source
+	for _, device := range devices {
+		sources = append(sources, providers.DLNASource(device.ID, device.Name, device.ID, device.Location))
+	}
+	return sources
 }

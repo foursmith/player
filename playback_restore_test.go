@@ -8,16 +8,17 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func TestRecentPlaylistRestoresMixedQueueTreeOrderAndSelectionAfterRestart(t *testing.T) {
 	device, revision := dlnaCatalogFixture(t)
-	root, err := library.BrowseDLNA(context.Background(), device, "0")
+	root, err := browseDLNAFixture(context.Background(), device, "0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	season, err := library.BrowseDLNA(context.Background(), device, "season")
+	season, err := browseDLNAFixture(context.Background(), device, "season")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,14 +35,14 @@ func TestRecentPlaylistRestoresMixedQueueTreeOrderAndSelectionAfterRestart(t *te
 	a := modeTestApplication(t)
 	a.entries = []library.Entry{local[0], root[1].Entry, season[0].Entry, local[1]}
 	a.selected = 2
-	saved := library.Saved{ID: device.ID, Name: "My NAS", DeviceID: device.ID, Location: device.Location}
-	source := &playlistDLNASource{saved: saved, folders: map[string]*playlistDLNAFolder{}}
+	saved := library.Source{ID: device.ID, Name: "My NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: device.ID, Location: device.Location})}
+	source := &playlistRemoteSource{saved: saved, folders: map[string]*playlistRemoteFolder{}}
 	source.update(source.folder("0"), root)
 	source.update(source.folder("season"), season)
-	a.playlistDLNA = map[string]*playlistDLNASource{device.ID: source}
-	a.expandedFolders = map[string]bool{dir: true, playlistDLNAFolderID(device.ID, "0"): true, playlistDLNAFolderID(device.ID, "season"): true}
+	a.playlistRemote = map[string]*playlistRemoteSource{device.ID: source}
+	a.expandedFolders = map[string]bool{dir: true, playlistRemoteFolderID(device.ID, "0"): true, playlistRemoteFolderID(device.ID, "season"): true}
 	// Retain a root order that differs from natural name ordering.
-	a.playlistTree = []library.Node{{ID: playlistDLNAFolderID(device.ID, "0")}, {ID: dir}}
+	a.playlistTree = []library.Node{{ID: playlistRemoteFolderID(device.ID, "0")}, {ID: dir}}
 	a.invalidatePlaylist()
 	before := a.playlistModel()
 	if !a.rememberRecentMedia(a.entries[a.selected]) {
@@ -78,7 +79,7 @@ func TestRecentPlaylistRestoresMixedQueueTreeOrderAndSelectionAfterRestart(t *te
 	if !reflect.DeepEqual(a.playlistModel(), before) || !reflect.DeepEqual(a.expandedFolders, restored.expanded) || !a.playlistExpanded {
 		t.Fatal("restoring recent playback lost device ancestry, root order or expanded folders", a.playlistModel(), before)
 	}
-	if folder := a.playlistDLNA[device.ID].folder("season"); !folder.loaded {
+	if folder := a.playlistRemote[device.ID].folder("season"); !folder.loaded {
 		t.Fatal("restored directory was not hydrated for continued playback")
 	}
 }

@@ -94,7 +94,7 @@ func classify(ctx context.Context, classifier *detection.ImageClassifier, path s
 			if metadataConclusive {
 				r.Metadata = projection.IDs[metadataMode]
 			}
-			err = media.SampleFrames(ctx, path, func(img *image.RGBA) bool {
+			err = media.SampleFrames(ctx, media.Source{URL: path}, func(img *image.RGBA) bool {
 				return observe(img, float64(metadata.Width)/float64(max(1, metadata.Height)))
 			}, nil)
 		}
@@ -150,14 +150,14 @@ func main() {
 	if *recent != "" {
 		data, err := os.ReadFile(*recent)
 		var state struct {
-			RecentMedia []struct{ Path, DeviceID string }
+			RecentMedia []struct{ Path, SourceID string }
 		}
 		if err != nil || json.Unmarshal(data, &state) != nil {
 			fmt.Fprintln(os.Stderr, "cannot read recent media list")
 			os.Exit(1)
 		}
 		for _, item := range state.RecentMedia {
-			if item.DeviceID == "" && item.Path != "" {
+			if item.SourceID == "" && item.Path != "" {
 				paths = append(paths, item.Path)
 			}
 		}

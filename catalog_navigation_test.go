@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 func TestCollectionFolderActionsLayoutAndOfflineControls(t *testing.T) {
@@ -23,13 +23,13 @@ func TestCollectionFolderActionsLayoutAndOfflineControls(t *testing.T) {
 			root := t.TempDir()
 			series, empty, offline := filepath.Join(root, "Series"), filepath.Join(root, "Empty"), filepath.Join(root, "Offline")
 			direct, clip := filepath.Join(root, "direct.mp4"), filepath.Join(series, "clip.mp4")
-			a.stored.Libraries = []library.Saved{{ID: "collection", Name: "Weekend videos", Paths: []string{direct}}}
+			a.stored.Libraries = []library.Source{{ID: "collection", Name: "Weekend videos", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{direct}})}}
 			a.appendCatalogFolders("collection", []string{series, empty, offline, series})
-			if !reflect.DeepEqual(a.stored.Libraries[0].Folders, []string{series, empty, offline}) || len(a.stored.Libraries[0].Paths) != 1 {
+			if !reflect.DeepEqual(a.stored.Libraries[0].Local().Folders, []string{series, empty, offline}) || len(a.stored.Libraries[0].Local().Paths) != 1 {
 				t.Fatal("adding folders lost explicit files or retained duplicates", a.stored.Libraries)
 			}
 			saved := a.stored.Libraries[0]
-			items := []library.SavedItem{
+			items := []library.Item{
 				{Entry: library.Entry{Path: direct}},
 				{Entry: library.Entry{Path: series}, Folder: true},
 				{Entry: library.Entry{Path: clip}},
@@ -68,7 +68,7 @@ func TestCollectionFolderActionsLayoutAndOfflineControls(t *testing.T) {
 			}
 			a.catalog.selected = ""
 			a.removeCatalogPath(saved.ID, offline)
-			if slices.Contains(a.stored.Libraries[0].Folders, offline) || len(a.stored.Libraries[0].Folders) != 2 || len(a.stored.Libraries[0].Paths) != 1 {
+			if slices.Contains(a.stored.Libraries[0].Local().Folders, offline) || len(a.stored.Libraries[0].Local().Folders) != 2 || len(a.stored.Libraries[0].Local().Paths) != 1 {
 				t.Fatal("removing one folder changed other collection members", a.stored.Libraries)
 			}
 		})
@@ -87,12 +87,12 @@ func TestLocalCatalogNavigationSearchPlaybackAndRefresh(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	saved := library.Saved{ID: "folder", Name: "Videos", Folder: root}
-	a.stored.Libraries = []library.Saved{saved}
+	saved := library.Source{ID: "folder", Name: "Videos", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folder: root})}
+	a.stored.Libraries = []library.Source{saved}
 	a.catalog.selected, a.catalog.name = saved.ID, saved.Name
 	reload := func() {
 		t.Helper()
-		items, err := library.ReadSaved(context.Background(), saved)
+		items, err := library.ReadLocal(context.Background(), saved)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,17 +161,16 @@ func TestLocalCatalogTreeControlsAcrossSourcesAndLocales(t *testing.T) {
 				a := modeTestApplication(t)
 				a.preferences.Locale = locale
 				root := filepath.Join(string(filepath.Separator), "Media")
-				items := []library.SavedItem{
+				items := []library.Item{
 					{Entry: library.Entry{Path: filepath.Join(root, "root.mp4")}},
 					{Entry: library.Entry{Path: filepath.Join(root, "Season 2", "Episode 2.mp4")}},
 					{Entry: library.Entry{Path: filepath.Join(root, "Season 2", "missing.mp4")}, Error: os.ErrNotExist},
 				}
-				saved := library.Saved{ID: kind, Name: "Weekend videos", Folder: root}
+				saved := library.Source{ID: kind, Name: "Weekend videos", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folder: root})}
 				if collection {
-					saved.Folder = ""
-					saved.Paths = []string{items[0].Path, items[1].Path, items[2].Path}
+					saved.SetLocal(library.LocalConfig{Paths: []string{items[0].Path, items[1].Path, items[2].Path}})
 				}
-				a.stored.Libraries = []library.Saved{saved}
+				a.stored.Libraries = []library.Source{saved}
 				a.catalog.selected, a.catalog.name = saved.ID, saved.Name
 				a.setCatalogItems(saved, items)
 				a.filterCatalog()

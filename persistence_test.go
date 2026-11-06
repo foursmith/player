@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/library"
 )
 
 func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
@@ -19,7 +19,7 @@ func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
 	state.RecentMedia = []savedPlayback{{Name: "original.mp4", Path: filepath.Join(t.TempDir(), "original.mp4")}}
 	state.RecentMedia[0].Playlist = &playlistSnapshot{Entries: []playlistEntryReference{{Name: "original.mp4", Path: state.RecentMedia[0].Path}}}
 	originalFolder := filepath.Join(t.TempDir(), "offline")
-	state.Libraries = []library.Saved{{ID: "collection", Name: "Original", Paths: []string{state.RecentMedia[0].Path}, Folders: []string{originalFolder}}}
+	state.Libraries = []library.Source{{ID: "collection", Name: "Original", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{state.RecentMedia[0].Path}, Folders: []string{originalFolder}})}}
 	state.Preferences.Shortcuts = map[string]keyChord{"playPause": {Key: ui.KeyP}}
 	originalRecent := state.RecentMedia[0]
 	for i := range 100 {
@@ -31,8 +31,7 @@ func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
 	state.RecentMedia[0].Path = filepath.Join(t.TempDir(), "mutated.mp4")
 	state.RecentMedia[0].Playlist = &playlistSnapshot{Entries: []playlistEntryReference{{Name: "mutated.mp4", Path: state.RecentMedia[0].Path}}}
 	state.Libraries[0].Name = "Mutated"
-	state.Libraries[0].Paths[0] = state.RecentMedia[0].Path
-	state.Libraries[0].Folders[0] = filepath.Join(t.TempDir(), "mutated-folder")
+	state.Libraries[0].Config[0] = ' '
 	state.Preferences.Shortcuts["playPause"] = keyChord{Key: ui.KeyJ}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
@@ -46,7 +45,7 @@ func TestStateWriterFlushesLatestIndependentSnapshot(t *testing.T) {
 	if got := loadState(path).RecentMedia; len(got) != 1 || !reflect.DeepEqual(got[0], originalRecent) {
 		t.Fatalf("recent files shared mutable UI state: %v", got)
 	}
-	if got := loadState(path).Libraries; len(got) != 1 || got[0].Name != "Original" || len(got[0].Paths) != 1 || got[0].Paths[0] != originalRecent.Path || len(got[0].Folders) != 1 || got[0].Folders[0] != originalFolder {
+	if got := loadState(path).Libraries; len(got) != 1 || got[0].Name != "Original" || len(got[0].Local().Paths) != 1 || got[0].Local().Paths[0] != originalRecent.Path || len(got[0].Local().Folders) != 1 || got[0].Local().Folders[0] != originalFolder {
 		t.Fatalf("library records shared mutable UI state: %+v", got)
 	}
 }

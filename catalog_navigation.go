@@ -5,13 +5,13 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 type catalogFolder struct{ id, name string }
 
-func (a *application) setCatalogItems(saved library.Saved, items []library.SavedItem) {
-	if saved.DeviceID != "" {
+func (a *application) setCatalogItems(saved library.Source, items []library.Item) {
+	if !sourceSnapshot(saved) {
 		a.catalog.items = items
 		return
 	}
@@ -20,8 +20,8 @@ func (a *application) setCatalogItems(saved library.Saved, items []library.Saved
 	}
 	// A non-nil snapshot also distinguishes an empty local library from a
 	// remote directory, whose children are fetched on demand.
-	a.catalog.sourceItems = append(make([]library.SavedItem, 0, len(items)), items...)
-	a.catalog.tree = library.SavedTree(saved, items)
+	a.catalog.sourceItems = append(make([]library.Item, 0, len(items)), items...)
+	a.catalog.tree = library.LocalTree(saved, items)
 	a.currentCatalogNodes()
 }
 
@@ -40,15 +40,15 @@ func (a *application) currentCatalogNodes() []library.Node {
 	return nodes
 }
 
-func (a *application) catalogDirectoryItems(recursive bool) []library.SavedItem {
-	var items []library.SavedItem
+func (a *application) catalogDirectoryItems(recursive bool) []library.Item {
+	var items []library.Item
 	var visit func([]library.Node)
 	visit = func(nodes []library.Node) {
 		for _, node := range nodes {
 			if !node.Folder {
 				items = append(items, a.catalog.sourceItems[node.Index])
 			} else {
-				item := library.SavedItem{Entry: library.Entry{Name: node.Name, Path: node.ID}, Folder: true}
+				item := library.Item{Entry: library.Entry{Name: node.Name, Path: node.ID}, Folder: true}
 				if node.Index >= 0 {
 					item = a.catalog.sourceItems[node.Index]
 				}
@@ -65,13 +65,13 @@ func (a *application) catalogDirectoryItems(recursive bool) []library.SavedItem 
 	return items
 }
 
-func (a *application) enterCatalogFolder(item library.SavedItem) {
+func (a *application) enterCatalogFolder(item library.Item) {
 	if !item.Folder || item.Error != nil {
 		return
 	}
 	id := item.Path
-	if item.DeviceID != "" {
-		id = item.ObjectID
+	if item.SourceID != "" {
+		id = item.ItemID
 	}
 	a.catalog.directoryPath = append(a.catalog.directoryPath, catalogFolder{id: id, name: item.Name()})
 	a.changeCatalogDirectory()

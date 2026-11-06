@@ -38,7 +38,7 @@ func TestSampleFramesCanSkipBlackIntro(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	black, usable := 0, 0
-	err := SampleFrames(ctx, source, func(img *image.RGBA) bool {
+	err := SampleFrames(ctx, Source{URL: source}, func(img *image.RGBA) bool {
 		var total int
 		for i := 0; i < len(img.Pix); i += 4 {
 			total += int(img.Pix[i]) + int(img.Pix[i+1]) + int(img.Pix[i+2])
@@ -63,7 +63,7 @@ func TestSampleFramesCancelsBlockedSource(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- SampleFrames(ctx, server.URL+"/video.mp4", func(*image.RGBA) bool { return false }, nil)
+		done <- SampleFrames(ctx, Source{URL: server.URL + "/video.mp4"}, func(*image.RGBA) bool { return false }, nil)
 	}()
 	select {
 	case <-entered:
@@ -91,7 +91,7 @@ func TestSampleLongGOPReplacesRepeatedBlackKeyframes(t *testing.T) {
 	defer cancel()
 	black, usable := 0, 0
 	var traces []SampleTrace
-	err := SampleFrames(ctx, source, func(img *image.RGBA) bool {
+	err := SampleFrames(ctx, Source{URL: source}, func(img *image.RGBA) bool {
 		if img.RGBAAt(img.Rect.Dx()/2, img.Rect.Dy()/2).R < 30 {
 			black++
 		} else {
@@ -141,7 +141,7 @@ func TestSampleLongGOPReplacesRepeatedBlackKeyframes(t *testing.T) {
 
 func TestSamplingTraceIncludesOpenFailure(t *testing.T) {
 	var traces []SampleTrace
-	err := SampleFrames(context.Background(), filepath.Join(t.TempDir(), "missing.mp4"), func(*image.RGBA) bool {
+	err := SampleFrames(context.Background(), Source{URL: filepath.Join(t.TempDir(), "missing.mp4")}, func(*image.RGBA) bool {
 		t.Fatal("an unavailable source produced a frame")
 		return false
 	}, func(info SampleTrace) { traces = append(traces, info) })

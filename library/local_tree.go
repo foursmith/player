@@ -2,10 +2,10 @@ package library
 
 import "path/filepath"
 
-// SavedTree is the media hierarchy shared by the library browser and DLNA
+// LocalTree is the media hierarchy shared by the library browser and DLNA
 // publisher. Indexes refer to items; missing collection members stay in the tree.
-func SavedTree(saved Saved, items []SavedItem) []Node {
-	root := savedTreeRoot(saved, items)
+func LocalTree(saved Source, items []Item) []Node {
+	root := localTreeRoot(saved, items)
 	rootFolders := map[string]bool{}
 	for _, item := range items {
 		if item.Folder {
@@ -61,8 +61,8 @@ func SavedTree(saved Saved, items []SavedItem) []Node {
 	return BuildTree(children)
 }
 
-func savedTreeRoot(saved Saved, items []SavedItem) string {
-	root := saved.Folder
+func localTreeRoot(source Source, items []Item) string {
+	root := source.LocalFolder()
 	if root == "" {
 		for _, item := range items {
 			dir := filepath.Dir(item.Path)

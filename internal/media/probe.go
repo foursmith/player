@@ -5,7 +5,7 @@ import (
 	"errors"
 	"unsafe"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 func probeVideo(format *avFormat) *avStream {
@@ -23,7 +23,7 @@ func probeVideo(format *avFormat) *avStream {
 }
 
 // Probe reads container metadata without starting playback or decoding frames.
-func Probe(ctx context.Context, source string) (_ library.MediaInfo, err error) {
+func Probe(ctx context.Context, source Source) (_ library.MediaInfo, err error) {
 	if err := ctx.Err(); err != nil {
 		return library.MediaInfo{}, err
 	}
@@ -46,10 +46,13 @@ func Probe(ctx context.Context, source string) (_ library.MediaInfo, err error) 
 	defer av.format.Close(&format)
 	format.InterruptCallback = avInterrupt{interruptCallback, cancel.token}
 	var options unsafe.Pointer
+	if source.Headers != "" {
+		av.util.DictSet(&options, "headers", source.Headers, 0)
+	}
 	for _, option := range [][2]string{{"rw_timeout", "2000000"}, {"probesize", "131072"}, {"analyzeduration", "500000"}, {"max_probe_packets", "32"}} {
 		av.util.DictSet(&options, option[0], option[1], 0)
 	}
-	ret := av.format.Open(&format, source, nil, &options)
+	ret := av.format.Open(&format, source.URL, nil, &options)
 	av.util.DictFree(&options)
 	if ret < 0 {
 		return library.MediaInfo{}, mediaError(ret)

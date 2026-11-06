@@ -12,16 +12,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/library"
 )
 
 // Cache shares atomic metadata sidecars with DLNA indexing. Replacements get new keys.
 type Cache struct {
 	Dir    string
 	writes atomic.Uint64
-	render func(context.Context, string) (media.Preview, error)
-	probe  func(context.Context, string) (library.MediaInfo, error)
+	render func(context.Context, media.Source) (media.Preview, error)
+	probe  func(context.Context, media.Source) (library.MediaInfo, error)
 }
 
 func (c *Cache) readMetadata(entry library.Entry) (library.MediaInfo, bool) {
@@ -50,7 +50,7 @@ func (c *Cache) Metadata(ctx context.Context, entry library.Entry) (library.Medi
 	if probe == nil {
 		probe = media.Probe
 	}
-	info, err := probe(ctx, entry.Path)
+	info, err := probe(ctx, media.FromEntry(entry))
 	if ctx.Err() != nil {
 		return library.MediaInfo{}, ctx.Err()
 	}
@@ -84,7 +84,7 @@ func (c *Cache) Load(ctx context.Context, entry library.Entry) (media.Preview, e
 	if render == nil {
 		render = media.Thumbnail
 	}
-	preview, err := render(ctx, entry.Path)
+	preview, err := render(ctx, media.FromEntry(entry))
 	preview.MediaInfo = preview.MediaInfo.Normalized()
 	if err != nil {
 		return preview, err

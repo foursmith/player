@@ -14,12 +14,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 type Options struct {
 	UUID, Name string
-	Sources    []library.Saved
+	Sources    []library.Source
 	Metadata   func(context.Context, library.Entry) (library.MediaInfo, error)
 }
 
@@ -52,7 +52,7 @@ type Server struct {
 	reload     chan struct{}
 	events     chan struct{}
 	mu         sync.RWMutex
-	sources    []library.Saved
+	sources    []library.Source
 	scanCancel context.CancelFunc
 	revision   uint64
 	objects    catalog
@@ -129,7 +129,7 @@ func (s *Server) baseURL(ip net.IP) string {
 }
 
 // SetSources revokes old URLs immediately when the user's library changes.
-func (s *Server) SetSources(sources []library.Saved) {
+func (s *Server) SetSources(sources []library.Source) {
 	local := SharedSources(sources)
 	s.mu.Lock()
 	if reflect.DeepEqual(s.sources, local) {
@@ -138,7 +138,7 @@ func (s *Server) SetSources(sources []library.Saved) {
 	}
 	// Retain unchanged libraries while rescanning. Unsharing one library must
 	// neither interrupt another library's stream nor temporarily hide its files.
-	previous := map[string]library.Saved{}
+	previous := map[string]library.Source{}
 	for _, source := range s.sources {
 		previous[source.ID] = source
 	}
@@ -197,7 +197,7 @@ func (s *Server) refreshLoop() {
 		case <-s.reload:
 		}
 		s.mu.Lock()
-		sources, revision := library.CloneSaved(s.sources), s.revision
+		sources, revision := library.CloneSources(s.sources), s.revision
 		ctx, cancel := context.WithCancel(s.ctx)
 		s.scanCancel = cancel
 		s.mu.Unlock()

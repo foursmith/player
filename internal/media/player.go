@@ -26,13 +26,16 @@ type Player struct {
 	cancelMu    sync.Mutex
 	cancel      context.CancelFunc
 	trace       atomic.Bool
+	openSerial  atomic.Uint64
 }
 type State struct {
 	URL                     string
+	NoSeek                  bool
 	Metadata                Metadata
 	Position, Volume, Rate  float64
 	Playing, Loading, Ended bool
 	Generation              uint64
+	PlaybackID              uint64 // Opening identity survives seeks and rejects stale same-URL state.
 	FrameID                 uint64
 	Error                   string
 }
@@ -41,6 +44,7 @@ type command struct {
 	kind   string
 	value  float64
 	ctx    context.Context
+	openID uint64
 }
 
 // NewPlayer notifies changed of playback state transitions. Views sample Frame
@@ -67,7 +71,8 @@ func (p *Player) cancelActive() {
 		cancel()
 	}
 }
-func (p *Player) Open(source Source) {
+func (p *Player) Open(source Source) uint64 {
+	id := p.openSerial.Add(1)
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancelMu.Lock()
 	old := p.cancel
@@ -76,7 +81,8 @@ func (p *Player) Open(source Source) {
 	if old != nil {
 		old()
 	}
-	p.send(command{kind: "open", source: source, ctx: ctx})
+	p.send(command{kind: "open", source: source, ctx: ctx, openID: id})
+	return id
 }
 func (p *Player) Reset() { p.cancelActive(); p.send(command{kind: "reset"}) }
 func (p *Player) Play()  { p.send(command{kind: "play"}) }
@@ -89,6 +95,9 @@ func (p *Player) Toggle() {
 	}
 }
 func (p *Player) Seek(seconds float64) {
+	if p.Snapshot().NoSeek {
+		return
+	}
 	p.seekMu.Lock()
 	p.seekValue = seconds
 	pending := p.seekPending
@@ -224,7 +233,9 @@ func (p *Player) run() {
 				clear()
 				first, drained = false, false
 				state.Generation++
+				state.PlaybackID = 0
 				state.URL = ""
+				state.NoSeek = false
 				state.Metadata = Metadata{}
 				state.Position = 0
 				state.Playing = false
@@ -239,7 +250,9 @@ func (p *Player) run() {
 				}
 				clear()
 				state.Generation++
+				state.PlaybackID = cmd.openID
 				state.URL = cmd.source.URL
+				state.NoSeek = cmd.source.NoSeek
 				state.Position = 0
 				state.Playing = false
 				state.Ended = false
@@ -263,7 +276,7 @@ func (p *Player) run() {
 					continue
 				}
 				state.Metadata = decoder.Metadata()
-				if start := cmd.source.Start; start > 0 && start < state.Metadata.Duration-5 {
+				if start := cmd.source.Start; !cmd.source.NoSeek && start > 0 && start < state.Metadata.Duration-5 {
 					if err = decoder.Seek(start); err != nil {
 						reportError("resume_seek", err)
 					} else {
@@ -278,7 +291,7 @@ func (p *Player) run() {
 				resetClock()
 			case "play":
 				if decoder != nil {
-					if state.Ended {
+					if state.Ended && !state.NoSeek {
 						if err := seek(0); err != nil {
 							reportError("replay_seek", err)
 						}
@@ -298,7 +311,7 @@ func (p *Player) run() {
 				value := p.seekValue
 				p.seekPending = false
 				p.seekMu.Unlock()
-				if decoder != nil {
+				if decoder != nil && !state.NoSeek {
 					state.Playing = true
 					if err := seek(math.Max(0, math.Min(state.Metadata.Duration, value))); err != nil {
 						reportError("seek", err)
@@ -316,8 +329,10 @@ func (p *Player) run() {
 				if decoder != nil {
 					if err := decoder.SetRate(cmd.value); err != nil {
 						reportError("set_rate", err)
-					} else if err = seek(state.Position); err != nil {
-						reportError("rate_seek", err)
+					} else if !state.NoSeek {
+						if err = seek(state.Position); err != nil {
+							reportError("rate_seek", err)
+						}
 					}
 				}
 			}
@@ -416,7 +431,7 @@ func (p *Player) run() {
 // Chapters and other container metadata are immutable within a source
 // generation. A codec fallback can still change the decoder description.
 func playbackViewChanged(a, b State) bool {
-	return a.URL != b.URL || a.Generation != b.Generation || a.Volume != b.Volume || a.Rate != b.Rate ||
+	return a.PlaybackID != b.PlaybackID || a.NoSeek != b.NoSeek || a.URL != b.URL || a.Generation != b.Generation || a.Volume != b.Volume || a.Rate != b.Rate ||
 		a.Playing != b.Playing || a.Loading != b.Loading || a.Ended != b.Ended || a.Error != b.Error ||
 		a.Metadata.Decoder != b.Metadata.Decoder
 }

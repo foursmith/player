@@ -257,7 +257,7 @@ func TestTimelinePreviewLayoutsAcrossLocales(t *testing.T) {
 func TestSeekPreviewWorkerReplacesQueuedTargetsAndStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	previews := newSeekPreviews(ctx, playbackRenderFixture(t), nil, func() {})
+	previews := newSeekPreviews(ctx, media.Source{URL: playbackRenderFixture(t)}, nil, func() {})
 	defer previews.cancel()
 	for i := int64(0); i < 30; i++ {
 		previews.request([]int64{i * 40000}, true)

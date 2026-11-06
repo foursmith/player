@@ -7,7 +7,7 @@ import (
 	"io"
 	"math"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 type Preview struct {
@@ -17,8 +17,8 @@ type Preview struct {
 
 // Thumbnail reads duration and a small still through an independent silent decoder. It
 // tries later positions when a keyframe is black, without seeking the player.
-func Thumbnail(ctx context.Context, source string) (Preview, error) {
-	d, err := openContext(ctx, Source{URL: source}, false, true)
+func Thumbnail(ctx context.Context, source Source) (Preview, error) {
+	d, err := openContext(ctx, source, false, true)
 	if err != nil {
 		return Preview{}, err
 	}

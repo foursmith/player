@@ -12,8 +12,8 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/dlnaserver"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/thumbnail"
+	"github.com/foursmith/player/library"
 )
 
 type dlnaSharingState struct {
@@ -23,7 +23,7 @@ type dlnaSharingState struct {
 	starting   bool
 	name       string
 	locations  []string
-	sources    []library.Saved
+	sources    []library.Source
 	error      string
 }
 
@@ -111,7 +111,7 @@ func (a *application) failDLNASharing(message string) {
 
 func (a *application) setCatalogDLNASharing(id string, shared bool) {
 	i := a.catalogIndex(id)
-	if i < 0 || a.stored.Libraries[i].DeviceID != "" {
+	if i < 0 || !a.stored.Libraries[i].IsLocal() {
 		return
 	}
 	a.stored.Libraries[i].ShareDLNA = shared
@@ -130,8 +130,8 @@ func (a *application) stopDLNASharing() {
 	state.starting, state.locations, state.sources = false, nil, nil
 }
 
-func (a *application) catalogSharingButton(c *ui.Context, saved library.Saved) {
-	if saved.DeviceID != "" {
+func (a *application) catalogSharingButton(c *ui.Context, saved library.Source) {
+	if !saved.IsLocal() {
 		return
 	}
 	button := glassAction(c.Key("dlna-sharing-toggle"), "source-dlna", "DLNA").Label(a.t("sharing.title")).Role(ui.RoleSwitch).Checked(saved.ShareDLNA)
@@ -141,8 +141,8 @@ func (a *application) catalogSharingButton(c *ui.Context, saved library.Saved) {
 	button.OnClick(func() { a.setCatalogDLNASharing(saved.ID, !saved.ShareDLNA) })
 }
 
-func (a *application) catalogSharingStatus(c *ui.Context, saved library.Saved) {
-	if saved.DeviceID != "" || !saved.ShareDLNA {
+func (a *application) catalogSharingStatus(c *ui.Context, saved library.Source) {
+	if !saved.IsLocal() || !saved.ShareDLNA {
 		return
 	}
 	status := a.dlnaSharing.error

@@ -41,9 +41,9 @@ func sampleTimes(duration float64, random func() float64) []float64 {
 // retain hardware acceleration for efficient high-resolution sampling.
 // Returning true from visit stops sampling. At most nine small frames are read.
 // Optional trace reports setup and every attempted frame on the sampling owner.
-func SampleFrames(ctx context.Context, source string, visit func(*image.RGBA) bool, trace func(SampleTrace)) error {
+func SampleFrames(ctx context.Context, source Source, visit func(*image.RGBA) bool, trace func(SampleTrace)) error {
 	opened := time.Now()
-	d, err := openContext(ctx, Source{URL: source}, false, true)
+	d, err := openContext(ctx, source, false, true)
 	if err != nil {
 		if trace != nil {
 			trace(SampleTrace{Stage: "open", Elapsed: time.Since(opened), Err: err})

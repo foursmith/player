@@ -1,4 +1,4 @@
-// Package library owns saved sources, playlist topology and subtitle matching.
+// Package library defines source-neutral media models, filesystem topology and subtitle matching.
 package library
 
 import (
@@ -22,8 +22,9 @@ import (
 )
 
 type Entry struct {
-	Name, Path, Group, Root, Subtitle, DeviceID, ObjectID, ParentID string
-	Size, Modified                                                  int64
+	Name, Path, Group, Root, Subtitle, SourceID, ItemID, ParentID string
+	Playback                                                      *Playback `json:"-"`
+	Size, Modified                                                int64
 }
 
 type Node struct {
@@ -137,8 +138,8 @@ func FromPaths(ctx context.Context, paths []string) ([]Entry, []string, error) {
 }
 func Identity(e Entry) string {
 	identity := fmt.Sprintf("%s:%d:%d", e.Path, e.Size, e.Modified)
-	if e.DeviceID != "" && e.ObjectID != "" {
-		identity = "dlna:" + e.DeviceID + ":" + e.ObjectID
+	if e.SourceID != "" {
+		identity = fmt.Sprintf("source:%d:%s:%s", len(e.SourceID), e.SourceID, e.ItemID)
 	}
 	sum := sha256.Sum256([]byte(identity))
 	return hex.EncodeToString(sum[:])
@@ -155,7 +156,7 @@ func ValidIdentity(key string) bool {
 // Key identifies a queue row. Local rows follow paths; remote rows keep the
 // same identity when a server renews a temporary playback URL.
 func (e Entry) Key() string {
-	if e.DeviceID != "" && e.ObjectID != "" {
+	if e.SourceID != "" {
 		return Identity(e)
 	}
 	return e.Path
@@ -165,7 +166,7 @@ func Tree(entries []Entry) []Node {
 	type folder struct{ parent, name string }
 	folders := map[string]folder{}
 	for _, e := range entries {
-		if e.DeviceID != "" || e.Group == "" {
+		if e.SourceID != "" || e.Group == "" {
 			continue
 		}
 		for p := e.Group; p != e.Root && p != "."; p = filepath.Dir(p) {

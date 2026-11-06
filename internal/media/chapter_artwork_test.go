@@ -142,7 +142,7 @@ func TestEmbeddedChapterArtworkWithEmptyEditAndHTTP(t *testing.T) {
 	defer server.Close()
 	for _, source := range []string{file, server.URL + "/" + filepath.Base(file)} {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		p, err := OpenChapterArtwork(ctx, source)
+		p, err := OpenChapterArtwork(ctx, Source{URL: source})
 		if err != nil {
 			cancel()
 			t.Fatal(err)
@@ -178,7 +178,7 @@ func TestEmbeddedChapterArtworkWithEmptyEditAndHTTP(t *testing.T) {
 }
 
 func TestChapterArtworkDoesNotSubstituteMovieFrames(t *testing.T) {
-	if p, err := OpenChapterArtwork(context.Background(), chapterPreviewFixture(t, "mp4")); !errors.Is(err, ErrNoChapterArtwork) {
+	if p, err := OpenChapterArtwork(context.Background(), Source{URL: chapterPreviewFixture(t, "mp4")}); !errors.Is(err, ErrNoChapterArtwork) {
 		if p != nil {
 			p.Close()
 		}

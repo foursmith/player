@@ -7,17 +7,17 @@ import (
 	"testing"
 )
 
-func TestSavedTreeSharesFolderAndCollectionHierarchy(t *testing.T) {
+func TestLocalTreeSharesFolderAndCollectionHierarchy(t *testing.T) {
 	root := t.TempDir()
-	items := []SavedItem{
+	items := []Item{
 		{Entry: Entry{Path: filepath.Join(root, "Season 10", "Episode 10.mp4")}},
 		{Entry: Entry{Path: filepath.Join(root, "Season 2", "Bonus", "clip.mp4")}},
 		{Entry: Entry{Path: filepath.Join(root, "Season 2", "Episode 2.mp4")}},
 		{Entry: Entry{Path: filepath.Join(root, "root.mp4")}},
 		{Entry: Entry{Path: filepath.Join(root, "Season 2", "missing.mp4")}, Error: os.ErrNotExist},
 	}
-	for _, saved := range []Saved{{Folder: root}, {Paths: LocalPaths([]Entry{items[0].Entry, items[1].Entry, items[2].Entry, items[3].Entry, items[4].Entry})}} {
-		tree := SavedTree(saved, items)
+	for _, saved := range []Source{{Plugin: LocalID, Config: EncodeConfig(LocalConfig{Folder: root})}, {Plugin: LocalID, Config: EncodeConfig(LocalConfig{Paths: LocalPaths([]Entry{items[0].Entry, items[1].Entry, items[2].Entry, items[3].Entry, items[4].Entry})})}} {
+		tree := LocalTree(saved, items)
 		if len(tree) != 3 || tree[0].Name != "Season 2" || tree[1].Name != "Season 10" || tree[2].Index != 3 {
 			t.Fatalf("source root leaked into the tree or natural ordering was lost: %+v", tree)
 		}
@@ -34,41 +34,41 @@ func TestSavedTreeSharesFolderAndCollectionHierarchy(t *testing.T) {
 	}
 }
 
-func TestSavedTreeCollectionKeepsDistinctPathsAndFlatSiblings(t *testing.T) {
+func TestLocalTreeCollectionKeepsDistinctPathsAndFlatSiblings(t *testing.T) {
 	root := t.TempDir()
-	items := []SavedItem{
+	items := []Item{
 		{Entry: Entry{Path: filepath.Join(root, "A", "Movies", "clip.mp4")}},
 		{Entry: Entry{Path: filepath.Join(root, "B", "Movies", "clip.mp4")}},
 	}
-	tree := SavedTree(Saved{}, items)
+	tree := LocalTree(Source{Plugin: LocalID, Config: EncodeConfig(LocalConfig{})}, items)
 	if len(tree) != 2 || tree[0].ID == tree[1].ID || tree[0].Children[0].ID == tree[1].Children[0].ID {
 		t.Fatal("equal folder or video names merged different paths", tree)
 	}
-	flat := SavedTree(Saved{}, items[:1])
+	flat := LocalTree(Source{Plugin: LocalID, Config: EncodeConfig(LocalConfig{})}, items[:1])
 	if len(flat) != 1 || flat[0].Folder || flat[0].Index != 0 {
 		t.Fatal("a single-directory collection gained redundant ancestors", flat)
 	}
-	if tree := SavedTree(Saved{}, nil); len(tree) != 0 {
+	if tree := LocalTree(Source{Plugin: LocalID, Config: EncodeConfig(LocalConfig{})}, nil); len(tree) != 0 {
 		t.Fatal("empty collection produced phantom folders", tree)
 	}
 }
 
-func TestSavedTreeRetainsExplicitEmptyOfflineAndVolumeRootFolders(t *testing.T) {
+func TestLocalTreeRetainsExplicitEmptyOfflineAndVolumeRootFolders(t *testing.T) {
 	root := t.TempDir()
-	items := []SavedItem{
+	items := []Item{
 		{Entry: Entry{Path: filepath.Join(root, "Empty")}, Folder: true},
 		{Entry: Entry{Path: filepath.Join(root, "Offline")}, Folder: true, Error: os.ErrNotExist},
 	}
-	tree := SavedTree(Saved{}, items)
+	tree := LocalTree(Source{Plugin: LocalID, Config: EncodeConfig(LocalConfig{})}, items)
 	if len(tree) != 2 || !tree[0].Folder || tree[0].Index != 0 || tree[1].Index != 1 {
 		t.Fatal("empty or offline collection folders disappeared", tree)
 	}
 	volume := filepath.VolumeName(root) + string(filepath.Separator)
-	items = []SavedItem{
+	items = []Item{
 		{Entry: Entry{Path: volume}, Folder: true},
 		{Entry: Entry{Path: filepath.Join(volume, "clip.mp4")}},
 	}
-	tree = SavedTree(Saved{}, items)
+	tree = LocalTree(Source{Plugin: LocalID, Config: EncodeConfig(LocalConfig{})}, items)
 	if len(tree) != 1 || !tree[0].Folder || tree[0].ID != volume || len(tree[0].Children) != 1 || tree[0].Children[0].Index != 1 {
 		t.Fatal("adding a volume root lost its folder or duplicated its children", tree)
 	}

@@ -4,23 +4,22 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"slices"
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/dlna"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func (a *application) openSavedPlayback(item savedPlayback) {
 	a.cancelImports()
 	generation := a.importGeneration
-	locations := map[string]string{}
+	locations := map[string]library.Source{}
 	if item.Playlist != nil {
 		for _, source := range item.Playlist.Sources {
-			if current, found := a.playbackDevice(source.Saved.DeviceID); found {
-				locations[source.Saved.DeviceID] = current.Location
+			if current, found := a.playbackSource(source.Saved.ID); found {
+				locations[source.Saved.ID] = current
 			}
 		}
 	}
@@ -33,14 +32,14 @@ func (a *application) openSavedPlayback(item savedPlayback) {
 			a.notice = a.t("media.playbackUnavailable")
 		} else if err != nil {
 			a.notice = err.Error()
-			if item.DeviceID != "" {
-				a.notice = a.t("library.dlnaUnavailable") + ": " + err.Error()
+			if item.SourceID != "" {
+				a.notice = a.t("library.readFailed") + ": " + err.Error()
 			}
 		} else {
-			for deviceID, source := range restored.sources {
+			for sourceID, source := range restored.sources {
 				for i := range a.stored.Libraries {
-					if a.stored.Libraries[i].DeviceID == deviceID {
-						a.stored.Libraries[i].Location = source.saved.Location
+					if a.stored.Libraries[i].ID == sourceID {
+						a.stored.Libraries[i].Config = source.saved.Config
 					}
 				}
 			}
@@ -61,14 +60,14 @@ func (a *application) cancelPlaybackRestore() {
 
 type restoredPlaylist struct {
 	entries   []library.Entry
-	sources   map[string]*playlistDLNASource
+	sources   map[string]*playlistRemoteSource
 	expanded  map[string]bool
 	roots     []library.Node
 	subtitles []string
 	selected  int
 }
 
-func readSavedPlayback(parent context.Context, item savedPlayback, locations map[string]string, dispatch func(func()), complete func(restoredPlaylist, error)) context.CancelFunc {
+func readSavedPlayback(parent context.Context, item savedPlayback, locations map[string]library.Source, dispatch func(func()), complete func(restoredPlaylist, error)) context.CancelFunc {
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	go func() {
 		restored, err := resolveSavedPlayback(ctx, item, locations)
@@ -82,32 +81,33 @@ func readSavedPlayback(parent context.Context, item savedPlayback, locations map
 	return cancel
 }
 
-func resolveSavedPlayback(ctx context.Context, item savedPlayback, locations map[string]string) (restoredPlaylist, error) {
-	out := restoredPlaylist{sources: map[string]*playlistDLNASource{}, expanded: map[string]bool{}, selected: -1}
+func resolveSavedPlayback(ctx context.Context, item savedPlayback, locations map[string]library.Source) (restoredPlaylist, error) {
+	out := restoredPlaylist{sources: map[string]*playlistRemoteSource{}, expanded: map[string]bool{}, selected: -1}
 	snapshot := item.Playlist
 	if snapshot == nil {
 		return out, os.ErrNotExist
 	}
 	for _, ref := range snapshot.Sources {
 		saved := ref.Saved
-		if location := locations[saved.DeviceID]; location != "" {
-			saved.Location = location
+		if current, ok := locations[saved.ID]; ok && current.Plugin == saved.Plugin {
+			saved = library.CloneSources([]library.Source{current})[0]
 		}
-		source := &playlistDLNASource{saved: saved, folders: map[string]*playlistDLNAFolder{}, flat: !ref.Tree}
+		source := &playlistRemoteSource{saved: saved, folders: map[string]*playlistRemoteFolder{}, flat: !ref.Tree}
 		for _, folder := range ref.Folders {
-			f := source.folder(folder.ObjectID)
+			f := source.folder(folder.ItemID)
 			for _, child := range folder.Children {
-				f.items = append(f.items, library.SavedItem{Entry: library.Entry{Name: child.Name, DeviceID: saved.DeviceID, ObjectID: child.ID}, Folder: true})
+				f.items = append(f.items, library.Item{Entry: library.Entry{Name: child.Name, SourceID: saved.ID, ItemID: child.ID}, Folder: true})
 			}
 		}
-		out.sources[saved.DeviceID] = source
+		out.sources[saved.ID] = source
 	}
-	resolver := playbackResolver{ctx: ctx, sources: out.sources, devices: map[string]playbackConnection{}, folderErrors: map[string]error{}}
+	resolver := playbackResolver{ctx: ctx, sources: out.sources, sessions: map[string]playbackConnection{}, folderErrors: map[string]error{}}
+	defer resolver.close()
 	resolved := make([]library.Entry, len(snapshot.Entries))
 	selected := -1
 	key := item.key()
 	for i, ref := range snapshot.Entries {
-		if (library.Entry{Path: ref.Path, DeviceID: ref.DeviceID, ObjectID: ref.ObjectID}).Key() == key {
+		if (library.Entry{Path: ref.Path, SourceID: ref.SourceID, ItemID: ref.ItemID}).Key() == key {
 			selected = i
 			break
 		}
@@ -155,75 +155,82 @@ func resolveSavedPlayback(ctx context.Context, item savedPlayback, locations map
 }
 
 type playbackConnection struct {
-	device dlna.Device
-	err    error
+	session library.Session
+	err     error
 }
 
 type playbackResolver struct {
 	ctx          context.Context
-	sources      map[string]*playlistDLNASource
-	devices      map[string]playbackConnection
+	sources      map[string]*playlistRemoteSource
+	sessions     map[string]playbackConnection
 	folderErrors map[string]error
 }
 
 func (r *playbackResolver) entry(ref playlistEntryReference) (library.Entry, error) {
-	if ref.DeviceID == "" {
-		if !filepath.IsAbs(ref.Path) {
-			return library.Entry{}, os.ErrNotExist
-		}
-		items, err := library.ReadSaved(r.ctx, library.Saved{Paths: []string{ref.Path}})
-		if err != nil {
-			return library.Entry{}, err
-		}
-		if items[0].Error != nil {
-			return library.Entry{}, items[0].Error
-		}
-		entry := items[0].Entry
+	if ref.SourceID == "" {
+		entry, err := providers.ResolveLocal(r.ctx, ref.Path)
 		entry.Group, entry.Root = ref.Group, ref.Root
-		return entry, nil
+		return entry, err
 	}
-	source := r.sources[ref.DeviceID]
-	if source == nil || ref.ParentID == "" {
+
+	source := r.sources[ref.SourceID]
+	if source == nil {
 		return library.Entry{}, os.ErrNotExist
 	}
-	connection, connected := r.devices[ref.DeviceID]
+	connection, connected := r.sessions[ref.SourceID]
 	if !connected {
-		connection.device, connection.err = dlna.Connect(r.ctx, ref.DeviceID, source.saved.Location)
-		r.devices[ref.DeviceID] = connection
+		connection.session, connection.err = libraryPlugins.Open(r.ctx, source.saved)
+		r.sessions[ref.SourceID] = connection
 		if connection.err == nil {
-			source.saved.Location = connection.device.Location
+			source.saved = library.CloneSources([]library.Source{connection.session.Source()})[0]
 		}
 	}
 	if connection.err != nil {
 		return library.Entry{}, connection.err
 	}
+	playback, err := library.ResolvePlayback(r.ctx, connection.session, library.Reference{SourceID: ref.SourceID, ItemID: ref.ItemID, ParentID: ref.ParentID})
+	if err != nil {
+		return library.Entry{}, err
+	}
+	entry := library.Entry{Name: ref.Name, SourceID: ref.SourceID, ItemID: ref.ItemID, ParentID: ref.ParentID}
 	folder := source.folder(ref.ParentID)
 	if !folder.loaded {
-		key := playlistDLNAFolderID(ref.DeviceID, ref.ParentID)
-		if err := r.folderErrors[key]; err != nil {
-			return library.Entry{}, err
+		key := playlistRemoteFolderID(ref.SourceID, ref.ParentID)
+		if r.folderErrors[key] == nil {
+			items, err := library.ReadDirectory(r.ctx, connection.session, ref.ParentID)
+			if err != nil {
+				r.folderErrors[key] = err
+			} else {
+				source.update(folder, items)
+			}
 		}
-		items, err := library.BrowseDLNA(r.ctx, connection.device, ref.ParentID)
-		if err != nil {
-			r.folderErrors[key] = err
-			return library.Entry{}, err
-		}
-		source.update(folder, items)
 	}
 	for _, item := range folder.items {
-		if !item.Folder && item.Error == nil && item.ObjectID == ref.ObjectID {
-			return item.Entry, nil
+		if !item.Folder && item.ItemID == ref.ItemID {
+			entry = item.Entry
+			break
 		}
 	}
-	return library.Entry{}, os.ErrNotExist
+	entry.Path = playback.URL
+	entry.Subtitle = playback.Subtitle.URL
+	entry.Playback = &playback
+	return entry, nil
 }
 
 func (a *application) installPlaylist(restored restoredPlaylist) {
-	a.clearPlaylistDLNA()
+	a.clearPlaylistRemote()
 	a.entries, a.subtitlePaths = restored.entries, restored.subtitles
-	a.playlistDLNA, a.expandedFolders = restored.sources, restored.expanded
+	a.playlistRemote, a.expandedFolders = restored.sources, restored.expanded
 	a.playlistTree = restored.roots
 	a.playlistList = ui.ListState{}
 	a.playlistExpanded = true
 	a.invalidatePlaylist()
+}
+
+func (r *playbackResolver) close() {
+	for _, connection := range r.sessions {
+		if connection.session != nil {
+			_ = connection.session.Close()
+		}
+	}
 }

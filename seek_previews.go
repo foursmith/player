@@ -34,7 +34,7 @@ type seekPreviewImage struct {
 // The main thread owns the bounded image cache; one worker owns the decoder.
 // Jobs replace queued pointer positions and interrupt obsolete long prerolls.
 type seekPreviews struct {
-	source           string
+	source           media.Source
 	cancel           context.CancelFunc
 	jobs             chan seekPreviewJob
 	results          chan seekPreviewResult
@@ -53,7 +53,7 @@ func (a *application) stopSeekPreviews() {
 	}
 }
 
-func newSeekPreviews(ctx context.Context, source string, chapters []media.Chapter, invalidate func()) *seekPreviews {
+func newSeekPreviews(ctx context.Context, source media.Source, chapters []media.Chapter, invalidate func()) *seekPreviews {
 	ctx, cancel := context.WithCancel(ctx)
 	chapters = slices.Clone(chapters)
 	t := &seekPreviews{source: source, cancel: cancel, jobs: make(chan seekPreviewJob, 1), results: make(chan seekPreviewResult, 16), images: map[int64]seekPreviewImage{}}
@@ -220,9 +220,16 @@ func (a *application) currentSeekPreviews(c *ui.Context, state media.State) *see
 	if state.URL == "" {
 		return nil
 	}
-	if a.seekPreviews == nil || a.seekPreviews.source != state.URL {
+	if a.seekPreviews == nil || a.seekPreviews.source.URL != state.URL {
 		a.stopSeekPreviews()
-		a.seekPreviews = newSeekPreviews(a.ctx, state.URL, state.Metadata.Chapters, c.Services().Invalidate)
+		input := media.Source{URL: state.URL}
+		if a.selected >= 0 && a.selected < len(a.entries) {
+			input = media.FromEntry(a.entries[a.selected])
+		}
+		if input.NoSeek {
+			return nil
+		}
+		a.seekPreviews = newSeekPreviews(a.ctx, input, state.Metadata.Chapters, c.Services().Invalidate)
 	}
 	a.seekPreviews.collect()
 	return a.seekPreviews

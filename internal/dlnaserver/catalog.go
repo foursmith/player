@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )
@@ -35,17 +35,17 @@ func objectID(parts ...string) string {
 }
 
 // SharedSources takes an owned snapshot of explicitly shared local libraries.
-func SharedSources(sources []library.Saved) []library.Saved {
-	var local []library.Saved
+func SharedSources(sources []library.Source) []library.Source {
+	var local []library.Source
 	for _, source := range sources {
-		if source.ShareDLNA && source.DeviceID == "" {
+		if source.ShareDLNA && source.IsLocal() {
 			local = append(local, source)
 		}
 	}
-	return library.CloneSaved(local)
+	return library.CloneSources(local)
 }
 
-func emptyCatalog(name string, sources []library.Saved) catalog {
+func emptyCatalog(name string, sources []library.Source) catalog {
 	out := catalog{"0": {ID: "0", Parent: "-1", Name: name, Container: true}}
 	for _, source := range sources {
 		out.add(object{ID: objectID(source.ID), Parent: "0", Name: source.Name, Source: source.ID, Container: true})
@@ -63,11 +63,11 @@ func (c catalog) add(item object) {
 	c[item.Parent] = parent
 }
 
-func readCatalog(ctx context.Context, name string, sources []library.Saved) (catalog, error) {
+func readCatalog(ctx context.Context, name string, sources []library.Source) (catalog, error) {
 	out := emptyCatalog(name, sources)
 	subtitles := map[string][]string{}
 	for _, source := range sources {
-		items, err := library.ReadSaved(ctx, source)
+		items, err := library.ReadLocal(ctx, source)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -75,19 +75,20 @@ func readCatalog(ctx context.Context, name string, sources []library.Saved) (cat
 			log.Printf("[dlna-server] library %q unavailable: %v", source.Name, err)
 			continue
 		}
+		config := source.Local()
 		root := ""
-		if source.Folder != "" {
-			root, err = filepath.EvalSymlinks(source.Folder)
+		if config.Folder != "" {
+			root, err = filepath.EvalSymlinks(config.Folder)
 			if err != nil {
 				continue
 			}
 		}
 		folderRoots := map[string]string{}
 		explicitFiles := map[string]bool{}
-		for _, path := range source.Paths {
+		for _, path := range config.Paths {
 			explicitFiles[path] = true
 		}
-		for _, folder := range source.Folders {
+		for _, folder := range config.Folders {
 			if resolved, err := filepath.EvalSymlinks(folder); err == nil {
 				folderRoots[folder] = resolved
 			}
@@ -105,7 +106,7 @@ func readCatalog(ctx context.Context, name string, sources []library.Saved) (cat
 				}
 			}
 		}
-		visit(library.SavedTree(source, items), nil)
+		visit(library.LocalTree(source, items), nil)
 		for index, item := range items {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -114,7 +115,7 @@ func readCatalog(ctx context.Context, name string, sources []library.Saved) (cat
 				continue
 			}
 			itemRoot := root
-			if source.Collection() && !explicitFiles[item.Path] {
+			if config.Folder == "" && !explicitFiles[item.Path] {
 				matched := 0
 				for folder, resolved := range folderRoots {
 					if len(folder) > matched && within(folder, item.Path) {

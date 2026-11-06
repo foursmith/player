@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/library"
 )
 
 func TestMetadataCacheReusesPreviewInfoAndInvalidatesReplacement(t *testing.T) {
@@ -20,7 +20,7 @@ func TestMetadataCacheReusesPreviewInfoAndInvalidatesReplacement(t *testing.T) {
 	dir := t.TempDir()
 	entry := library.Entry{Path: filepath.Join(t.TempDir(), "clip.mp4"), Size: 100, Modified: 1}
 	want := library.MediaInfo{Duration: 125.5, Width: 8192, Height: 4096, BitRate: 80000000}
-	cache := &Cache{Dir: dir, probe: func(context.Context, string) (library.MediaInfo, error) { calls.Add(1); return want, nil }}
+	cache := &Cache{Dir: dir, probe: func(context.Context, media.Source) (library.MediaInfo, error) { calls.Add(1); return want, nil }}
 	for range 2 {
 		if info, err := cache.Metadata(context.Background(), entry); err != nil || info != want {
 			t.Fatal("metadata cache lost fields", info, err)
@@ -29,7 +29,7 @@ func TestMetadataCacheReusesPreviewInfoAndInvalidatesReplacement(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatal("metadata was probed again", calls.Load())
 	}
-	reopened := &Cache{Dir: dir, probe: func(context.Context, string) (library.MediaInfo, error) {
+	reopened := &Cache{Dir: dir, probe: func(context.Context, media.Source) (library.MediaInfo, error) {
 		t.Fatal("cached metadata was probed after reopening")
 		return library.MediaInfo{}, nil
 	}}
@@ -52,13 +52,13 @@ func TestMetadataCacheReusesPreviewInfoAndInvalidatesReplacement(t *testing.T) {
 		t.Fatal("metadata-only cache entries were not bounded", len(files))
 	}
 	// Thumbnail generation writes the same sidecar, including resolution.
-	previewCache := &Cache{Dir: t.TempDir(), render: func(context.Context, string) (media.Preview, error) {
+	previewCache := &Cache{Dir: t.TempDir(), render: func(context.Context, media.Source) (media.Preview, error) {
 		return media.Preview{Image: image.NewRGBA(image.Rect(0, 0, 16, 8)), MediaInfo: want}, nil
 	}}
 	if _, err := previewCache.Load(context.Background(), entry); err != nil {
 		t.Fatal(err)
 	}
-	previewCache.probe = func(context.Context, string) (library.MediaInfo, error) {
+	previewCache.probe = func(context.Context, media.Source) (library.MediaInfo, error) {
 		t.Fatal("thumbnail metadata was not reused")
 		return library.MediaInfo{}, nil
 	}
@@ -69,7 +69,7 @@ func TestMetadataCacheReusesPreviewInfoAndInvalidatesReplacement(t *testing.T) {
 
 func TestCanceledMetadataDoesNotPopulateCache(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cache := &Cache{Dir: t.TempDir(), probe: func(context.Context, string) (library.MediaInfo, error) {
+	cache := &Cache{Dir: t.TempDir(), probe: func(context.Context, media.Source) (library.MediaInfo, error) {
 		cancel()
 		return library.MediaInfo{Duration: 5, Width: 320, Height: 160}, nil
 	}}
@@ -85,7 +85,7 @@ func TestCanceledMetadataDoesNotPopulateCache(t *testing.T) {
 func TestPreviewCacheReusesOpaquePrivateFilesAndInvalidatesReplacedVideos(t *testing.T) {
 	dir := t.TempDir()
 	calls := 0
-	cache := &Cache{Dir: dir, render: func(context.Context, string) (media.Preview, error) {
+	cache := &Cache{Dir: dir, render: func(context.Context, media.Source) (media.Preview, error) {
 		calls++
 		return media.Preview{Image: image.NewRGBA(image.Rect(0, 0, 16, 8)), MediaInfo: library.MediaInfo{Duration: 123.5, Width: 320, Height: 160}}, nil
 	}}
@@ -169,7 +169,7 @@ func TestPreviewCachePrunesOnlyItsOldestImages(t *testing.T) {
 func TestPreviewCancellationDoesNotWriteAnAbandonedResult(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	dir := t.TempDir()
-	cache := &Cache{Dir: dir, render: func(context.Context, string) (media.Preview, error) {
+	cache := &Cache{Dir: dir, render: func(context.Context, media.Source) (media.Preview, error) {
 		cancel()
 		return media.Preview{Image: image.NewRGBA(image.Rect(0, 0, 16, 8)), MediaInfo: library.MediaInfo{Duration: 100, Width: 320, Height: 160}}, nil
 	}}
@@ -185,7 +185,7 @@ func TestPreviewCancellationDoesNotWriteAnAbandonedResult(t *testing.T) {
 func TestDurationSurvivesThumbnailDecodeFailure(t *testing.T) {
 	dir := t.TempDir()
 	failed := errors.New("thumbnail decoding failed")
-	cache := &Cache{Dir: dir, render: func(context.Context, string) (media.Preview, error) {
+	cache := &Cache{Dir: dir, render: func(context.Context, media.Source) (media.Preview, error) {
 		return media.Preview{MediaInfo: library.MediaInfo{Duration: 90}}, failed
 	}}
 	preview, err := cache.Load(context.Background(), library.Entry{Path: "/Media/video.mp4"})

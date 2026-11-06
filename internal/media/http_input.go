@@ -17,6 +17,7 @@ const httpShortSeek = 1 << 20
 // response. FFmpeg owns the byte buffers.
 type httpInput struct {
 	address        string
+	headers        string
 	interrupt      avInterrupt
 	buffered       *avIO
 	cursors        [2]*avIO
@@ -36,6 +37,9 @@ func (input *httpInput) openCursor() (*avIO, int32) {
 	var options unsafe.Pointer
 	av.util.DictSet(&options, "rw_timeout", "10000000", 0)
 	av.util.DictSet(&options, "short_seek_size", strconv.Itoa(httpShortSeek), 0)
+	if input.headers != "" {
+		av.util.DictSet(&options, "headers", input.headers, 0)
+	}
 	var source *avIO
 	ret := av.io.Open(&source, input.address, avIORead, &input.interrupt, &options)
 	av.util.DictFree(&options)
@@ -45,8 +49,8 @@ func (input *httpInput) openCursor() (*avIO, int32) {
 	return source, ret
 }
 
-func (d *Decoder) openHTTP(address string) error {
-	input := &httpInput{address: address, interrupt: d.format.InterruptCallback}
+func (d *Decoder) openHTTP(address, headers string) error {
+	input := &httpInput{address: address, headers: headers, interrupt: d.format.InterruptCallback}
 	d.cancellation.input = input
 	source, ret := input.openCursor()
 	if ret < 0 {
@@ -59,6 +63,19 @@ func (d *Decoder) openHTTP(address string) error {
 	input.size = av.io.Size(source)
 	if source.Seekable&avIOSeekable == 0 || input.size <= 0 {
 		return nil
+	}
+	// HLS/DASH copy authentication and transport options from the native URL
+	// context for their child requests. Keep that context visible for manifests;
+	// the two-cursor wrapper is only for monolithic media files.
+	var prefix [128]byte
+	if count := av.io.Partial(source, &prefix[0], int32(len(prefix))); count > 0 {
+		if av.io.Seek(source, 0, io.SeekStart) < 0 {
+			return errors.New("cannot rewind HTTP probe")
+		}
+		text := strings.TrimSpace(strings.TrimPrefix(string(prefix[:count]), "\xef\xbb\xbf"))
+		if strings.HasPrefix(text, "#EXTM3U") || strings.HasPrefix(text, "<?xml") || strings.HasPrefix(text, "<MPD") {
+			return nil
+		}
 	}
 	buffer := av.util.Malloc(32 << 10)
 	if buffer == nil {

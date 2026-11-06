@@ -8,8 +8,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/library"
 )
 
 func TestAppearancePreferenceDefaultsAndRoundTrip(t *testing.T) {
@@ -145,9 +145,9 @@ func TestAppearanceSurfaceSnapshots(t *testing.T) {
 					writeUISnapshot(t, fmt.Sprintf("%s-%s-settings-%d-%d.png", appearance, locale, tab, size[0]), view)
 				}
 			}
-			a.stored.Libraries = []library.Saved{{ID: "appearance-preview", Name: "Weekend videos", Paths: []string{"/Media/Clouds.mp4"}}}
+			a.stored.Libraries = []library.Source{{ID: "appearance-preview", Name: "Weekend videos", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{"/Media/Clouds.mp4"}})}}
 			a.catalog.selected, a.catalog.name = "appearance-preview", "Weekend videos"
-			a.catalog.items = []library.SavedItem{{Entry: library.Entry{Name: "Clouds.mp4", Path: "/Media/Clouds.mp4"}}}
+			a.catalog.items = []library.Item{{Entry: library.Entry{Name: "Clouds.mp4", Path: "/Media/Clouds.mp4"}}}
 			a.filterCatalog()
 			view := ui.NewTester(a.catalogView, 920, 600)
 			view.SetScale(2)

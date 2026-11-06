@@ -13,15 +13,22 @@ import (
 	_ "github.com/egoist/mygo/locales/ja"
 	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/internal/scriptplugin"
 	"github.com/foursmith/player/internal/subtitle"
 	"github.com/foursmith/player/internal/tracking"
 	"github.com/foursmith/player/internal/video"
+	"github.com/foursmith/player/library"
 )
 
 type application struct {
+	pluginCatalog                             *scriptplugin.Catalog
+	credentials                               library.CredentialWriter
+	connectionEditor                          *connectionEditor
+	playbackSession                           *playbackSession
+	playbackRefreshAttempt                    string
+	playbackID                                uint64
 	ctx                                       context.Context
 	cancel                                    context.CancelFunc
 	stateWriter                               *stateWriter
@@ -41,7 +48,7 @@ type application struct {
 	expandedFolders                           map[string]bool
 	playlistTree                              []library.Node
 	playlistRows                              []playlistRow
-	playlistDLNA                              map[string]*playlistDLNASource
+	playlistRemote                            map[string]*playlistRemoteSource
 	playlistTreeValid                         bool
 	playlistRowsValid                         bool
 	playlistList                              ui.ListState
@@ -133,10 +140,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	libraryPlugins.SetCredentials(nativeCredentials{})
+	pluginCatalog := &scriptplugin.Catalog{Dir: filepath.Join(userData, "plugins"), Registry: libraryPlugins}
+	for _, err := range pluginCatalog.Load() {
+		log.Printf("[plugin] %v", err)
+	}
 	path := filepath.Join(userData, "state.json")
 	state := loadState(path)
 
-	a := &application{preferences: state.Preferences, stored: state, view: projection.DefaultView(), mode: projection.Flat, playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume, recognitionTest: options.recognitionTest}
+	a := &application{pluginCatalog: pluginCatalog, credentials: nativeCredentials{}, preferences: state.Preferences, stored: state, view: projection.DefaultView(), mode: projection.Flat, playlistExpanded: true, selected: -1, lastAudible: state.Preferences.Volume, recognitionTest: options.recognitionTest}
 	mygo.Theme.SetSource(a.preferences.Appearance)
 	if a.recognitionTest {
 		log.Print("[recognition-test] enabled: saved video types bypassed; history types preserved")
@@ -209,6 +221,14 @@ func main() {
 		}
 		a.persist()
 		a.shutdown = true
+		a.cancelConnectionEditor()
+		sessionDone := a.stopPlaybackSession()
+		if sessionDone != nil {
+			select {
+			case <-sessionDone:
+			case <-time.After(2 * time.Second):
+			}
+		}
 		stopAppearanceUpdates()
 		sharing := a.dlnaSharing.server
 		a.cancel()
@@ -318,11 +338,12 @@ func (a *application) openEntry(index int) {
 	a.playEntry(index)
 }
 
-func (a *application) playEntry(index int) {
+func (a *application) startEntry(index int, source library.Source, position float64) {
 	if index < 0 || index >= len(a.entries) {
 		return
 	}
 	a.persist()
+	a.stopPlaybackSession()
 	a.cancelModeDetection()
 	a.stopSeekPreviews()
 	a.seekUI = seekInteraction{}
@@ -332,6 +353,9 @@ func (a *application) playEntry(index int) {
 	a.tracker.Reset()
 	entry := a.entries[index]
 	start := a.prepareVideoMode(entry)
+	if source.ID != "" && entry.Playback != nil && !entry.Playback.Live && entry.Playback.Seekable {
+		start = position
+	}
 	a.loopA = nil
 	a.loopB = nil
 	a.manuallyPaused = false
@@ -339,7 +363,10 @@ func (a *application) playEntry(index int) {
 	a.cues = nil
 	a.singleClickAt = time.Time{}
 	a.scrubbing, a.dragging = false, false
-	a.player.Open(media.Source{URL: entry.Path, Start: start})
+	input := media.FromEntry(entry)
+	input.Start = start
+	a.playbackID = a.player.Open(input)
+	a.startPlaybackSession(source, entry, start)
 	a.window.SetTitle(entry.Name + " — " + appInfo.Name)
 	a.rememberStartupPlayback(entry)
 	if a.rememberRecentMedia(entry) {

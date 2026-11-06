@@ -1,0 +1,10 @@
+{
+ "id":"mediaserver", "name":"Jellyfin / Emby", "version":"1.0.0", "apiVersion":1,
+ "main":"index.js", "network":["$server"],
+ "settings":[
+  {"key":"server","label":"Server URL","kind":"url","required":true},
+  {"key":"username","label":"Username","kind":"text"},
+  {"key":"password","label":"Password","kind":"password","secret":true},
+  {"key":"token","label":"Access token (optional)","kind":"password","secret":true}
+ ]
+}

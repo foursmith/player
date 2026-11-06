@@ -7,8 +7,8 @@ import (
 	"slices"
 
 	"github.com/egoist/mygo"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/library"
 )
 
 type preferences struct {
@@ -58,7 +58,7 @@ type storedState struct {
 	History      map[string]videoHistory
 	LastPlayback *savedPlayback `json:",omitempty"`
 	RecentMedia  []savedPlayback
-	Libraries    []library.Saved
+	Libraries    []library.Source
 	DLNAUUID     string `json:",omitempty"`
 }
 
@@ -131,7 +131,7 @@ func loadState(path string) storedState {
 		}
 	}
 	state.RecentMedia = normalizeRecentMedia(state.RecentMedia)
-	state.Libraries = library.NormalizeSaved(state.Libraries)
+	state.Libraries = libraryPlugins.NormalizeSources(state.Libraries)
 	return state
 }
 

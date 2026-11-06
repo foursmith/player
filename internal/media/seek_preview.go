@@ -17,8 +17,8 @@ type SeekPreview struct {
 	lastPTS       float64
 }
 
-func OpenSeekPreview(ctx context.Context, source string) (*SeekPreview, error) {
-	d, err := openContext(ctx, Source{URL: source}, false, true)
+func OpenSeekPreview(ctx context.Context, source Source) (*SeekPreview, error) {
+	d, err := openContext(ctx, source, false, true)
 	if err != nil {
 		return nil, err
 	}

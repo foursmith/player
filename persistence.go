@@ -6,9 +6,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/library"
 )
 
 // stateWriter serializes disk writes and retains only the latest pending save.
@@ -40,7 +40,7 @@ func (w *stateWriter) Submit(state storedState) {
 		state.LastPlayback = &item
 	}
 	state.RecentMedia = slices.Clone(state.RecentMedia)
-	state.Libraries = library.CloneSaved(state.Libraries)
+	state.Libraries = library.CloneSources(state.Libraries)
 	state.Preferences.Shortcuts = maps.Clone(state.Preferences.Shortcuts)
 	select {
 	case <-w.pending:
@@ -95,7 +95,13 @@ func (a *application) persist() {
 }
 
 func (a *application) recordPlaybackHistory(entry library.Entry, state media.State) {
-	if !a.preferences.RecordPlaybackHistory || entry.DeviceID != "" && entry.ObjectID == "" || state.URL != entry.Path || state.Loading || state.Error != "" {
+	if state.PlaybackID != a.playbackID {
+		return
+	}
+	if entry.Playback != nil && entry.Playback.Live {
+		return
+	}
+	if !a.preferences.RecordPlaybackHistory || entry.SourceID != "" && entry.ItemID == "" || state.URL != entry.Path || state.Loading || state.Error != "" {
 		return
 	}
 	key := library.Identity(entry)

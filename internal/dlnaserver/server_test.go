@@ -16,7 +16,8 @@ import (
 	"time"
 
 	"github.com/foursmith/player/internal/dlna"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func writeFile(t *testing.T, path, body string) {
@@ -29,7 +30,7 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-func fixture(t *testing.T, sources []library.Saved) (*Server, string) {
+func fixture(t *testing.T, sources []library.Source) (*Server, string) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{ctx: ctx, cancel: cancel, name: "Foursmith & <Library>", udn: "uuid:" + NewUUID(), sources: SharedSources(sources), reload: make(chan struct{}, 1), events: make(chan struct{}, 1), subs: map[string]*subscription{}}
@@ -118,10 +119,10 @@ func TestClientBrowseHierarchyPlaybackAndSubtitles(t *testing.T) {
 	writeFile(t, file, "0123456789")
 	writeFile(t, filepath.Join(filepath.Dir(file), "片段 #2 & 'test'.srt"), "1\n00:00:00,000 --> 00:00:01,000\nCaption")
 	writeFile(t, filepath.Join(dir, "private.txt"), "not shared")
-	s, base := fixture(t, []library.Saved{
-		{ID: "folder", Name: "Movies & <TV>", Folder: dir, ShareDLNA: true},
-		{ID: "collection", Name: "Favorites", Paths: []string{file, filepath.Join(dir, "missing.mp4")}, Folders: []string{filepath.Join(dir, "Season & 2")}, ShareDLNA: true},
-		{ID: "remote", Name: "Other DLNA", DeviceID: "remote", Location: "http://127.0.0.1/remote"},
+	s, base := fixture(t, []library.Source{
+		{ID: "folder", Name: "Movies & <TV>", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folder: dir})},
+		{ID: "collection", Name: "Favorites", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{file, filepath.Join(dir, "missing.mp4")}, Folders: []string{filepath.Join(dir, "Season & 2")}})},
+		{ID: "remote", Name: "Other DLNA", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "remote", Location: "http://127.0.0.1/remote"})},
 	})
 	identity := fmt.Sprintf("dlna-%x", sha256.Sum256([]byte(s.udn)))
 	device, err := dlna.Connect(context.Background(), identity, base+"/device.xml")
@@ -172,7 +173,7 @@ func TestBrowsePaginationMetadataFilterAndFaults(t *testing.T) {
 		writeFile(t, path, name)
 		paths = append(paths, path)
 	}
-	_, base := fixture(t, []library.Saved{{ID: "shows", Name: "Shows", Paths: paths, ShareDLNA: true}})
+	_, base := fixture(t, []library.Source{{ID: "shows", Name: "Shows", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: paths})}})
 	result := soap(t, base, contentType, "Browse", browseArgs(objectID("shows"), "BrowseDirectChildren", "*", "1", "1", "+dc:title"), 200)
 	if result.TotalMatches != 3 || result.NumberReturned != 1 || !strings.Contains(result.Result, "Episode 2.mp4") || strings.Contains(result.Result, dir) {
 		t.Fatalf("pagination, ordering or private paths incorrect: %+v", result)
@@ -239,8 +240,8 @@ func TestLiveLibraryChangesRevokeURLsAndRefresh(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "clip.mp4")
 	writeFile(t, file, "video")
-	source := library.Saved{ID: "folder", Name: "Movies", Folder: dir, ShareDLNA: true}
-	s, base := fixture(t, []library.Saved{source})
+	source := library.Source{ID: "folder", Name: "Movies", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folder: dir})}
+	s, base := fixture(t, []library.Source{source})
 	id := objectID(source.ID, "file", file)
 	s.mu.RLock()
 	item := s.objects[id]
@@ -250,7 +251,7 @@ func TestLiveLibraryChangesRevokeURLsAndRefresh(t *testing.T) {
 	s.SetSources(nil)
 	fetch(t, "GET", address, "", 404)
 	source.Name = "Renamed"
-	s.SetSources([]library.Saved{source})
+	s.SetSources([]library.Source{source})
 	resolved, err := filepath.EvalSymlinks(file)
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +278,7 @@ func TestCatalogCannotServeUnsharedFilesOrEscapingSymlinks(t *testing.T) {
 	if err := os.Symlink(secret, filepath.Join(dir, "escaped.mp4")); err != nil {
 		t.Skip(err)
 	}
-	s, base := fixture(t, []library.Saved{{ID: "folder", Name: "Movies", Folder: dir, ShareDLNA: true}})
+	s, base := fixture(t, []library.Source{{ID: "folder", Name: "Movies", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folder: dir})}})
 	s.mu.RLock()
 	items := s.objects
 	s.mu.RUnlock()
@@ -345,8 +346,8 @@ func TestCollectionFolderSharingRefreshAndContainment(t *testing.T) {
 	if err := os.MkdirAll(empty, 0700); err != nil {
 		t.Fatal(err)
 	}
-	source := library.Saved{ID: "collection", Name: "Shows", Folders: []string{folder, empty, filepath.Join(dir, "Offline")}, ShareDLNA: true}
-	s, base := fixture(t, []library.Saved{source})
+	source := library.Source{ID: "collection", Name: "Shows", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folders: []string{folder, empty, filepath.Join(dir, "Offline")}})}
+	s, base := fixture(t, []library.Source{source})
 	resolvedFile, err := filepath.EvalSymlinks(file)
 	if err != nil {
 		t.Fatal(err)
@@ -387,8 +388,10 @@ func TestCollectionFolderSharingRefreshAndContainment(t *testing.T) {
 	s.Refresh()
 	awaitCatalog(t, s, func(c catalog) bool { _, exists := c[id]; return !exists && c[addedID].File != "" })
 	fetch(t, "GET", address, "", 404)
-	source.Folders = source.Folders[1:]
-	s.SetSources([]library.Saved{source})
+	config := source.Local()
+	config.Folders = config.Folders[1:]
+	source.SetLocal(config)
+	s.SetSources([]library.Source{source})
 	fetch(t, "GET", resourceURL(base, "media", addedItem), "", 404)
 	awaitCatalog(t, s, func(c catalog) bool { return len(c[objectID(source.ID)].Children) == 0 })
 }

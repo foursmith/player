@@ -12,19 +12,19 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/dlna"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func TestRecentMediaMixesLocalAndDLNAWithoutTemporaryURLs(t *testing.T) {
 	device, revision := dlnaCatalogFixture(t)
-	items, err := library.BrowseDLNA(context.Background(), device, "0")
+	items, err := browseDLNAFixture(context.Background(), device, "0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	a := modeTestApplication(t)
-	a.stored.Libraries, _ = rememberDLNALibraries(nil, []dlna.Device{device})
+	a.stored.Libraries, _ = rememberDiscoveredLibraries(nil, discoveredDLNASources(device))
 	local := library.Entry{Name: "local.mp4", Path: filepath.Join(t.TempDir(), "local.mp4")}
 	remote := items[1].Entry
 	a.entries = []library.Entry{local, remote}
@@ -33,11 +33,11 @@ func TestRecentMediaMixesLocalAndDLNAWithoutTemporaryURLs(t *testing.T) {
 		t.Fatal("local and DLNA playback did not enter the shared recent list")
 	}
 	revision.Add(1)
-	items, err = library.BrowseDLNA(context.Background(), device, "0")
+	items, err = browseDLNAFixture(context.Background(), device, "0")
 	if err != nil || items[1].Path == remote.Path {
 		t.Fatal("fixture did not renew its stream URL", err)
 	}
-	if !a.rememberRecentMedia(items[1].Entry) || len(a.stored.RecentMedia) != 2 || a.stored.RecentMedia[0].ObjectID != remote.ObjectID || a.stored.RecentMedia[1].Path != local.Path {
+	if !a.rememberRecentMedia(items[1].Entry) || len(a.stored.RecentMedia) != 2 || a.stored.RecentMedia[0].ItemID != remote.ItemID || a.stored.RecentMedia[1].Path != local.Path {
 		t.Fatal("replaying a remote object duplicated it or lost mixed playback order", a.stored.RecentMedia)
 	}
 	a.recordPlaybackHistory(remote, media.State{URL: remote.Path, Position: 120, Metadata: media.Metadata{Duration: 600}})
@@ -77,8 +77,8 @@ func TestRecentDLNAReopensFreshObjectAndSubtitlesAfterRestart(t *testing.T) {
 	for _, parent := range []string{"0", "season"} {
 		t.Run(parent, func(t *testing.T) {
 			a := modeTestApplication(t)
-			a.stored.Libraries, _ = rememberDLNALibraries(nil, []dlna.Device{device})
-			items, err := library.BrowseDLNA(context.Background(), device, parent)
+			a.stored.Libraries, _ = rememberDiscoveredLibraries(nil, discoveredDLNASources(device))
+			items, err := browseDLNAFixture(context.Background(), device, parent)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -104,7 +104,7 @@ func TestRecentDLNAReopensFreshObjectAndSubtitlesAfterRestart(t *testing.T) {
 				}
 				reopened := restored.entries[restored.selected]
 				completed = true
-				if err != nil || reopened.DeviceID != device.ID || reopened.Key() != entry.Key() || reopened.ParentID != parent || a.prepareVideoMode(reopened) != 42 {
+				if err != nil || reopened.SourceID != device.ID || reopened.Key() != entry.Key() || reopened.ParentID != parent || a.prepareVideoMode(reopened) != 42 {
 					t.Error("recent DLNA video lost its identity, folder or resume position", reopened, err)
 				}
 				if parent == "0" && (reopened.Path == entry.Path || !strings.HasSuffix(reopened.Subtitle, "/captions.srt")) {
@@ -133,13 +133,13 @@ func TestRecentDLNAErrorsAndCancellationPreserveRecords(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			device, revision := dlnaCatalogFixture(t)
 			a := modeTestApplication(t)
-			item := savedPlayback{Name: "Episode 2.mp4", DeviceID: device.ID, ObjectID: "movie"}
+			item := savedPlayback{Name: "Episode 2.mp4", SourceID: device.ID, ItemID: "movie"}
 			if scenario == "missing" {
-				item.ObjectID = "deleted"
+				item.ItemID = "deleted"
 			} else if scenario == "offline" {
 				revision.Store(-1)
 			}
-			item.Playlist = &playlistSnapshot{Entries: []playlistEntryReference{{Name: item.Name, DeviceID: item.DeviceID, ObjectID: item.ObjectID, ParentID: "0"}}, Sources: []playlistSourceSnapshot{{Saved: library.Saved{ID: device.ID, Name: device.Name, DeviceID: device.ID, Location: device.Location}}}}
+			item.Playlist = &playlistSnapshot{Entries: []playlistEntryReference{{Name: item.Name, SourceID: item.SourceID, ItemID: item.ItemID, ParentID: "0"}}, Sources: []playlistSourceSnapshot{{Saved: library.Source{ID: device.ID, Name: device.Name, Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: device.ID, Location: device.Location})}}}}
 			a.stored.RecentMedia = []savedPlayback{item}
 			queued := make(chan func(), 1)
 			completed := false
@@ -177,7 +177,7 @@ func TestRecentDLNAAppearsOnHomeAcrossLocales(t *testing.T) {
 		a := modeTestApplication(t)
 		a.preferences.Locale = locale
 		a.width, a.height = 800, 700
-		a.stored.RecentMedia = []savedPlayback{{Name: "NAS Episode.mp4", DeviceID: "nas", ObjectID: "movie"}}
+		a.stored.RecentMedia = []savedPlayback{{Name: "NAS Episode.mp4", SourceID: "nas", ItemID: "movie"}}
 		view := ui.NewTester(a.home, 800, 700)
 		if _, ok := view.Find("NAS Episode.mp4"); !ok {
 			t.Fatalf("home omitted recent DLNA video in %s", locale)

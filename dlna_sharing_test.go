@@ -8,16 +8,17 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/dlnaserver"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func TestDLNASharingPerLibraryPersistenceAndPreferenceReset(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	state := loadState(path)
 	state.DLNAUUID = dlnaserver.NewUUID()
-	state.Libraries = []library.Saved{
-		{ID: "folder", Name: "Folder", Folder: filepath.Join(t.TempDir(), "offline")},
-		{ID: "collection", Name: "Collection", ShareDLNA: true},
+	state.Libraries = []library.Source{
+		{ID: "folder", Name: "Folder", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folder: filepath.Join(t.TempDir(), "offline")})},
+		{ID: "collection", Name: "Collection", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{})},
 	}
 	if err := saveState(path, state); err != nil {
 		t.Fatal(err)
@@ -37,7 +38,7 @@ func TestDLNASharingPerLibraryPersistenceAndPreferenceReset(t *testing.T) {
 func TestEditingLibrariesCancelsPendingSharingStartup(t *testing.T) {
 	a := modeTestApplication(t)
 	ctx, cancel := context.WithCancel(a.ctx)
-	a.dlnaSharing = dlnaSharingState{starting: true, cancel: cancel, generation: 1, sources: []library.Saved{{ID: "removed", Name: "Old library"}}}
+	a.dlnaSharing = dlnaSharingState{starting: true, cancel: cancel, generation: 1, sources: []library.Source{{ID: "removed", Name: "Old library", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{})}}}
 	a.syncDLNASharing()
 	if ctx.Err() == nil || a.dlnaSharing.starting || a.dlnaSharing.generation != 2 {
 		t.Fatal("an old startup scan can still publish removed libraries")
@@ -46,11 +47,11 @@ func TestEditingLibrariesCancelsPendingSharingStartup(t *testing.T) {
 
 func TestUnsharedLibraryEditsDoNotCancelSharingStartup(t *testing.T) {
 	a := modeTestApplication(t)
-	shared := library.Saved{ID: "shared", Name: "Shared", ShareDLNA: true}
-	a.stored.Libraries = []library.Saved{shared, {ID: "private", Name: "Private renamed"}}
+	shared := library.Source{ID: "shared", Name: "Shared", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{})}
+	a.stored.Libraries = []library.Source{shared, {ID: "private", Name: "Private renamed", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{})}}
 	ctx, cancel := context.WithCancel(a.ctx)
 	defer cancel()
-	a.dlnaSharing = dlnaSharingState{starting: true, cancel: cancel, generation: 1, sources: []library.Saved{shared}}
+	a.dlnaSharing = dlnaSharingState{starting: true, cancel: cancel, generation: 1, sources: []library.Source{shared}}
 	a.syncDLNASharing()
 	if ctx.Err() != nil || !a.dlnaSharing.starting || a.dlnaSharing.generation != 1 {
 		t.Fatal("editing an unshared library interrupted another library's startup")
@@ -69,7 +70,7 @@ func TestDLNASharingControlAtMinimumLibraryWindowSize(t *testing.T) {
 		t.Run(locale, func(t *testing.T) {
 			a := modeTestApplication(t)
 			a.preferences.Locale = locale
-			a.stored.Libraries = []library.Saved{{ID: "a", Name: "Library A"}, {ID: "b", Name: "Library B"}, {ID: "remote", Name: "NAS", DeviceID: "nas"}}
+			a.stored.Libraries = []library.Source{{ID: "a", Name: "Library A", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{})}, {ID: "b", Name: "Library B", Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{})}, {ID: "remote", Name: "NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "nas", Location: "http://nas/device.xml"})}}
 			a.catalog.selected, a.catalog.name = "a", "Library A"
 			view := ui.NewTester(a.catalogView, 800, 460)
 			view.Frame()

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 type playlistRow struct {
@@ -85,7 +85,7 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 				}
 				ui.Icon(c, icons[name]).Size(14, 14).TextColor(color)
 				ui.Text(c, node.Name).FontSize(11).TextColor(color).SingleLine().Grow(1).MinWidth(0)
-				if _, folder := a.playlistDLNAFolder(node.ID); folder != nil && folder.cancel != nil {
+				if _, folder := a.playlistRemoteFolder(node.ID); folder != nil && folder.cancel != nil {
 					ui.Text(c, a.t("library.loading")).FontSize(10).TextColor(textColor(c, .4))
 				}
 				if node.Folder {
@@ -114,7 +114,7 @@ func (a *application) cancelImports() {
 func (a *application) clearPlaylist() {
 	a.cancelImports()
 	a.resetPlayback()
-	a.clearPlaylistDLNA()
+	a.clearPlaylistRemote()
 	a.entries = nil
 	a.playlistTree = nil
 	a.subtitlePaths = nil
@@ -149,7 +149,7 @@ func importedPlaylist(current, incoming []library.Entry, selected int, appendOnl
 	first := library.FirstVideo(library.Tree(incoming))
 	if first >= 0 {
 		for i, entry := range queue {
-			if entry.Path == incoming[first].Path {
+			if entry.Key() == incoming[first].Key() {
 				return queue, i, true
 			}
 		}
@@ -161,10 +161,10 @@ func (a *application) applyImportedEntries(entries []library.Entry, subtitles []
 	queue, selected, play := importedPlaylist(a.entries, entries, a.selected, appendOnly)
 	if !appendOnly {
 		a.resetPlayback()
-		a.clearPlaylistDLNA()
+		a.clearPlaylistRemote()
 		a.playlistTree = nil
 		for i, entry := range queue {
-			if startPath != "" && entry.Path == startPath {
+			if startPath != "" && entry.Key() == startPath {
 				selected, play = i, true
 				break
 			}
@@ -179,7 +179,7 @@ func (a *application) applyImportedEntries(entries []library.Entry, subtitles []
 	expand = func(nodes []library.Node) {
 		for _, node := range nodes {
 			if node.Folder {
-				if _, folder := a.playlistDLNAFolder(node.ID); folder != nil && !folder.loaded {
+				if _, folder := a.playlistRemoteFolder(node.ID); folder != nil && !folder.loaded {
 					continue
 				}
 				a.expandedFolders[node.ID] = true
@@ -199,6 +199,7 @@ func (a *application) closeVideo() {
 }
 
 func (a *application) resetPlayback() {
+	a.stopPlaybackSession()
 	a.persist()
 	a.cancelModeDetection()
 	a.stopSeekPreviews()
@@ -206,6 +207,7 @@ func (a *application) resetPlayback() {
 	a.detectMode = false
 	a.cancelSubtitle()
 	a.player.Reset()
+	a.playbackID = 0
 	a.selected = -1
 	a.cues = nil
 	a.loopA, a.loopB = nil, nil

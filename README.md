@@ -6,7 +6,7 @@
 
 <br clear="all">
 
-[Build & source distribution](doc/DISTRIBUTION.md) · [Third-party notices](resources/THIRD_PARTY_NOTICES.md)
+[Library plugins](doc/LIBRARY_PLUGINS.md) · [Build & source distribution](doc/DISTRIBUTION.md) · [Third-party notices](resources/THIRD_PARTY_NOTICES.md)
 
 ### License
 

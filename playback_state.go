@@ -2,55 +2,53 @@ package main
 
 import (
 	"cmp"
-	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 // Saved playback shares stable media references and an immutable playlist snapshot.
 type savedPlayback struct {
 	Name     string
 	Path     string            `json:",omitempty"`
-	DeviceID string            `json:",omitempty"`
-	ObjectID string            `json:",omitempty"`
+	SourceID string            `json:",omitempty"`
+	ItemID   string            `json:",omitempty"`
 	Playlist *playlistSnapshot `json:",omitempty"`
 }
 
 func (item savedPlayback) key() string {
-	return (library.Entry{Path: item.Path, DeviceID: item.DeviceID, ObjectID: item.ObjectID}).Key()
+	return (library.Entry{Path: item.Path, SourceID: item.SourceID, ItemID: item.ItemID}).Key()
 }
 
 func (item savedPlayback) normalized() (savedPlayback, bool) {
 	if item.Playlist == nil {
 		return savedPlayback{}, false
 	}
-	if item.DeviceID == "" {
+	if item.SourceID == "" {
 		if !filepath.IsAbs(item.Path) {
 			return savedPlayback{}, false
 		}
 		item.Name = filepath.Base(item.Path)
 	} else {
-		if item.ObjectID == "" {
+		if item.ItemID == "" {
 			return savedPlayback{}, false
 		}
 		item.Path = ""
 		item.Name = strings.TrimSpace(item.Name)
 		if item.Name == "" {
-			item.Name = item.ObjectID
+			item.Name = item.ItemID
 		}
-		source, found := item.Playlist.device(item.DeviceID)
-		location, err := url.Parse(source.Location)
-		if !found || err != nil || location.Host == "" || location.User != nil || (location.Scheme != "http" && location.Scheme != "https") {
+		source, found := item.Playlist.source(item.SourceID)
+		if !found || library.ValidateSource(source) != nil {
 			return savedPlayback{}, false
 		}
 	}
 	key := item.key()
 	for _, ref := range item.Playlist.Entries {
-		entry := library.Entry{Path: ref.Path, DeviceID: ref.DeviceID, ObjectID: ref.ObjectID}
-		if entry.Key() == key && (item.DeviceID == "" || ref.ParentID != "") {
+		entry := library.Entry{Path: ref.Path, SourceID: ref.SourceID, ItemID: ref.ItemID}
+		if entry.Key() == key {
 			return item, true
 		}
 	}
@@ -72,33 +70,33 @@ type playlistEntryReference struct {
 	Path     string `json:",omitempty"`
 	Group    string `json:",omitempty"`
 	Root     string `json:",omitempty"`
-	DeviceID string `json:",omitempty"`
-	ObjectID string `json:",omitempty"`
+	SourceID string `json:",omitempty"`
+	ItemID   string `json:",omitempty"`
 	ParentID string `json:",omitempty"`
 }
 
 type playlistSourceSnapshot struct {
-	Saved   library.Saved
+	Saved   library.Source
 	Folders []playlistFolderSnapshot `json:",omitempty"`
 	Tree    bool                     `json:",omitempty"`
 }
 
 type playlistFolderSnapshot struct {
-	ObjectID string
+	ItemID   string
 	Children []playlistFolderChild `json:",omitempty"`
 }
 
 type playlistFolderChild struct{ ID, Name string }
 
-func (snapshot *playlistSnapshot) device(id string) (library.Saved, bool) {
+func (snapshot *playlistSnapshot) source(id string) (library.Source, bool) {
 	if snapshot != nil {
 		for _, source := range snapshot.Sources {
-			if source.Saved.DeviceID == id {
+			if source.Saved.ID == id {
 				return source.Saved, true
 			}
 		}
 	}
-	return library.Saved{}, false
+	return library.Source{}, false
 }
 
 func (a *application) snapshotPlaylist() *playlistSnapshot {
@@ -108,8 +106,8 @@ func (a *application) snapshotPlaylist() *playlistSnapshot {
 	snapshot := &playlistSnapshot{Subtitles: slices.Clone(a.subtitlePaths)}
 	for _, entry := range a.entries {
 		ref := playlistEntryReference{Name: entry.Name, Path: entry.Path, Group: entry.Group, Root: entry.Root}
-		if entry.DeviceID != "" {
-			ref = playlistEntryReference{Name: entry.Name, DeviceID: entry.DeviceID, ObjectID: entry.ObjectID, ParentID: entry.ParentID}
+		if entry.SourceID != "" {
+			ref = playlistEntryReference{Name: entry.Name, SourceID: entry.SourceID, ItemID: entry.ItemID, ParentID: entry.ParentID}
 		}
 		snapshot.Entries = append(snapshot.Entries, ref)
 	}
@@ -122,45 +120,49 @@ func (a *application) snapshotPlaylist() *playlistSnapshot {
 		}
 	}
 	slices.Sort(snapshot.Expanded)
-	sources := map[string]*playlistDLNASource{}
-	for id, source := range a.playlistDLNA {
+	sources := map[string]*playlistRemoteSource{}
+	for id, source := range a.playlistRemote {
 		sources[id] = source
 	}
 	// Individual catalog rows can also create a playlist without a device root.
 	for _, entry := range a.entries {
-		if entry.DeviceID == "" || sources[entry.DeviceID] != nil {
+		if entry.SourceID == "" || sources[entry.SourceID] != nil {
 			continue
 		}
-		saved, found := a.playbackDevice(entry.DeviceID)
+		saved, found := a.playbackSource(entry.SourceID)
 		if !found {
 			continue
 		}
-		source := &playlistDLNASource{saved: saved, folders: map[string]*playlistDLNAFolder{}, flat: true}
+		source := &playlistRemoteSource{saved: saved, folders: map[string]*playlistRemoteFolder{}, flat: true}
 		if a.catalog.selected == saved.ID {
 			source.remember(a.catalog.directoryPath)
 		}
-		sources[entry.DeviceID] = source
+		sources[entry.SourceID] = source
 	}
 	for _, source := range sources {
 		saved := source.saved
-		saved.Folder, saved.Paths, saved.Folders, saved.ShareDLNA = "", nil, nil, false
+		if i := a.catalogIndex(saved.ID); i >= 0 {
+			saved = a.stored.Libraries[i]
+		}
+		saved = library.CloneSources([]library.Source{saved})[0]
+		saved.ShareDLNA = false
 		ref := playlistSourceSnapshot{Saved: saved, Tree: !source.flat}
 		for _, folder := range source.folders {
-			f := playlistFolderSnapshot{ObjectID: folder.objectID}
+			f := playlistFolderSnapshot{ItemID: folder.itemID}
 			for _, item := range folder.items {
 				if item.Folder {
-					f.Children = append(f.Children, playlistFolderChild{ID: item.ObjectID, Name: item.Name()})
+					f.Children = append(f.Children, playlistFolderChild{ID: item.ItemID, Name: item.Name()})
 				}
 			}
 			ref.Folders = append(ref.Folders, f)
 		}
 		slices.SortFunc(ref.Folders, func(a, b playlistFolderSnapshot) int {
-			return cmp.Compare(a.ObjectID, b.ObjectID)
+			return cmp.Compare(a.ItemID, b.ItemID)
 		})
 		snapshot.Sources = append(snapshot.Sources, ref)
 	}
 	slices.SortFunc(snapshot.Sources, func(a, b playlistSourceSnapshot) int {
-		return cmp.Compare(a.Saved.DeviceID, b.Saved.DeviceID)
+		return cmp.Compare(a.Saved.ID, b.Saved.ID)
 	})
 	a.playlistSnapshot = snapshot
 	return snapshot
@@ -188,7 +190,7 @@ func (a *application) updatePlaybackPlaylists() {
 }
 
 func (a *application) playbackRecord(entry library.Entry) (savedPlayback, bool) {
-	item := savedPlayback{Name: entry.Name, Path: entry.Path, DeviceID: entry.DeviceID, ObjectID: entry.ObjectID, Playlist: a.snapshotPlaylist()}
+	item := savedPlayback{Name: entry.Name, Path: entry.Path, SourceID: entry.SourceID, ItemID: entry.ItemID, Playlist: a.snapshotPlaylist()}
 	return item.normalized()
 }
 
@@ -202,24 +204,24 @@ func (a *application) rememberStartupPlayback(entry library.Entry) {
 	a.stored.LastPlayback = next
 }
 
-func (a *application) playbackDevice(deviceID string) (library.Saved, bool) {
-	if source := a.playlistDLNA[deviceID]; source != nil {
-		return source.saved, true
-	}
+func (a *application) playbackSource(sourceID string) (library.Source, bool) {
 	for _, saved := range a.stored.Libraries {
-		if saved.DeviceID == deviceID {
+		if saved.ID == sourceID {
 			return saved, true
 		}
 	}
+	if source := a.playlistRemote[sourceID]; source != nil {
+		return source.saved, true
+	}
 	if item := a.stored.LastPlayback; item != nil {
-		if saved, found := item.Playlist.device(deviceID); found {
+		if saved, found := item.Playlist.source(sourceID); found {
 			return saved, true
 		}
 	}
 	for _, item := range a.stored.RecentMedia {
-		if saved, found := item.Playlist.device(deviceID); found {
+		if saved, found := item.Playlist.source(sourceID); found {
 			return saved, true
 		}
 	}
-	return library.Saved{}, false
+	return library.Source{}, false
 }

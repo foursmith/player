@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ebitengine/purego"
 	"github.com/foursmith/player/internal/native"
+	"github.com/foursmith/player/library"
 )
 
 // Only integer tokens cross the callback boundary. The registry owns Go state
@@ -108,8 +110,10 @@ type Frame struct {
 var frameSerial atomic.Uint64
 
 type Source struct {
-	URL   string
-	Start float64
+	URL     string
+	Headers string
+	NoSeek  bool
+	Start   float64
 }
 type Metadata struct {
 	Width, Height       int
@@ -153,8 +157,11 @@ func openContext(ctx context.Context, source Source, outputAudio, analysis bool)
 	d.format.InterruptCallback = avInterrupt{interruptCallback, d.cancellation.token}
 	var options unsafe.Pointer
 	av.util.DictSet(&options, "rw_timeout", "10000000", 0)
+	if source.Headers != "" {
+		av.util.DictSet(&options, "headers", source.Headers, 0)
+	}
 	if isHTTP(source.URL) {
-		if err := d.openHTTP(source.URL); err != nil {
+		if err := d.openHTTP(source.URL, source.Headers); err != nil {
 			av.util.DictFree(&options)
 			return nil, err
 		}
@@ -817,4 +824,16 @@ func (d *Decoder) bufferAudio(seconds float64, interrupted func() bool) error {
 		}
 	}
 	return nil
+}
+
+// FromEntry carries session-only authentication to every decoder consumer.
+func FromEntry(entry library.Entry) Source {
+	source := Source{URL: entry.Path}
+	if playback := entry.Playback; playback != nil {
+		var headers bytes.Buffer
+		_ = playback.Headers.Write(&headers)
+		source.Headers = headers.String()
+		source.NoSeek = playback.Live || !playback.Seekable
+	}
+	return source
 }

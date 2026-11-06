@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 func (a *application) catalogView(c *ui.Context) {
@@ -28,12 +28,14 @@ func (a *application) catalogView(c *ui.Context) {
 		ui.Column(c.Key("library-detail")).Grow(1).MinWidth(0).FillHeight().Children(func() {
 			ui.Row(c.Key("library-titlebar")).FillWidth().Height(max(48, c.TitleBar().Height)).Padding(0, max(16, c.TitleBar().Right+8), 0, 20).Gap(12).DragWindow().Children(func() {
 				ui.Text(c, a.t("library.title")).FontSize(12).FontWeight(500).TextColor(textColor(c, .48)).Grow(1).MinWidth(0).SingleLine()
-				if a.selectedCatalog() != nil {
+				if a.connectionEditor == nil && a.selectedCatalog() != nil {
 					a.catalogSearch(c)
 					quietIcon(c, "rotate-ccw", a.t("library.refresh")).Disabled(a.catalog.loading).OnClick(a.refreshCatalog)
 				}
 			})
-			if saved := a.selectedCatalog(); saved != nil {
+			if a.connectionEditor != nil {
+				a.connectionView(c)
+			} else if saved := a.selectedCatalog(); saved != nil {
 				a.catalogDetail(c, *saved)
 			} else {
 				ui.Column(c).FillWidth().Grow(1).Center().Padding(24).Gap(12).Children(func() {
@@ -75,7 +77,7 @@ func (a *application) catalogSidebar(c *ui.Context) {
 		ui.Box(c).FillWidth().Height(max(48, c.TitleBar().Height)).DragWindow()
 		ui.Scroll(c.Key("library-sources")).FillWidth().Grow(1).MinHeight(0).TrackScroll(&a.catalog.sidebar).Children(func() {
 			ui.Column(c).FillWidth().Padding(2, 10, 12).Gap(3).Children(func() {
-				for kind, title := range []string{"library.folders", "library.dlna", "library.collections"} {
+				for kind, title := range []string{"library.folders", "library.remote", "library.collections"} {
 					count := 0
 					for _, saved := range a.stored.Libraries {
 						if catalogSourceKind(saved) == kind {
@@ -91,6 +93,7 @@ func (a *application) catalogSidebar(c *ui.Context) {
 								a.chooseCatalogPaths(true, "library.addFolder", func(paths []string) { a.addCatalogFolder(paths[0]) })
 							})
 						case 1:
+							quietIcon(c, "plus", a.t("plugins.addConnection")).Size(22, 22).Menu(a.connectionMenu)
 							label := a.t("playlist.scanDlna")
 							if a.scanning {
 								label = a.t("playlist.scanningDlna")
@@ -119,36 +122,44 @@ func (a *application) catalogSidebar(c *ui.Context) {
 	})
 }
 
-func catalogSourceKind(saved library.Saved) int {
-	if saved.Folder != "" {
+func catalogSourceKind(saved library.Source) int {
+	if saved.LocalFolder() != "" {
 		return 0
 	}
-	if saved.DeviceID != "" {
+	if !saved.IsLocal() {
 		return 1
 	}
 	return 2
 }
 
-func catalogSourceIcon(saved library.Saved) string {
-	return [...]string{"folder", "source-dlna", "library"}[catalogSourceKind(saved)]
+func catalogSourceIcon(saved library.Source) string {
+	if !saved.IsLocal() {
+		icon := libraryPlugins.Manifest(saved).Icon
+		if _, ok := icons[icon]; ok {
+			return icon
+		}
+		return "library"
+	}
+	return [...]string{"folder", "library", "library"}[catalogSourceKind(saved)]
 }
 
-func (a *application) catalogSource(c *ui.Context, saved library.Saved) {
+func (a *application) catalogSource(c *ui.Context, saved library.Source) {
 	button := navigationStyle(c, ui.Button(c.Key(saved.ID), ""), a.catalog.selected == saved.ID).Label(saved.Name)
 	button.Children(func() {
 		ui.Row(c).Fill().Gap(9).Children(func() {
 			ui.Icon(c, icons[catalogSourceIcon(saved)]).Size(14, 14).Shrink(0)
 			ui.Text(c, saved.Name).FontSize(11).FontWeight(500).SingleLine().Grow(1).MinWidth(0)
-			if saved.ShareDLNA && saved.DeviceID == "" {
+			if saved.ShareDLNA && saved.IsLocal() {
 				ui.Icon(c, icons["source-dlna"]).Size(12, 12).TextColor(c.Theme().Accent.Alpha(.7)).Shrink(0)
 			}
 		})
 	}).OnClick(func() { a.selectCatalog(saved.ID) })
 }
 
-func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
+func (a *application) catalogDetail(c *ui.Context, saved library.Source) {
+	config := saved.Local()
 	available, total, folders := len(a.catalog.playable), a.catalog.total, 0
-	canPlay := available > 0 || saved.DeviceID != ""
+	canPlay := available > 0 || !sourceSnapshot(saved)
 	for _, item := range a.catalog.items {
 		if item.Folder {
 			folders++
@@ -166,11 +177,16 @@ func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
 			trimmed := strings.TrimSpace(a.catalog.name)
 			quietIcon(c, "check", a.t("library.rename")).Size(24, 24).Disabled(trimmed == "" || trimmed == saved.Name).OnClick(a.renameCatalog)
 			quietIcon(c, "trash", a.t("library.remove")).Size(24, 24).OnClick(a.removeCatalog)
+			if p, err := libraryPlugins.Plugin(saved.Plugin); err == nil {
+				if _, ok := p.(library.Configurable); ok {
+					quietIcon(c, "settings", a.t("plugins.connection")).Size(24, 24).OnClick(func() { a.editConnection(saved) })
+				}
+			}
 			a.catalogSharingButton(c, saved)
 			glassAction(c, "play", a.t("library.playAll")).Background(c.Theme().Accent.Alpha(.12)).TextColor(c.Theme().Accent).Disabled(!canPlay).OnClick(func() { a.playCatalog("", false) })
 			quietIcon(c, "playlist-add", a.t("library.append")).Disabled(!canPlay).OnClick(func() { a.playCatalog("", true) })
 		})
-		a.catalogLocation(c, saved)
+		a.catalogLocation(c, saved, config)
 		a.catalogToolbar(c, available, total, folders)
 		ui.Box(c).FillWidth().Padding(0, 20, 4).Children(func() { ui.Box(c).FillWidth().Height(1).Background(ink(c, .05)) })
 		if len(a.catalog.visible) == 0 {
@@ -190,30 +206,30 @@ func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
 			a.catalog.list.Key = func(i int) any { return items[rows[i]].Key() }
 			a.catalog.list.Label = func(i int) string { return items[rows[i]].Name() }
 			ui.List(c.Key("library-videos"), &a.catalog.list, len(rows), func(i int) {
-				a.catalogItem(c, saved, items[rows[i]])
+				a.catalogItem(c, saved, config, items[rows[i]])
 			}).FillWidth().Grow(1).MinHeight(0).Padding(0, 12, 4)
 		}
 		a.catalogSharingStatus(c, saved)
 	})
 }
 
-func (a *application) catalogLocation(c *ui.Context, saved library.Saved) {
+func (a *application) catalogLocation(c *ui.Context, saved library.Source, config library.LocalConfig) {
 	ui.Row(c).FillWidth().Height(28).Padding(0, 20).Gap(6).Children(func() {
 		quietIcon(c, "caret-down", a.t("library.parent")).Rotate(90).Size(24, 24).Disabled(len(a.catalog.directoryPath) <= 1).OnClick(a.catalogParent)
 		location := a.catalogDirectoryName()
-		if saved.Folder != "" {
-			location = saved.Folder
+		if config.Folder != "" {
+			location = config.Folder
 			if path := a.catalog.directoryPath; len(path) > 1 {
 				location = path[len(path)-1].id
 			}
 		}
 		ui.Text(c, location).FontSize(10).TextColor(textColor(c, .4)).SingleLine().Grow(1).MinWidth(0)
 		quietIcon(c, "folder", a.t("library.root")).Size(24, 24).Disabled(len(a.catalog.directoryPath) <= 1).OnClick(a.catalogRoot)
-		if saved.Folder != "" {
+		if config.Folder != "" {
 			quietIcon(c, "folder-open", a.t("library.relocate")).Size(24, 24).Disabled(a.dialogOpen).OnClick(func() { a.relocateCatalogFolder(saved.ID) })
 		}
 	})
-	if saved.Collection() {
+	if saved.IsLocal() && config.Folder == "" {
 		ui.Row(c).FillWidth().Height(28).Padding(0, 20).Gap(6).Children(func() {
 			glassAction(c, "plus", a.t("media.addFiles")).Height(24).Disabled(a.dialogOpen).OnClick(func() {
 				a.chooseCatalogPaths(false, "media.addFiles", func(paths []string) { a.appendCatalogPaths(saved.ID, paths) })
@@ -267,9 +283,9 @@ func (a *application) catalogToolbar(c *ui.Context, available, total, folders in
 	})
 }
 
-func (a *application) catalogItem(c *ui.Context, saved library.Saved, item library.SavedItem) {
+func (a *application) catalogItem(c *ui.Context, saved library.Source, config library.LocalConfig, item library.Item) {
 	if item.Folder {
-		a.catalogFolderItem(c, saved, item)
+		a.catalogFolderItem(c, saved, config, item)
 		return
 	}
 	history := a.catalogHistory(item)
@@ -307,14 +323,14 @@ func (a *application) catalogItem(c *ui.Context, saved library.Saved, item libra
 					ui.Text(c, name).FontSize(12).FontWeight(500).TextColor(textColor(c, .88)).SingleLine().FillWidth().MinWidth(0)
 					ui.Text(c, a.catalogTimeLabel(timing)).Font("monospace").FontSize(10).TextColor(textColor(c, .56)).SingleLine().FillWidth().MinWidth(0)
 					detail := filepath.Dir(item.Path)
-					if saved.Folder != "" {
-						if relative, err := filepath.Rel(saved.Folder, detail); err == nil {
+					if config.Folder != "" {
+						if relative, err := filepath.Rel(config.Folder, detail); err == nil {
 							detail = relative
 							if detail == "." {
 								detail = saved.Name
 							}
 						}
-					} else if saved.DeviceID != "" {
+					} else if !saved.IsLocal() {
 						detail = a.catalogDirectoryName()
 					}
 					if item.Error != nil {
@@ -323,7 +339,7 @@ func (a *application) catalogItem(c *ui.Context, saved library.Saved, item libra
 					ui.Text(c, detail).FontSize(9).TextColor(textColor(c, .3)).SingleLine().FillWidth().MinWidth(0)
 				})
 			})
-		}).OnClick(func() { a.playCatalog(item.Path, false) }).ContextMenu(func(m *ui.Menu) { a.catalogWatchMenu(m, item) })
+		}).OnClick(func() { a.playCatalog(item.Key(), false) }).ContextMenu(func(m *ui.Menu) { a.catalogWatchMenu(m, item) })
 		if item.Error == nil && a.preferences.RecordPlaybackHistory {
 			status := history.watchStatus()
 			color := ink(c, .4)
@@ -342,17 +358,17 @@ func (a *application) catalogItem(c *ui.Context, saved library.Saved, item libra
 				})
 			}).Menu(func(m *ui.Menu) { a.catalogWatchMenu(m, item) })
 		}
-		if item.Error != nil && saved.Collection() && slices.Contains(saved.Paths, item.Path) {
+		if item.Error != nil && (saved.IsLocal() && config.Folder == "") && slices.Contains(config.Paths, item.Path) {
 			quietIcon(c, "folder-open", a.t("library.relocateItem", name)).Disabled(a.dialogOpen).OnClick(func() { a.relocateCatalogPath(saved.ID, item.Path) })
 		}
-		if saved.Collection() && slices.Contains(saved.Paths, item.Path) {
+		if (saved.IsLocal() && config.Folder == "") && slices.Contains(config.Paths, item.Path) {
 			quietIcon(c, "x", a.t("library.removeItem", name)).OnClick(func() { a.removeCatalogPath(saved.ID, item.Path) })
 		}
 	})
 }
 
-func (a *application) catalogFolderItem(c *ui.Context, saved library.Saved, item library.SavedItem) {
-	member := saved.Collection() && slices.Contains(saved.Folders, item.Path)
+func (a *application) catalogFolderItem(c *ui.Context, saved library.Source, config library.LocalConfig, item library.Item) {
+	member := (saved.IsLocal() && config.Folder == "") && slices.Contains(config.Folders, item.Path)
 	ui.Row(c.Key(item.Key())).FillWidth().Height(50).Gap(4).Children(func() {
 		button := ui.Button(c, "").Grow(1).MinWidth(0).Height(50).Padding(5, 8).Background(ui.Transparent).Border(0, ui.Transparent).Radius(10).Label(a.t("library.openFolder", item.Name())).Disabled(item.Error != nil)
 		if button.Hovered() {
@@ -383,7 +399,7 @@ func (a *application) catalogFolderItem(c *ui.Context, saved library.Saved, item
 	})
 }
 
-func (a *application) catalogWatchMenu(m *ui.Menu, item library.SavedItem) {
+func (a *application) catalogWatchMenu(m *ui.Menu, item library.Item) {
 	disabled := !a.preferences.RecordPlaybackHistory || item.Error != nil || item.Folder
 	for _, option := range []struct{ title, value string }{
 		{"library.markWatched", "watched"}, {"library.markUnwatched", "unwatched"}, {"library.watchAutomatic", ""},

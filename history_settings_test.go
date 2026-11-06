@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/library"
 )
 
 func TestHistoryControlsResumeAndRecordingIndependently(t *testing.T) {
@@ -67,7 +67,7 @@ func TestRecentFilesRespectMenuPreferenceAndIndependentHistorySwitch(t *testing.
 	if !a.rememberRecentMedia(second) {
 		t.Fatal("playback-history switch incorrectly disabled the separate recent-file preference")
 	}
-	if a.rememberRecentMedia(library.Entry{Path: "https://nas/video.mp4", DeviceID: "nas"}) {
+	if a.rememberRecentMedia(library.Entry{Path: "https://nas/video.mp4", SourceID: "nas"}) {
 		t.Fatal("DLNA URL was added to local recent files")
 	}
 }

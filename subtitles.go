@@ -5,9 +5,8 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/foursmith/player/internal/dlna"
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/subtitle"
+	"github.com/foursmith/player/library"
 )
 
 func (a *application) cancelSubtitle() {
@@ -32,14 +31,14 @@ func (a *application) readSubtitle(entry library.Entry, path string, discover bo
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.subtitleCancel = cancel
 	paths := append([]string(nil), a.subtitlePaths...)
-	if entry.DeviceID != "" {
+	if entry.SourceID != "" {
 		paths = nil
 	}
 	window := a.window
 	go func() {
 		if discover {
 			path = library.MatchSubtitle(entry, paths)
-			if path == "" && entry.DeviceID == "" {
+			if path == "" && entry.SourceID == "" {
 				if siblings, err := library.SubtitleSiblings(entry.Path); err == nil {
 					path = library.MatchSubtitle(entry, siblings)
 				}
@@ -52,7 +51,11 @@ func (a *application) readSubtitle(entry library.Entry, path string, discover bo
 		var data []byte
 		var err error
 		if u, parseErr := url.Parse(path); parseErr == nil && (u.Scheme == "http" || u.Scheme == "https") {
-			data, err = dlna.ReadSubtitle(ctx, path)
+			resource := library.Resource{URL: path}
+			if entry.Playback != nil && entry.Playback.Subtitle.URL == path {
+				resource = entry.Playback.Subtitle
+			}
+			data, err = library.ReadResource(ctx, resource, 8<<20)
 			name = u.Path
 		} else {
 			data, err = os.ReadFile(path)

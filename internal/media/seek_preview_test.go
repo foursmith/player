@@ -60,7 +60,7 @@ func TestChaptersAndSeekPreviewThroughSparseKeyframes(t *testing.T) {
 			if err := d.Seek(.5); err != nil {
 				t.Fatal(err)
 			}
-			preview, err := OpenSeekPreview(ctx, file)
+			preview, err := OpenSeekPreview(ctx, Source{URL: file})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,7 +103,7 @@ func TestSeekPreviewReadsHTTPRangeSource(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	p, err := OpenSeekPreview(ctx, server.URL+"/"+filepath.Base(file))
+	p, err := OpenSeekPreview(ctx, Source{URL: server.URL + "/" + filepath.Base(file)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestHTTPSeekPreviewSkipsDistantAudioTrack(t *testing.T) {
 		http.ServeFile(w, r, file)
 	}))
 	t.Cleanup(server.Close)
-	p, err := OpenSeekPreview(t.Context(), server.URL+"/clip.mp4")
+	p, err := OpenSeekPreview(t.Context(), Source{URL: server.URL + "/clip.mp4"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestHTTPSeekPreviewSkipsDistantAudioTrack(t *testing.T) {
 }
 
 func TestSeekPreviewReusesForwardDecodeAndRetainsCachedPixels(t *testing.T) {
-	p, err := OpenSeekPreview(context.Background(), chapterPreviewFixture(t, "mp4"))
+	p, err := OpenSeekPreview(context.Background(), Source{URL: chapterPreviewFixture(t, "mp4")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestSeekPreviewReusesForwardDecodeAndRetainsCachedPixels(t *testing.T) {
 }
 
 func TestKeyframePreviewCanSwitchToPreciseScrubbing(t *testing.T) {
-	p, err := OpenSeekPreview(context.Background(), chapterPreviewFixture(t, "mp4"))
+	p, err := OpenSeekPreview(context.Background(), Source{URL: chapterPreviewFixture(t, "mp4")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/internal/providers"
+	"github.com/foursmith/player/library"
 )
 
 func TestPlaylistModelTracksExpansionAndLibraryChanges(t *testing.T) {
@@ -65,7 +66,7 @@ func BenchmarkPlaylistModel(b *testing.B) {
 }
 
 func TestOpenReplacesQueueWhileAppendKeepsSelection(t *testing.T) {
-	current := []library.Entry{{Path: "old.mp4"}, {Path: "http://nas/video", DeviceID: "dlna-nas"}}
+	current := []library.Entry{{Path: "old.mp4"}, {Path: "http://nas/video", SourceID: "dlna-nas"}}
 	incoming := []library.Entry{{Name: "Episode 10.mp4", Path: "10.mp4"}, {Name: "Episode 2.mp4", Path: "2.mp4"}, {Name: "Episode 2.mp4", Path: "2.mp4"}}
 	queue, selected, play := importedPlaylist(current, incoming, 0, false)
 	if len(queue) != 2 || selected != 1 || !play || queue[selected].Path != "2.mp4" {
@@ -93,11 +94,11 @@ func TestAppendingLibrariesKeepsExistingRootsInPlace(t *testing.T) {
 		}
 		return names
 	}
-	for _, saved := range []library.Saved{
-		{ID: "last", Name: "Z NAS", DeviceID: "last"},
-		{ID: "first", Name: "A NAS", DeviceID: "first"},
+	for _, saved := range []library.Source{
+		{ID: "last", Name: "Z NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "last", Location: "http://nas/device.xml"})},
+		{ID: "first", Name: "A NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "first", Location: "http://nas/device.xml"})},
 	} {
-		a.addDLNAPlaylist(saved, true)
+		a.addRemotePlaylist(saved, true)
 	}
 	if got := roots(); !reflect.DeepEqual(got, []string{"ordinary.mp4", "Z NAS", "A NAS"}) {
 		t.Fatal("a new library moved ahead of existing playlist roots", got)
@@ -114,7 +115,7 @@ func TestAppendingLibrariesKeepsExistingRootsInPlace(t *testing.T) {
 	if series.Children[0].Name != "Episode 2.mp4" || series.Children[1].Name != "Episode 10.mp4" || a.selected != 0 || a.entries[0].Path != "current.mp4" {
 		t.Fatal("appending changed folder ordering or interrupted the current selection", series, a.selected)
 	}
-	a.addDLNAPlaylist(library.Saved{ID: "last", Name: "Z NAS", DeviceID: "last"}, true)
+	a.addRemotePlaylist(library.Source{ID: "last", Name: "Z NAS", Plugin: providers.DLNAID, Config: library.EncodeConfig(providers.DLNAConfig{DeviceID: "last", Location: "http://nas/device.xml"})}, true)
 	if got := roots(); !reflect.DeepEqual(got, []string{"ordinary.mp4", "Z NAS", "A NAS", "Series", "A local.mp4"}) {
 		t.Fatal("adding the same library moved or duplicated it", got)
 	}

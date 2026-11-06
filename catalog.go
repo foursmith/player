@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"path/filepath"
@@ -10,14 +11,13 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/foursmith/player/internal/dlna"
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 type catalogState struct {
 	selected, name, search, error string
-	items                         []library.SavedItem
-	sourceItems                   []library.SavedItem
+	items                         []library.Item
+	sourceItems                   []library.Item
 	tree                          []library.Node
 	playable                      []library.Entry
 	total                         int
@@ -33,10 +33,10 @@ type catalogState struct {
 }
 
 func (a *application) catalogIndex(id string) int {
-	return slices.IndexFunc(a.stored.Libraries, func(saved library.Saved) bool { return saved.ID == id })
+	return slices.IndexFunc(a.stored.Libraries, func(saved library.Source) bool { return saved.ID == id })
 }
 
-func (a *application) selectedCatalog() *library.Saved {
+func (a *application) selectedCatalog() *library.Source {
 	if i := a.catalogIndex(a.catalog.selected); i >= 0 {
 		return &a.stored.Libraries[i]
 	}
@@ -86,6 +86,7 @@ func (a *application) cancelCatalogRead() {
 }
 
 func (a *application) selectCatalog(id string) {
+	a.cancelConnectionEditor()
 	i := a.catalogIndex(id)
 	if i < 0 {
 		return
@@ -96,10 +97,7 @@ func (a *application) selectCatalog(id string) {
 	a.catalog.sourceItems, a.catalog.tree, a.catalog.playable = nil, nil, nil
 	a.catalog.total = 0
 	a.catalog.list = ui.ListState{}
-	a.catalog.directoryPath = []catalogFolder{{}}
-	if a.stored.Libraries[i].DeviceID != "" {
-		a.catalog.directoryPath[0].id = "0"
-	}
+	a.catalog.directoryPath = []catalogFolder{{id: sourceRoot(a.stored.Libraries[i])}}
 	a.startCatalogThumbnails()
 	a.refreshCatalog()
 }
@@ -124,14 +122,12 @@ func (a *application) loadCatalog(background bool) {
 		return
 	}
 	// The worker owns its paths even if the collection is edited during IO.
-	snapshot := *saved
-	snapshot.Paths = slices.Clone(saved.Paths)
-	snapshot.Folders = slices.Clone(saved.Folders)
+	snapshot := library.CloneSources([]library.Source{*saved})[0]
 	a.catalog.loading = true
 	a.catalog.nextRefresh = time.Now().Add(10 * time.Second)
 	generation := a.catalog.generation
 	a.refreshWindows()
-	complete := func(items []library.SavedItem, err error) {
+	complete := func(updated library.Source, items []library.Item, err error) {
 		if generation != a.catalog.generation || a.shutdown {
 			return
 		}
@@ -139,9 +135,6 @@ func (a *application) loadCatalog(background bool) {
 		a.catalog.nextRefresh = time.Now().Add(10 * time.Second)
 		if err != nil {
 			key := "library.readFailed"
-			if snapshot.DeviceID != "" {
-				key = "library.dlnaUnavailable"
-			}
 			a.catalog.error = a.t(key) + ": " + err.Error()
 			for i := range a.catalog.items {
 				a.catalog.items[i].Error = err
@@ -151,66 +144,38 @@ func (a *application) loadCatalog(background bool) {
 			}
 			a.filterCatalog()
 		} else {
+			if current := a.selectedCatalog(); current != nil && !bytes.Equal(current.Config, updated.Config) {
+				current.Config = updated.Config
+				defer a.persist()
+			}
 			a.catalog.error = ""
 			previous := a.catalog.items
-			if snapshot.DeviceID == "" {
+			if sourceSnapshot(snapshot) {
 				previous = a.catalog.sourceItems
 			}
-			if !sameCatalogItems(previous, items) || snapshot.DeviceID == "" && a.catalog.sourceItems == nil {
+			if !sameCatalogItems(previous, items) || sourceSnapshot(snapshot) && a.catalog.sourceItems == nil {
 				a.setCatalogItems(snapshot, items)
 				a.filterCatalog()
 			}
 		}
 		a.refreshWindows()
 	}
-	if snapshot.DeviceID == "" {
-		a.catalog.cancel = readCatalog(a.ctx, snapshot, a.window.Update, complete)
-		return
-	}
-	objectID := "0"
+	parentID := sourceRoot(snapshot)
 	if path := a.catalog.directoryPath; len(path) > 0 {
-		objectID = path[len(path)-1].id
+		parentID = path[len(path)-1].id
 	}
-	a.catalog.cancel = readDLNACatalog(a.ctx, snapshot, objectID, a.window.Update, func(device dlna.Device, items []library.SavedItem, err error) {
-		if generation != a.catalog.generation || a.shutdown {
-			return
-		}
-		changed := false
-		if current := a.selectedCatalog(); err == nil && current != nil && current.Location != device.Location {
-			current.Location, changed = device.Location, true
-		}
-		complete(items, err)
-		if changed {
-			a.persist()
-		}
-	})
-}
-
-// dispatch queues a UI update; the context must stay alive until that update
-// runs, while a later selection can still cancel a result waiting in the queue.
-func readCatalog(parent context.Context, saved library.Saved, dispatch func(func()), complete func([]library.SavedItem, error)) context.CancelFunc {
-	ctx, cancel := context.WithCancel(parent)
-	go func() {
-		items, err := library.ReadSaved(ctx, saved)
-		dispatch(func() {
-			defer cancel()
-			if ctx.Err() == nil {
-				complete(items, err)
-			}
-		})
-	}()
-	return cancel
+	a.catalog.cancel = readCatalog(a.ctx, snapshot, parentID, a.window.Update, complete)
 }
 
 func (a *application) addCatalogFolder(path string) {
 	path = filepath.Clean(path)
 	for _, saved := range a.stored.Libraries {
-		if saved.Folder == path {
+		if saved.Local().Folder == path {
 			a.selectCatalog(saved.ID)
 			return
 		}
 	}
-	saved := library.Saved{ID: rand.Text(), Name: filepath.Base(path), Folder: path}
+	saved := library.Source{ID: rand.Text(), Name: filepath.Base(path), Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Folder: path})}
 	a.stored.Libraries = append(a.stored.Libraries, saved)
 	a.persist()
 	a.selectCatalog(saved.ID)
@@ -220,11 +185,11 @@ func (a *application) newCatalogCollection(paths []string) {
 	name := ""
 	for number := 1; ; number++ {
 		name = a.t("library.collectionName", number)
-		if !slices.ContainsFunc(a.stored.Libraries, func(saved library.Saved) bool { return saved.Name == name }) {
+		if !slices.ContainsFunc(a.stored.Libraries, func(saved library.Source) bool { return saved.Name == name }) {
 			break
 		}
 	}
-	saved := library.Saved{ID: rand.Text(), Name: name, Paths: library.MergePaths(nil, paths)}
+	saved := library.Source{ID: rand.Text(), Name: name, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: library.MergePaths(nil, paths)})}
 	a.stored.Libraries = append(a.stored.Libraries, saved)
 	a.persist()
 	a.selectCatalog(saved.ID)
@@ -272,7 +237,9 @@ func (a *application) appendCatalogPaths(id string, paths []string) {
 	if i < 0 || !a.stored.Libraries[i].Collection() {
 		return
 	}
-	a.stored.Libraries[i].Paths = library.MergePaths(a.stored.Libraries[i].Paths, paths)
+	config := a.stored.Libraries[i].Local()
+	config.Paths = library.MergePaths(config.Paths, paths)
+	a.stored.Libraries[i].SetLocal(config)
 	a.persist()
 	if a.catalog.selected == id {
 		a.refreshCatalog()
@@ -285,8 +252,10 @@ func (a *application) removeCatalogPath(id, path string) {
 		return
 	}
 	saved := &a.stored.Libraries[i]
-	saved.Paths = slices.DeleteFunc(saved.Paths, func(p string) bool { return p == path })
-	saved.Folders = slices.DeleteFunc(saved.Folders, func(p string) bool { return p == path })
+	config := saved.Local()
+	config.Paths = slices.DeleteFunc(config.Paths, func(p string) bool { return p == path })
+	config.Folders = slices.DeleteFunc(config.Folders, func(p string) bool { return p == path })
+	saved.SetLocal(config)
 	a.persist()
 	if a.catalog.selected == id {
 		a.refreshCatalog()
@@ -298,7 +267,9 @@ func (a *application) appendCatalogFolders(id string, paths []string) {
 	if i < 0 || !a.stored.Libraries[i].Collection() {
 		return
 	}
-	a.stored.Libraries[i].Folders = library.MergeFolders(a.stored.Libraries[i].Folders, paths)
+	config := a.stored.Libraries[i].Local()
+	config.Folders = library.MergeFolders(config.Folders, paths)
+	a.stored.Libraries[i].SetLocal(config)
 	a.persist()
 	if a.catalog.selected == id {
 		a.refreshCatalog()
@@ -337,12 +308,14 @@ func (a *application) relocateCatalogFolder(id string) {
 		}
 		path := filepath.Clean(paths[0])
 		for j, saved := range a.stored.Libraries {
-			if j != i && saved.Folder == path {
+			if j != i && saved.Local().Folder == path {
 				a.catalog.error = a.t("library.duplicateFolder")
 				return
 			}
 		}
-		a.stored.Libraries[i].Folder = path
+		config := a.stored.Libraries[i].Local()
+		config.Folder = path
+		a.stored.Libraries[i].SetLocal(config)
 		a.persist()
 		if a.catalog.selected == id {
 			a.selectCatalog(id)
@@ -355,7 +328,7 @@ func (a *application) relocateCatalogPath(id, oldPath string) {
 	if i < 0 || !a.stored.Libraries[i].Collection() {
 		return
 	}
-	directory := slices.Contains(a.stored.Libraries[i].Folders, oldPath)
+	directory := slices.Contains(a.stored.Libraries[i].Local().Folders, oldPath)
 	a.chooseCatalogPaths(directory, "library.relocate", func(paths []string) {
 		i := a.catalogIndex(id)
 		if i < 0 || !a.stored.Libraries[i].Collection() {
@@ -366,10 +339,11 @@ func (a *application) relocateCatalogPath(id, oldPath string) {
 			return
 		}
 		saved := &a.stored.Libraries[i]
-		members := &saved.Paths
+		config := saved.Local()
+		members := &config.Paths
 		merge := library.MergePaths
 		if directory {
-			members, merge = &saved.Folders, library.MergeFolders
+			members, merge = &config.Folders, library.MergeFolders
 		}
 		for j, path := range *members {
 			if path == oldPath {
@@ -377,6 +351,7 @@ func (a *application) relocateCatalogPath(id, oldPath string) {
 			}
 		}
 		*members = merge(nil, *members)
+		saved.SetLocal(config)
 		a.persist()
 		if a.catalog.selected == id {
 			a.refreshCatalog()
@@ -385,8 +360,8 @@ func (a *application) relocateCatalogPath(id, oldPath string) {
 }
 
 func (a *application) playCatalog(path string, appendOnly bool) {
-	if saved := a.selectedCatalog(); path == "" && saved != nil && saved.DeviceID != "" {
-		a.addDLNAPlaylist(*saved, appendOnly)
+	if saved := a.selectedCatalog(); path == "" && saved != nil && !sourceSnapshot(*saved) {
+		a.addRemotePlaylist(*saved, appendOnly)
 		a.showWindow()
 		return
 	}
@@ -400,7 +375,7 @@ func (a *application) playCatalog(path string, appendOnly bool) {
 	a.cancelImports()
 	a.playlistExpanded = true
 	if path == "" {
-		path = entries[0].Path
+		path = entries[0].Key()
 	}
 	a.applyImportedEntries(entries, nil, appendOnly, path)
 	a.showWindow()

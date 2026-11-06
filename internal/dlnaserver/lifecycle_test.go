@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foursmith/player/internal/library"
+	"github.com/foursmith/player/library"
 )
 
 func TestCloseDisconnectsActivePlaybackAndClosesListeners(t *testing.T) {
@@ -26,7 +26,7 @@ func TestCloseDisconnectsActivePlaybackAndClosesListeners(t *testing.T) {
 	}
 	file.Close()
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{ctx: ctx, cancel: cancel, name: "Test", sources: []library.Saved{{ID: "files", Name: "Files", Paths: []string{path}, ShareDLNA: true}}}
+	s := &Server{ctx: ctx, cancel: cancel, name: "Test", sources: []library.Source{{ID: "files", Name: "Files", ShareDLNA: true, Plugin: library.LocalID, Config: library.EncodeConfig(library.LocalConfig{Paths: []string{path}})}}}
 	s.objects, err = readCatalog(ctx, s.name, s.sources)
 	if err != nil {
 		t.Fatal(err)

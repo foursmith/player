@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/library"
 )
 
 func TestPlaybackHistoryRetainsOnlyCurrentOpaqueIdentities(t *testing.T) {

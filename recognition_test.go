@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
+	"github.com/foursmith/player/library"
 )
 
 func TestRecognitionTestBypassesManualAndAutomaticHistoryEveryOpen(t *testing.T) {
