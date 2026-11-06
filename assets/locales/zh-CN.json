@@ -25,6 +25,8 @@
   "controls.adjustVolumeSpeed": "调节音量和倍速",
   "controls.enterPip": "进入画中画",
   "controls.enterFullscreen": "进入全屏",
+  "controls.pinWindow": "窗口置顶",
+  "controls.unpinWindow": "取消窗口置顶",
   "controls.playingInPip": "正在画中画中播放",
   "timeline.playbackPosition": "播放进度",
   "timeline.clearLoop": "清除 AB 循环",

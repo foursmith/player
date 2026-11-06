@@ -25,6 +25,8 @@
   "controls.adjustVolumeSpeed": "音量と再生速度を調整",
   "controls.enterPip": "ピクチャーインピクチャーを開始",
   "controls.enterFullscreen": "全画面表示にする",
+  "controls.pinWindow": "ウィンドウを最前面に固定",
+  "controls.unpinWindow": "最前面の固定を解除",
   "controls.playingInPip": "ピクチャーインピクチャーで再生中",
   "timeline.playbackPosition": "再生位置",
   "timeline.clearLoop": "ABリピートを解除",

@@ -25,6 +25,8 @@
   "controls.adjustVolumeSpeed": "Adjust volume and speed",
   "controls.enterPip": "Enter Picture-in-Picture",
   "controls.enterFullscreen": "Enter fullscreen",
+  "controls.pinWindow": "Keep window on top",
+  "controls.unpinWindow": "Stop keeping window on top",
   "controls.playingInPip": "Playing in Picture-in-Picture",
   "timeline.playbackPosition": "Playback position",
   "timeline.clearLoop": "Clear AB loop",

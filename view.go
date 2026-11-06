@@ -141,6 +141,14 @@ func (a *application) topControls(c *ui.Context) {
 		if a.mode.IsVR() && (a.manuallyPaused || c.Now().Before(a.manualUntil)) {
 			a.iconButton(c, "scan-face", a.t("debug.resumeCentering"), topControlSize, false, func() { a.manuallyPaused = false; a.manualUntil = time.Time{}; a.tracker.Reset() })
 		}
+		onTop := a.window != nil && a.window.IsAlwaysOnTop()
+		pinLabel := "controls.pinWindow"
+		if onTop {
+			pinLabel = "controls.unpinWindow"
+		}
+		a.iconButton(c, "pin", a.t(pinLabel), topControlSize, onTop, func() {
+			a.window.SetAlwaysOnTop(!a.window.IsAlwaysOnTop())
+		})
 		a.iconButton(c, "settings", a.t("common.settings"), topControlSize, false, a.openSettings)
 	})
 }
