@@ -193,11 +193,14 @@ func Tree(entries []Entry) []Node {
 		}
 		children[group] = append(children[group], Node{ID: e.Key(), Name: e.Name, Index: i})
 	}
-	return buildTree(children)
+	return BuildTree(children)
 }
 
-func buildTree(children map[string][]Node) []Node {
+// BuildTree assembles parent-keyed nodes with the same natural ordering for
+// local and remote media. Repeated IDs and directory cycles appear only once.
+func BuildTree(children map[string][]Node) []Node {
 	comparator := collate.New(language.Und, collate.Numeric, collate.IgnoreCase, collate.IgnoreDiacritics)
+	seen := map[string]bool{}
 	var build func(string) []Node
 	build = func(parent string) []Node {
 		nodes := children[parent]
@@ -210,12 +213,18 @@ func buildTree(children map[string][]Node) []Node {
 			}
 			return nodes[i].ID < nodes[j].ID
 		})
-		for i := range nodes {
-			if nodes[i].Folder {
-				nodes[i].Children = build(nodes[i].ID)
+		out := nodes[:0]
+		for _, node := range nodes {
+			if seen[node.ID] {
+				continue
 			}
+			seen[node.ID] = true
+			if node.Folder {
+				node.Children = build(node.ID)
+			}
+			out = append(out, node)
 		}
-		return nodes
+		return out
 	}
 	return build("")
 }

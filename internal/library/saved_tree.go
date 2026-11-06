@@ -58,7 +58,7 @@ func SavedTree(saved Saved, items []SavedItem) []Node {
 	for _, folder := range folders {
 		children[folder.parent] = append(children[folder.parent], folder.node)
 	}
-	return buildTree(children)
+	return BuildTree(children)
 }
 
 func savedTreeRoot(saved Saved, items []SavedItem) string {

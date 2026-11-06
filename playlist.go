@@ -1,6 +1,8 @@
 package main
 
 import (
+	"cmp"
+	"slices"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -19,7 +21,21 @@ func (a *application) invalidatePlaylist() {
 
 func (a *application) playlistModel() []library.Node {
 	if !a.playlistTreeValid {
-		a.playlistTree = library.Tree(a.entries)
+		// Preserve root insertion order while keeping natural order within folders.
+		positions := make(map[string]int, len(a.playlistTree))
+		for i, node := range a.playlistTree {
+			positions[node.ID] = i
+		}
+		nodes := a.buildPlaylistTree()
+		for _, node := range nodes {
+			if _, exists := positions[node.ID]; !exists {
+				positions[node.ID] = len(positions)
+			}
+		}
+		slices.SortStableFunc(nodes, func(left, right library.Node) int {
+			return cmp.Compare(positions[left.ID], positions[right.ID])
+		})
+		a.playlistTree = nodes
 		a.playlistTreeValid = true
 	}
 	return a.playlistTree
@@ -68,6 +84,9 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 				}
 				ui.Icon(c, icons[name]).Size(14, 14).TextColor(color)
 				ui.Text(c, node.Name).FontSize(11).TextColor(color).SingleLine().Grow(1).MinWidth(0)
+				if _, folder := a.playlistDLNAFolder(node.ID); folder != nil && folder.cancel != nil {
+					ui.Text(c, a.t("library.loading")).FontSize(10).TextColor(textColor(c, .4))
+				}
 				if node.Folder {
 					ui.Icon(c, icons["caret-down"]).Size(10, 10).TextColor(textColor(c, .4))
 				} else if a.entries[node.Index].Subtitle != "" {
@@ -79,8 +98,7 @@ func (a *application) playlistRow(c *ui.Context, item playlistRow) {
 			if !node.Folder {
 				a.openEntry(node.Index)
 			} else {
-				a.expandedFolders[node.ID] = !a.expandedFolders[node.ID]
-				a.playlistRowsValid = false
+				a.togglePlaylistFolder(node.ID)
 			}
 		})
 	})
@@ -94,7 +112,9 @@ func (a *application) cancelImports() {
 func (a *application) clearPlaylist() {
 	a.cancelImports()
 	a.resetPlayback()
+	a.clearPlaylistDLNA()
 	a.entries = nil
+	a.playlistTree = nil
 	a.subtitlePaths = nil
 	a.invalidatePlaylist()
 	a.playlistList = ui.ListState{}
@@ -138,6 +158,8 @@ func importedPlaylist(current, incoming []library.Entry, selected int, appendOnl
 func (a *application) applyImportedEntries(entries []library.Entry, subtitles []string, appendOnly bool, startPath string) {
 	queue, selected, play := importedPlaylist(a.entries, entries, a.selected, appendOnly)
 	if !appendOnly {
+		a.clearPlaylistDLNA()
+		a.playlistTree = nil
 		for i, entry := range queue {
 			if startPath != "" && entry.Path == startPath {
 				selected, play = i, true
@@ -155,6 +177,9 @@ func (a *application) applyImportedEntries(entries []library.Entry, subtitles []
 	expand = func(nodes []library.Node) {
 		for _, node := range nodes {
 			if node.Folder {
+				if _, folder := a.playlistDLNAFolder(node.ID); folder != nil && !folder.loaded {
+					continue
+				}
 				a.expandedFolders[node.ID] = true
 				expand(node.Children)
 			}

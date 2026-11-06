@@ -39,6 +39,7 @@ type application struct {
 	expandedFolders                           map[string]bool
 	playlistTree                              []library.Node
 	playlistRows                              []playlistRow
+	playlistDLNA                              map[string]*playlistDLNASource
 	playlistTreeValid                         bool
 	playlistRowsValid                         bool
 	playlistList                              ui.ListState

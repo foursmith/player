@@ -385,6 +385,11 @@ func (a *application) relocateCatalogPath(id, oldPath string) {
 }
 
 func (a *application) playCatalog(path string, appendOnly bool) {
+	if saved := a.selectedCatalog(); path == "" && saved != nil && saved.DeviceID != "" {
+		a.addDLNAPlaylist(*saved, appendOnly)
+		a.showWindow()
+		return
+	}
 	if a.catalog.loading && len(a.catalog.items) == 0 {
 		return
 	}

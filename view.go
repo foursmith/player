@@ -89,7 +89,7 @@ func (a *application) render(c *ui.Context) {
 		}
 		if visible {
 			a.topControls(c)
-			if len(a.entries) > 0 {
+			if len(a.playlistModel()) > 0 {
 				a.playlist(c, state)
 			}
 			if state.URL != "" {
@@ -131,7 +131,7 @@ func topContentInset(c *ui.Context) float32 {
 func (a *application) topControls(c *ui.Context) {
 	inset := topContentMargin + topControlPadding
 	ui.Themed(c.Key("top-actions"), darkPlayerTheme).Row().Absolute().Top(topContentInset(c) + topControlPadding).Left(inset).Right(inset).Height(topControlSize).Gap(topControlPadding).AlignItems(ui.Center).PassThrough().Children(func() {
-		if !a.playlistExpanded && len(a.entries) > 0 {
+		if !a.playlistExpanded && len(a.playlistModel()) > 0 {
 			a.iconButton(c, "playlist", a.t("playlist.open"), topControlSize, false, func() { a.playlistExpanded = true })
 		}
 		ui.Spacer(c).Grow(1)

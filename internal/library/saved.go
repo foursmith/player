@@ -38,6 +38,16 @@ func (s SavedItem) Name() string {
 	return filepath.Base(s.Path)
 }
 
+func PlayableEntries(items []SavedItem) []Entry {
+	var entries []Entry
+	for _, item := range items {
+		if !item.Folder && item.Error == nil {
+			entries = append(entries, item.Entry)
+		}
+	}
+	return entries
+}
+
 func CloneSaved(saved []Saved) []Saved {
 	out := slices.Clone(saved)
 	for i := range out {

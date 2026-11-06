@@ -148,6 +148,7 @@ func (a *application) catalogSource(c *ui.Context, saved library.Saved) {
 
 func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
 	available, total, folders := len(a.catalog.playable), a.catalog.total, 0
+	canPlay := available > 0 || saved.DeviceID != ""
 	for _, item := range a.catalog.items {
 		if item.Folder {
 			folders++
@@ -166,8 +167,8 @@ func (a *application) catalogDetail(c *ui.Context, saved library.Saved) {
 			quietIcon(c, "check", a.t("library.rename")).Size(24, 24).Disabled(trimmed == "" || trimmed == saved.Name).OnClick(a.renameCatalog)
 			quietIcon(c, "trash", a.t("library.remove")).Size(24, 24).OnClick(a.removeCatalog)
 			a.catalogSharingButton(c, saved)
-			glassAction(c, "play", a.t("library.playAll")).Background(c.Theme().Accent.Alpha(.12)).TextColor(c.Theme().Accent).Disabled(available == 0).OnClick(func() { a.playCatalog("", false) })
-			quietIcon(c, "playlist-add", a.t("library.append")).Disabled(available == 0).OnClick(func() { a.playCatalog("", true) })
+			glassAction(c, "play", a.t("library.playAll")).Background(c.Theme().Accent.Alpha(.12)).TextColor(c.Theme().Accent).Disabled(!canPlay).OnClick(func() { a.playCatalog("", false) })
+			quietIcon(c, "playlist-add", a.t("library.append")).Disabled(!canPlay).OnClick(func() { a.playCatalog("", true) })
 		})
 		a.catalogLocation(c, saved)
 		a.catalogToolbar(c, available, total, folders)

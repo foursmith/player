@@ -81,3 +81,41 @@ func TestOpenReplacesQueueWhileAppendKeepsSelection(t *testing.T) {
 		t.Fatalf("empty queue didn't start its first video: %+v, %d, %v", queue, selected, play)
 	}
 }
+
+func TestAppendingLibrariesKeepsExistingRootsInPlace(t *testing.T) {
+	a := modeTestApplication(t)
+	a.expandedFolders = map[string]bool{}
+	a.catalog.directoryPath = []catalogFolder{{id: "0"}}
+	roots := func() []string {
+		var names []string
+		for _, node := range a.playlistModel() {
+			names = append(names, node.Name)
+		}
+		return names
+	}
+	for _, saved := range []library.Saved{
+		{ID: "last", Name: "Z NAS", DeviceID: "last"},
+		{ID: "first", Name: "A NAS", DeviceID: "first"},
+	} {
+		a.addDLNAPlaylist(saved, true)
+	}
+	if got := roots(); !reflect.DeepEqual(got, []string{"ordinary.mp4", "Z NAS", "A NAS"}) {
+		t.Fatal("a new library moved ahead of existing playlist roots", got)
+	}
+	a.applyImportedEntries([]library.Entry{
+		{Name: "A local.mp4", Path: "new.mp4"},
+		{Name: "Episode 10.mp4", Path: "episode10", Group: "Series", Root: "."},
+		{Name: "Episode 2.mp4", Path: "episode2", Group: "Series", Root: "."},
+	}, nil, true, "")
+	if got := roots(); !reflect.DeepEqual(got, []string{"ordinary.mp4", "Z NAS", "A NAS", "Series", "A local.mp4"}) {
+		t.Fatal("local additions reordered existing roots", got)
+	}
+	series := a.playlistModel()[3]
+	if series.Children[0].Name != "Episode 2.mp4" || series.Children[1].Name != "Episode 10.mp4" || a.selected != 0 || a.entries[0].Path != "current.mp4" {
+		t.Fatal("appending changed folder ordering or interrupted the current selection", series, a.selected)
+	}
+	a.addDLNAPlaylist(library.Saved{ID: "last", Name: "Z NAS", DeviceID: "last"}, true)
+	if got := roots(); !reflect.DeepEqual(got, []string{"ordinary.mp4", "Z NAS", "A NAS", "Series", "A local.mp4"}) {
+		t.Fatal("adding the same library moved or duplicated it", got)
+	}
+}
