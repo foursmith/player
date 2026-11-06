@@ -17,7 +17,7 @@ var assets embed.FS
 var appManifest []byte
 
 var appInfo struct {
-	Name, Version string
+	Name, Version, License string
 }
 
 var icons = map[string]*ui.SVG{}

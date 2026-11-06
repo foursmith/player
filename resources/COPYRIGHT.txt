@@ -1,0 +1,28 @@
+Foursmith Player
+Copyright (C) 2026 ourongxing
+SPDX-License-Identifier: GPL-3.0-or-later
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program in LICENSE. If not, see
+https://www.gnu.org/licenses/.
+
+Project source: https://github.com/foursmith/player
+Binary releases must provide the corresponding source, dependency sources,
+and build instructions alongside the download. See doc/DISTRIBUTION.md
+in the source tree. A link to the development branch alone does not identify
+the corresponding source of a released binary.
+
+This software uses libraries from the FFmpeg project under GNU GPL
+version 3 or later: https://ffmpeg.org/.
+Third-party software and assets retain their original copyright notices
+and licenses; see THIRD_PARTY_NOTICES.md and licenses/.

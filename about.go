@@ -21,6 +21,20 @@ func (a *application) about(c *ui.Context) {
 			a.refreshWindows()
 		})
 	})
+	ui.Divider(c).Background(ink(c, .045))
+	ui.Column(c).FillWidth().Padding(12).Gap(8).Children(func() {
+		smallText(c, "Copyright © 2026 ourongxing", .68)
+		smallText(c, a.t("settings.licenseNotice"), .5).FillWidth().Wrap()
+		smallText(c, a.t("settings.ffmpegNotice"), .5).FillWidth().Wrap()
+		ui.Row(c).FillWidth().Gap(8).Children(func() {
+			glassButton(c, appInfo.License).Height(24).Padding(0, 8).OnClick(func() {
+				c.OpenURL("https://www.gnu.org/licenses/gpl-3.0.html")
+			})
+			glassButton(c, a.t("settings.sourceCode")).Height(24).Padding(0, 8).OnClick(func() {
+				c.OpenURL("https://github.com/foursmith/player")
+			})
+		})
+	})
 }
 func (a *application) aboutAction(c *ui.Context, icon, label string, pressed bool, action func()) {
 	button := glassAction(c, icon, label).Height(24)

@@ -3,6 +3,8 @@
   "slug": "foursmith-player",
   "identifier": "com.foursmith.player",
   "version": "0.2.6",
+  "license": "GPL-3.0-or-later",
+  "resources": ["LICENSE"],
   "out": "build",
   "icon": "assets/icon.png",
   "macos": {
