@@ -97,6 +97,7 @@ type application struct {
 	singleClickAt                             time.Time
 	width, height                             float32
 	loopA, loopB                              *float64
+	loopSeekGeneration                        uint64
 	notice                                    string
 	lastAudible                               float64
 	lastGeneration                            uint64

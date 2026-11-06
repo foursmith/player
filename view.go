@@ -5,7 +5,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
@@ -33,15 +32,12 @@ func (a *application) render(c *ui.Context) {
 		a.tracker.Reset()
 		a.endedGeneration = 0
 	}
-	if state.Ended && a.endedGeneration != state.Generation {
+	if state.Ended && !a.loopPlayback(state) && a.endedGeneration != state.Generation {
 		if a.selected >= 0 && a.selected < len(a.entries) {
 			a.recordPlaybackHistory(a.entries[a.selected], state)
 		}
 		a.endedGeneration = state.Generation
 		a.next(true)
-	}
-	if a.loopA != nil && a.loopB != nil && state.Position >= *a.loopB {
-		a.player.Seek(*a.loopA)
 	}
 	if !a.singleClickAt.IsZero() {
 		if !c.Now().Before(a.singleClickAt) {
@@ -55,11 +51,20 @@ func (a *application) render(c *ui.Context) {
 	if a.selected >= 0 && time.Since(a.lastSaved) > 5*time.Second {
 		a.persist()
 	}
+	if a.selected >= 0 && state.Playing {
+		c.After(max(time.Millisecond, 5*time.Second-time.Since(a.lastSaved)))
+	}
 	held := a.controlsHeld
-	a.updateTracking(c, state)
 	a.controlsHeld = false
 	visible := state.URL == "" || state.Loading || a.adjustmentsOpen || a.projectionOpen || held || c.Now().Before(a.controlsUntil)
 	a.controlsVisible = visible
+	if state.Playing && !state.Loading && (visible || a.debugOpen) {
+		interval := 250 * time.Millisecond
+		if a.debugOpen {
+			interval = 100 * time.Millisecond
+		}
+		c.After(interval)
+	}
 	if visible && !a.controlsUntil.IsZero() {
 		remaining := a.controlsUntil.Sub(c.Now())
 		if remaining > 0 {
@@ -70,7 +75,9 @@ func (a *application) render(c *ui.Context) {
 		if a.pipWindow == nil {
 			a.renderStage(c, false)
 		} else {
-			a.pipWindow.Invalidate()
+			if a.pipNeedsView(state) {
+				a.pipWindow.Invalidate()
+			}
 			ui.Box(c).Fill().Background(ui.RGB(0, 0, 0)).Center().Children(func() { ui.Text(c, a.t("controls.playingInPip")).TextColor(white(.5)) })
 		}
 		if state.URL == "" {
@@ -153,15 +160,27 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 		index = 1
 	}
 	presentation := &a.presentation[index]
-	params := a.params(pip)
-	interaction := params != presentation.params || width != presentation.width || height != presentation.height || state.Generation != presentation.generation
+	text := a.subtitleAt(state.Position)
+	presentation.subtitle = text
+	services := c.Services()
 	stage.Draw(func(p *ui.Painter, r ui.Rect) {
-		frame := a.player.Frame()
-		if frame == nil {
+		state := a.player.Snapshot()
+		if state.Playing && !state.Loading {
+			// Repaint this drawing at the display's pace. Static controls keep
+			// their scene, and the video surface only presents changed frames
+			// or camera parameters. No view construction or layout is needed.
+			p.AnimationFrame()
+			a.updateTracking(state, float64(p.Now().Sub(trackingStarted))/float64(time.Millisecond))
+			a.loopPlayback(state)
+		}
+		if a.subtitleAt(state.Position) != text {
+			services.Invalidate()
+		}
+		if state.FrameID == 0 {
+			presentation.params = a.params(pip)
 			p.Fill(r, ui.RGB(0, 0, 0), 0)
 			return
 		}
-		defer frame.Close()
 		surface := a.surface
 		if pip {
 			surface = a.pipSurface
@@ -169,17 +188,24 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 		if surface == nil {
 			return
 		}
-		window := a.window
-		if pip {
-			window = a.pipWindow
-		}
-		scale := mygo.Screen.DisplayMatching(window.Bounds()).ScaleFactor
-		if interaction || frame.ID() != presentation.frame || scale != presentation.scale || presentation.err != "" {
+		params, scale := a.params(pip), float64(p.Scale())
+		interaction := params != presentation.params || r.W != presentation.width || r.H != presentation.height || state.Generation != presentation.generation
+		// Frame() may already have loaded a picture newer than this snapshot.
+		if interaction || state.FrameID > presentation.frame || scale != presentation.scale || presentation.err != "" {
+			frame := a.player.Frame()
+			if frame == nil {
+				return
+			}
+			defer frame.Close()
 			if err := surface.Present(frame, params, float64(r.W), float64(r.H), scale); err != nil {
 				message := err.Error()
 				if presentation.err != message {
 					presentation.err = message
-					a.window.Update(func() { a.notice = message })
+					a.notice = message
+					services.Invalidate()
+					if pip && a.window != nil {
+						a.window.Invalidate()
+					}
 				}
 			} else {
 				presentation.err = ""
@@ -188,21 +214,48 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 			}
 		}
 		presentation.params = params
-		presentation.width = width
-		presentation.height = height
+		presentation.width = r.W
+		presentation.height = r.H
 		presentation.generation = state.Generation
 		video.Paint(surface, p, r)
 	})
 	stage.Children(func() {
-		if a.preferences.SubtitlesEnabled {
-			if text := subtitle.Active(a.cues, state.Position); text != "" {
-				ui.Box(c.Key("subtitles")).Absolute().Left(width * .06).Right(width * .06).Bottom(height * .14).Center().IgnoreInput(true).Children(func() {
-					ui.Text(c, text).FontSize(min(28, max(16, width*.022))).FontWeight(600).TextAlign(ui.Center).TextColor(ui.RGB(255, 255, 255)).Wrap().MaxWidth(min(width*.86, 1152)).Padding(6, 14)
-				})
-			}
+		if text != "" {
+			ui.Box(c.Key("subtitles")).Absolute().Left(width * .06).Right(width * .06).Bottom(height * .14).Center().IgnoreInput(true).Children(func() {
+				ui.Text(c, text).FontSize(min(28, max(16, width*.022))).FontWeight(600).TextAlign(ui.Center).TextColor(ui.RGB(255, 255, 255)).Wrap().MaxWidth(min(width*.86, 1152)).Padding(6, 14)
+			})
 		}
 	})
 }
+
+func (a *application) subtitleAt(position float64) string {
+	if !a.preferences.SubtitlesEnabled {
+		return ""
+	}
+	return subtitle.Active(a.cues, position)
+}
+
+// Playing PiP samples these inputs while painting. A paused PiP needs a view
+// update only when its own picture or subtitles change in the main window.
+func (a *application) pipNeedsView(state media.State) bool {
+	shown := a.presentation[1]
+	return !state.Playing && (a.params(true) != shown.params || a.subtitleAt(state.Position) != shown.subtitle)
+}
+
+// Loops follow the video clock even while controls are hidden. Keep an end-of-
+// file B marker ahead of automatic playlist advance, and coalesce redraws while
+// the worker is still processing this generation's seek.
+func (a *application) loopPlayback(state media.State) bool {
+	if state.Loading || !state.Playing && !state.Ended || a.loopA == nil || a.loopB == nil || state.Position < *a.loopB {
+		return false
+	}
+	if a.loopSeekGeneration != state.Generation {
+		a.loopSeekGeneration = state.Generation
+		a.player.Seek(*a.loopA)
+	}
+	return true
+}
+
 func (a *application) stageInput(event ui.InputEvent, aspect float64, pip bool) bool {
 	point := ui.Point{X: event.X, Y: event.Y}
 	switch event.Kind {
@@ -498,9 +551,12 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 		}
 		track.Draw(func(p *ui.Painter, r ui.Rect) {
 			y := r.Y + r.H/2
-			position := state.Position
+			current := a.player.Snapshot()
+			position := current.Position
 			if a.scrubbing {
 				position = a.scrubTime
+			} else if current.Playing && !current.Loading {
+				p.AnimationFrame()
 			}
 			paintGlassTrack(p, r, float32(position/state.Metadata.Duration))
 			for _, marker := range []struct {
@@ -648,6 +704,7 @@ type presentationState struct {
 	frame         uint64
 	scale         float64
 	err           string
+	subtitle      string
 }
 
 func (a *application) resetView() {

@@ -33,6 +33,7 @@ type State struct {
 	Position, Volume, Rate  float64
 	Playing, Loading, Ended bool
 	Generation              uint64
+	FrameID                 uint64
 	Error                   string
 }
 type command struct {
@@ -42,6 +43,8 @@ type command struct {
 	ctx    context.Context
 }
 
+// NewPlayer notifies changed of playback state transitions. Views sample Frame
+// and Snapshot during painting; ordinary video frames do not rebuild their UI.
 func NewPlayer(changed func()) *Player {
 	p := &Player{commands: make(chan command, 64), done: make(chan struct{}), changed: changed}
 	p.state.Store(&State{Volume: 1, Rate: 1})
@@ -128,9 +131,12 @@ func (p *Player) run() {
 	anchor, anchorAt := 0.0, time.Now()
 	var timeline audioTimeline
 	publish := func() {
+		previous := p.Snapshot()
 		copy := state
 		p.state.Store(&copy)
-		if p.changed != nil {
+		// New pictures and timestamps change the paint input, not the UI.
+		previous.Position, previous.FrameID = copy.Position, copy.FrameID
+		if p.changed != nil && previous != copy {
 			p.changed()
 		}
 	}
@@ -143,6 +149,7 @@ func (p *Player) run() {
 	clear := func() {
 		clearFrames()
 		p.frame.store(nil)
+		state.FrameID = 0
 		if decoder != nil {
 			decoder.Close()
 			decoder = nil
@@ -401,6 +408,7 @@ func (p *Player) run() {
 			state.Position = frame.PTS()
 			state.Loading = false
 			p.frame.store(frame)
+			state.FrameID = frame.ID()
 			publish()
 		}
 	}

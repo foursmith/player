@@ -112,6 +112,9 @@ var trackingStarted = time.Now()
 func trackingNow() float64 { return float64(time.Since(trackingStarted).Microseconds()) / 1000 }
 func (a *application) trackingAspect() float64 {
 	if a.pipWindow != nil {
+		if shown := a.presentation[1]; shown.height > 0 {
+			return float64(shown.width / shown.height)
+		}
 		b := a.pipWindow.ContentBounds()
 		return float64(b.Width) / float64(max(1, b.Height))
 	}
@@ -123,27 +126,20 @@ func (a *application) canTrack(state media.State) bool {
 	return a.mode.IsVR() && a.inference != nil && state.Playing && !state.Loading && a.preferences.FaceAutoCenter && !a.manuallyPaused && !a.dragging && !a.scrubbing && !time.Now().Before(a.manualUntil)
 }
 
-func (a *application) updateTracking(c *ui.Context, state media.State) {
-	now := trackingNow()
+func (a *application) updateTracking(state media.State, now float64) {
 	delta := (now - a.lastTrackingAt) / 1000
+	previous := a.lastTrackingAt
 	a.lastTrackingAt = now
 	if !a.canTrack(state) {
 		return
 	}
 	aspect := a.trackingAspect()
-	movement := a.tracker.Advance(&a.view, a.mode, aspect, now, delta)
-	if a.tracker.State.Moving || movement.Stopped {
-		c.After(time.Second / 60)
+	if previous > 0 && delta > 0 {
+		a.tracker.Advance(&a.view, a.mode, aspect, now, delta)
 	}
 	fps := max(1, state.Metadata.FrameRate)
 	request, ready := a.tracker.Begin(now, fps, a.mode, a.view, aspect)
 	if !ready {
-		if !a.tracker.Busy && !a.tracker.State.Moving {
-			remaining := a.tracker.NextAt - now
-			if remaining > 0 {
-				c.After(time.Duration(remaining * float64(time.Millisecond)))
-			}
-		}
 		return
 	}
 	frame := a.player.Frame()

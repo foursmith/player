@@ -135,3 +135,30 @@ func TestFirstPictureDoesNotWaitForFutureAudio(t *testing.T) {
 	unblock()
 	waitState(t, p, func(s State) bool { return s.Position > 1.2 })
 }
+
+func TestVideoFramesDoNotNotifyUIStateChanges(t *testing.T) {
+	t.Setenv("SDL_AUDIO_DRIVER", "dummy")
+	var changes atomic.Int64
+	p := NewPlayer(func() { changes.Add(1) })
+	defer p.Close()
+	p.Open(Source{URL: fixture(t, true)})
+	first := waitState(t, p, func(s State) bool { return !s.Loading && s.Position > .12 })
+	before := changes.Load()
+	later := waitState(t, p, func(s State) bool { return s.Position > .45 })
+	if later.FrameID == first.FrameID || later.FrameID == 0 {
+		t.Fatal("video did not advance independently of UI state")
+	}
+	if got := changes.Load(); got != before {
+		t.Fatalf("ordinary video frames rebuilt UI state: %d notifications", got-before)
+	}
+	p.Pause()
+	paused := waitState(t, p, func(s State) bool { return !s.Playing && changes.Load() > before })
+	frame := p.Frame()
+	if frame == nil {
+		t.Fatal("paused player lost its display frame")
+	}
+	defer frame.Close()
+	if frame.ID() != paused.FrameID {
+		t.Fatalf("snapshot refers to a different display frame: snapshot=%d frame=%d", paused.FrameID, frame.ID())
+	}
+}
