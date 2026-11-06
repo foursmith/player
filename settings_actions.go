@@ -47,7 +47,7 @@ func (a *application) resetPreferences() {
 		a.persist()
 	}
 	if previous.RecentFilesEnabled != a.preferences.RecentFilesEnabled {
-		a.syncRecentFilesVisibility()
+		a.refreshMenu()
 	}
 }
 

@@ -194,7 +194,7 @@ func (a *application) resetShortcut(def playbackShortcut) {
 func (a *application) setShortcutRecording(id string) {
 	changed := a.shortcutRecording != id
 	a.shortcutRecording, a.shortcutError = id, ""
-	if changed && a.window != nil {
+	if changed {
 		a.refreshMenu()
 	}
 }

@@ -136,7 +136,7 @@
   "settings.resumePosition": "Restore the last playback position",
   "settings.recordHistory": "Record playback history",
   "settings.recentFiles": "Enable the Recent Files menu",
-  "settings.recentFilesDescription": "Includes app menus and system recent items (Dock).",
+  "settings.recentFilesDescription": "Shows recent playback in the menu bar and Dock menu.",
   "library.title": "Video Library",
   "library.folders": "Folders",
   "library.collections": "Collections",

@@ -329,7 +329,7 @@ func (a *application) historySettings(c *ui.Context) {
 		a.persist()
 	}
 	if recentChanged {
-		a.syncRecentFilesVisibility()
+		a.refreshMenu()
 	}
 }
 

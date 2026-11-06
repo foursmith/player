@@ -136,7 +136,7 @@
   "settings.resumePosition": "自动恢复上次播放进度",
   "settings.recordHistory": "记录播放历史",
   "settings.recentFiles": "启用“最近打开”菜单",
-  "settings.recentFilesDescription": "包括应用菜单和系统最近打开（Dock）。",
+  "settings.recentFilesDescription": "在菜单栏和 Dock 菜单中显示最近播放记录。",
   "library.title": "视频库",
   "library.folders": "文件夹",
   "library.collections": "自定义合集",

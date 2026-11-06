@@ -7,27 +7,24 @@ import (
 )
 
 func (a *application) refreshMenu() {
+	if a.window == nil {
+		return
+	}
 	a.menuLocale = a.preferences.Locale
+	menu, dock := a.newMenus()
+	if runtime.GOOS == "darwin" {
+		mygo.App.Dock.SetMenu(dock)
+	}
+	mygo.App.SetMenu(menu)
+}
+
+func (a *application) newMenus() (*mygo.Menu, *mygo.Menu) {
 	action := func(key, accelerator string, run func()) *mygo.MenuItem {
 		return &mygo.MenuItem{Label: a.t(key), Accelerator: accelerator, Click: func(*mygo.MenuItem, *mygo.Window) {
 			a.window.Update(run)
 		}}
 	}
 	settings := action("common.settings", "CmdOrCtrl+,", a.openSettings)
-	recent := []*mygo.MenuItem{}
-	for _, item := range a.stored.RecentMedia {
-		recent = append(recent, &mygo.MenuItem{Label: item.Name, Click: func(*mygo.MenuItem, *mygo.Window) {
-			a.window.Update(func() {
-				a.showWindow()
-				a.openSavedPlayback(item)
-			})
-		}})
-	}
-	if len(recent) > 0 {
-		recent = append(recent, mygo.Separator(), action("media.clearRecent", "", a.clearRecentFiles))
-	} else {
-		recent = append(recent, &mygo.MenuItem{Label: a.t("media.noRecent"), Disabled: true})
-	}
 	file := []*mygo.MenuItem{
 		action("media.showPlayer", "", a.showWindow),
 		mygo.Separator(),
@@ -35,7 +32,7 @@ func (a *application) refreshMenu() {
 		action("media.openFolder", "CmdOrCtrl+Shift+O", func() { a.choose(true, false) }),
 	}
 	if a.preferences.RecentFilesEnabled {
-		file = append(file, &mygo.MenuItem{Label: a.t("media.recentFiles"), Submenu: recent})
+		file = append(file, &mygo.MenuItem{Label: a.t("media.recentFiles"), Submenu: a.recentMenuItems()})
 	}
 	file = append(file,
 		mygo.Separator(),
@@ -50,13 +47,19 @@ func (a *application) refreshMenu() {
 		&mygo.MenuItem{Role: mygo.RoleClose},
 	)
 	var items []*mygo.MenuItem
+	var dockMenu *mygo.Menu
 	if runtime.GOOS == "darwin" {
-		mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+		dock := a.recentMenuItems()
+		if len(dock) > 0 {
+			dock = append(dock, mygo.Separator())
+		}
+		dock = append(dock,
 			action("media.showPlayer", "", a.showWindow),
 			mygo.Separator(),
 			action("media.openFiles", "", func() { a.choose(false, false) }),
 			action("media.openFolder", "", func() { a.choose(true, false) }),
-		}))
+		)
+		dockMenu = mygo.NewMenu(dock)
 		items = append(items, &mygo.MenuItem{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleAbout}, mygo.Separator(), settings, mygo.Separator(),
 			{Role: mygo.RoleServices}, mygo.Separator(), {Role: mygo.RoleHide}, {Role: mygo.RoleHideOthers}, {Role: mygo.RoleUnhide}, mygo.Separator(), {Role: mygo.RoleQuit},
@@ -91,5 +94,28 @@ func (a *application) refreshMenu() {
 		}
 		disable(menu.Items())
 	}
-	mygo.App.SetMenu(menu)
+	return menu, dockMenu
+}
+
+// Build separate native items from the same records for each menu. A MyGo
+// menu item has one parent, so the Dock and menu bar cannot share instances.
+func (a *application) recentMenuItems() []*mygo.MenuItem {
+	if !a.preferences.RecentFilesEnabled {
+		return nil
+	}
+	if len(a.stored.RecentMedia) == 0 {
+		return []*mygo.MenuItem{{Label: a.t("media.noRecent"), Disabled: true}}
+	}
+	var items []*mygo.MenuItem
+	for _, item := range a.stored.RecentMedia {
+		items = append(items, &mygo.MenuItem{Label: item.Name, Click: func(*mygo.MenuItem, *mygo.Window) {
+			a.window.Update(func() {
+				a.showWindow()
+				a.openSavedPlayback(item)
+			})
+		}})
+	}
+	return append(items, mygo.Separator(), &mygo.MenuItem{Label: a.t("media.clearRecent"), Click: func(*mygo.MenuItem, *mygo.Window) {
+		a.window.Update(a.clearRecentFiles)
+	}})
 }

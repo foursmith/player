@@ -136,7 +136,7 @@
   "settings.resumePosition": "前回の再生位置から再開",
   "settings.recordHistory": "再生履歴を記録",
   "settings.recentFiles": "「最近使ったファイル」を有効にする",
-  "settings.recentFilesDescription": "アプリのメニューとシステムの履歴（Dock）に適用。",
+  "settings.recentFilesDescription": "メニューバーとDockメニューに最近の再生履歴を表示します。",
   "library.title": "動画ライブラリ",
   "library.folders": "フォルダー",
   "library.collections": "コレクション",

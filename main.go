@@ -265,7 +265,6 @@ func main() {
 		a.window.OnFileDrop(func(event *mygo.FileDropEvent) { a.importPaths(event.Paths, false) })
 		a.window.OnClose(a.closePlayerWindow)
 		a.refreshMenu()
-		a.restoreSystemRecentFiles()
 		initialPaths := append(append([]string{}, options.paths...), a.pendingPaths...)
 		a.pendingPaths = nil
 		if len(initialPaths) > 0 {
@@ -344,9 +343,6 @@ func (a *application) playEntry(index int) {
 	a.window.SetTitle(entry.Name + " — " + appInfo.Name)
 	a.rememberStartupPlayback(entry)
 	if a.rememberRecentMedia(entry) {
-		if entry.DeviceID == "" {
-			addSystemRecentFile(entry.Path)
-		}
 		a.refreshMenu()
 	}
 	a.persist()

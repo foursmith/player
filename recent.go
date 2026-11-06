@@ -1,13 +1,6 @@
 package main
 
-import (
-	"log"
-	"os"
-	"runtime"
-
-	"github.com/egoist/mygo"
-	"github.com/foursmith/player/internal/library"
-)
+import "github.com/foursmith/player/internal/library"
 
 func normalizeRecentMedia(items []savedPlayback) []savedPlayback {
 	var out []savedPlayback
@@ -42,54 +35,6 @@ func (a *application) clearRecentFiles() {
 	a.cancelPlaybackRestore()
 	a.stored.RecentMedia = nil
 	a.stored.LastPlayback = nil
-	if mygo.App.IsReady() {
-		clearSystemRecentFiles()
-	}
-	if a.window != nil {
-		a.refreshMenu()
-	}
+	a.refreshMenu()
 	a.persist()
-}
-
-func (a *application) syncRecentFilesVisibility() {
-	if a.window != nil {
-		a.restoreSystemRecentFiles()
-		a.refreshMenu()
-	}
-}
-
-// Keep AppKit's Dock list in step with the application's recent files.
-func (a *application) restoreSystemRecentFiles() {
-	if runtime.GOOS != "darwin" {
-		return
-	}
-	clearSystemRecentFiles()
-	if !a.preferences.RecentFilesEnabled {
-		return
-	}
-	// AppKit puts each added file first, so replay oldest to newest.
-	for i := len(a.stored.RecentMedia) - 1; i >= 0; i-- {
-		item := a.stored.RecentMedia[i]
-		if item.DeviceID == "" {
-			if info, err := os.Stat(item.Path); err == nil && !info.IsDir() {
-				addSystemRecentFile(item.Path)
-			}
-		}
-	}
-}
-
-func addSystemRecentFile(path string) {
-	if runtime.GOOS == "darwin" {
-		if err := mygo.App.AddRecentDocument(path); err != nil {
-			log.Printf("Add system recent file: %v", err)
-		}
-	}
-}
-
-func clearSystemRecentFiles() {
-	if runtime.GOOS == "darwin" {
-		if err := mygo.App.ClearRecentDocuments(); err != nil {
-			log.Printf("Clear system recent files: %v", err)
-		}
-	}
 }
