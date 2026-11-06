@@ -25,6 +25,7 @@ func TestNewSeekInterruptsObsoletePreroll(t *testing.T) {
 	waitState(t, p, func(s State) bool { return !s.Loading && s.Position > .1 })
 	p.Pause()
 	before := waitState(t, p, func(s State) bool { return !s.Playing })
+	t.Logf("decoder: %s", before.Metadata.Decoder)
 
 	entered, released := make(chan struct{}), make(chan struct{})
 	var release sync.Once
@@ -32,11 +33,13 @@ func TestNewSeekInterruptsObsoletePreroll(t *testing.T) {
 	defer unblock()
 	var intercept atomic.Bool
 	intercept.Store(true)
-	receive := av.codec.Receive
-	t.Cleanup(func() { av.codec.Receive = receive })
-	av.codec.Receive = func(ctx *avCodecContext, out *avFrame) int32 {
-		ret := receive(ctx, out)
-		if ret >= 0 && ctx.Width > 0 && intercept.CompareAndSwap(true, false) {
+	read := av.format.Read
+	t.Cleanup(func() { av.format.Read = read })
+	av.format.Read = func(format *avFormat, packet *avPacket) int32 {
+		ret := read(format, packet)
+		// Both native VideoToolbox and FFmpeg read video packets here. Hold
+		// the obsolete seek inside its preroll, before it can reach .8s.
+		if ret >= 0 && packet.StreamIndex == 0 && intercept.CompareAndSwap(true, false) {
 			close(entered)
 			<-released
 		}
@@ -50,11 +53,33 @@ func TestNewSeekInterruptsObsoletePreroll(t *testing.T) {
 	}
 	p.Seek(.2)
 	unblock()
-	waitState(t, p, func(s State) bool { return s.Generation >= before.Generation+2 && !s.Loading })
-	for len(states) > 0 {
-		s := <-states
-		if s.Generation == before.Generation+1 && !s.Loading {
-			t.Fatal("obsolete seek completed before processing the latest target")
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case s := <-states:
+			if s.Error != "" {
+				t.Fatal(s.Error)
+			}
+			if s.Generation == before.Generation+1 && !s.Loading {
+				t.Fatal("obsolete seek completed before processing the latest target")
+			}
+			if s.Generation >= before.Generation+2 && !s.Loading {
+				// Check the first published picture, before playback can advance.
+				if s.Position < .2 || s.Position > .2+1/before.Metadata.FrameRate {
+					t.Fatalf("latest seek presented the wrong picture: %.6fs", s.Position)
+				}
+				frame := p.Frame()
+				if frame == nil {
+					t.Fatal("latest seek completed without a frame")
+				}
+				defer frame.Close()
+				if frame.PTS() < .2 {
+					t.Fatalf("latest seek retained a stale picture: %.6fs", frame.PTS())
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatalf("latest seek did not complete: %+v", p.Snapshot())
 		}
 	}
 }
