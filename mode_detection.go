@@ -12,6 +12,7 @@ import (
 	"github.com/foursmith/player/internal/detection"
 	"github.com/foursmith/player/internal/library"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/native"
 	"github.com/foursmith/player/internal/projection"
 )
 
@@ -237,7 +238,7 @@ func projectionClassifier(path string, trace *recognitionTrace) *detection.Image
 		trace.printf("model unavailable source=%q error=%v", path, err)
 		return nil
 	}
-	started, runtime := time.Now(), runtimeLibrary()
+	started, runtime := time.Now(), native.InferenceLibrary()
 	classifier, err := detection.NewImageClassifier(runtime, model, len(projection.IDs))
 	if err != nil {
 		log.Printf("Experimental projection model: %v", err)

@@ -138,14 +138,14 @@ func buildDMG(bundle string, config packageConfig) (err error) {
 	if err = os.Rename(image, target); err != nil {
 		return err
 	}
-	if err = refreshDMGChecksum(target, filepath.Join(*output, "SHA256SUMS")); err != nil {
+	if err = refreshChecksum(target, filepath.Join(*output, "SHA256SUMS")); err != nil {
 		return err
 	}
 	fmt.Printf("Created installer: %s\nDMG preview: %s\n", target, preview)
 	return nil
 }
 
-func refreshDMGChecksum(image, checksums string) error {
+func refreshChecksum(image, checksums string) error {
 	file, err := os.Open(image)
 	if err != nil {
 		return err

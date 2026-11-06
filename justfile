@@ -9,6 +9,7 @@ dev *args:
 
 # 仅在用户明确要求时构建，统一复用 build 目录
 build: deps
+    ./scripts/native-env go run ./cmd/package -prepare -out build
     ./scripts/native-env go tool mygo build -skip-dmg -skip-installer -o build
     ./scripts/native-env go run ./cmd/package -out build
 
@@ -16,9 +17,9 @@ build: deps
 preview-dmg:
     swift -O scripts/dmg-artwork.swift build/.dmg-artwork build/dmg-preview.png
 
-# 获取固定版本的人脸检测运行库并校验 SHA-256
+# 获取本机推理运行库并校验 SHA-256
 deps:
-    go run ./cmd/deps
+    ./scripts/native-env go run ./cmd/deps
 
 # 检查 Go 与 MyGo API
 check:
@@ -28,7 +29,7 @@ check:
 
 # 仅运行算法、数据和媒体内核单元测试
 test:
-    ./scripts/native-env go test -race ./...
+    CGO_ENABLED=1 ./scripts/native-env go test -race ./...
 
 fmt:
     gofmt -w .

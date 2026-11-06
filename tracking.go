@@ -2,12 +2,8 @@ package main
 
 import (
 	"image"
-	"os"
-	"path/filepath"
-	"runtime"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/detection"
 	"github.com/foursmith/player/internal/media"
@@ -36,26 +32,6 @@ func newInferenceWorker(a *application) *inferenceWorker {
 	return w
 }
 func (w *inferenceWorker) close() { close(w.done); <-w.closed }
-func runtimeLibrary() string {
-	if path := os.Getenv("FSVR_TFLITE_LIBRARY"); path != "" {
-		return path
-	}
-	name := "libtensorflowlite_c.2.17.1.dylib"
-	if runtime.GOOS == "windows" {
-		name = "tensorflowlite_c.dll"
-	} else if runtime.GOOS == "linux" {
-		name = "libtensorflowlite_c.so"
-	}
-	resourceDir, _ := mygo.App.Path(mygo.PathResources)
-	executable, _ := os.Executable()
-	for _, dir := range []string{filepath.Join(resourceDir, "lib"), filepath.Join(filepath.Dir(executable), "lib"), ".cache/tflite"} {
-		path := filepath.Join(dir, name)
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	return name
-}
 func (w *inferenceWorker) run(a *application) {
 	defer close(w.closed)
 	var surface video.Surface

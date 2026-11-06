@@ -137,3 +137,50 @@ func TestFlatReadbackFitsAndIgnoresVRCameraAndSplit(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeMetalYUVBitDepthAndRange(t *testing.T) {
+	for _, pixelFormat := range []string{"yuv420p", "yuv420p10le"} {
+		for _, full := range []bool{false, true} {
+			name := pixelFormat + "-tv"
+			rangeName := "tv"
+			if full {
+				name, rangeName = pixelFormat+"-pc", "pc"
+			}
+			t.Run(name, func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "red.mp4")
+				filter := "scale=in_range=pc:out_range=" + rangeName + ":out_color_matrix=bt709,format=" + pixelFormat
+				args := []string{"-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=red:s=160x80:r=10:d=0.2,format=rgb24", "-vf", filter, "-c:v", "libx265", "-x265-params", "log-level=error:pools=none:frame-threads=1", "-colorspace", "bt709", "-color_range", rangeName, "-tag:v", "hvc1", "-y", path}
+				if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+					t.Fatalf("native color fixture: %v: %s", err, out)
+				}
+				decoder, err := media.Open(context.Background(), media.Source{URL: path}, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer decoder.Close()
+				frame, err := decoder.Next()
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer frame.Close()
+				decoder.Close()
+				if frame.Native() == nil {
+					t.Skip("native HEVC textures unavailable")
+				}
+				surface, err := New(0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer surface.Close()
+				img, err := surface.Capture(frame, Parameters{Mode: projection.Flat}, 40, 20)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pixel := img.RGBAAt(20, 10)
+				if pixel.R < 220 || pixel.G > 35 || pixel.B > 35 || pixel.A != 255 {
+					t.Fatalf("native YUV conversion: %v", pixel)
+				}
+			})
+		}
+	}
+}

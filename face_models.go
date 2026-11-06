@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/foursmith/player/internal/detection"
+	"github.com/foursmith/player/internal/native"
 	"image"
 )
 
@@ -22,7 +23,7 @@ func (m *faceModels) detect(img *image.RGBA, full bool) ([]detection.Face, error
 		if err != nil {
 			return nil, err
 		}
-		detector, err = detection.New(runtimeLibrary(), model)
+		detector, err = detection.New(native.InferenceLibrary(), model)
 		if err != nil {
 			return nil, err
 		}

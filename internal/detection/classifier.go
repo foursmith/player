@@ -1,25 +1,18 @@
 package detection
 
-/*
-#include "tflite.h"
-*/
-import "C"
-
 import (
 	"errors"
 	"image"
 	"math"
-	"unsafe"
 )
 
 // ImageClassifier accepts an NHWC float32 RGB image and returns softmax scores.
 // Model weights may be float16; its input and output must remain float32.
 // One worker owns the classifier and its reused buffers.
 type ImageClassifier struct {
-	ptr           *C.FsvrInference
+	ptr           *inference
 	width, height int
 	input, output []float32
-	message       [1024]C.char
 }
 
 func NewImageClassifier(library string, model []byte, classes int) (*ImageClassifier, error) {
@@ -27,8 +20,9 @@ func NewImageClassifier(library string, model []byte, classes int) (*ImageClassi
 	if err != nil {
 		return nil, err
 	}
-	c := &ImageClassifier{ptr: ptr, height: int(C.fsvr_inference_size(ptr, 1)), width: int(C.fsvr_inference_size(ptr, 2))}
-	if C.fsvr_inference_size(ptr, 0) != 1 || C.fsvr_inference_size(ptr, 3) != 3 || c.width < 1 || c.height < 1 || c.width > 2048 || c.height > 2048 || C.fsvr_inference_output_count(ptr) != 1 || classes < 2 || int(C.fsvr_inference_output(ptr, 0, nil, 0)) != classes {
+	c := &ImageClassifier{ptr: ptr, height: ptr.size(1), width: ptr.size(2)}
+	outputSize, outputErr := ptr.output(0, nil)
+	if ptr.size(0) != 1 || ptr.size(3) != 3 || c.width < 1 || c.height < 1 || c.width > 2048 || c.height > 2048 || ptr.outputCount() != 1 || classes < 2 || outputErr != nil || outputSize != classes {
 		c.Close()
 		return nil, errors.New("incompatible image classifier tensors")
 	}
@@ -39,7 +33,7 @@ func NewImageClassifier(library string, model []byte, classes int) (*ImageClassi
 
 func (c *ImageClassifier) Close() {
 	if c != nil && c.ptr != nil {
-		C.fsvr_inference_close(c.ptr)
+		c.ptr.close()
 		c.ptr = nil
 	}
 }
@@ -54,11 +48,11 @@ func (c *ImageClassifier) Classify(img *image.RGBA) ([]float32, error) {
 		return nil, errors.New("empty classifier image")
 	}
 	classifierInput(c.input, c.width, c.height, img)
-	if C.fsvr_inference_run(c.ptr, (*C.float)(unsafe.Pointer(&c.input[0])), C.size_t(len(c.input)), &c.message[0], C.int(len(c.message))) < 0 {
-		return nil, errors.New(C.GoString(&c.message[0]))
+	if err := c.ptr.run(c.input); err != nil {
+		return nil, err
 	}
-	if C.fsvr_inference_output(c.ptr, 0, (*C.float)(unsafe.Pointer(&c.output[0])), C.size_t(len(c.output))) != C.size_t(len(c.output)) {
-		return nil, errors.New("cannot read classifier probabilities")
+	if _, err := c.ptr.output(0, c.output); err != nil {
+		return nil, err
 	}
 	var sum float64
 	for _, score := range c.output {

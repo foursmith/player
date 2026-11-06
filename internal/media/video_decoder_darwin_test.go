@@ -156,3 +156,44 @@ func TestAsyncHEVCOpenGOPSeekPreservesHardwareAndPresentationOrder(t *testing.T)
 		})
 	}
 }
+
+type nativeWaitContext struct {
+	context.Context
+	waiting chan struct{}
+}
+
+func (c nativeWaitContext) Done() <-chan struct{} {
+	select {
+	case c.waiting <- struct{}{}:
+	default:
+	}
+	return c.Context.Done()
+}
+
+func TestNativeDecoderCancellationWakesPendingPicture(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	waiting := make(chan struct{}, 1)
+	p := &nativeVideoPipeline{ctx: nativeWaitContext{ctx, waiting}, changed: make(chan struct{}, 1)}
+	// A full submission window must wait for its first asynchronous callback.
+	// Cancellation must interrupt that wait even if no callback arrives.
+	for range 32 {
+		p.pictures = append(p.pictures, &videoPicture{})
+	}
+	done := make(chan int32, 1)
+	go func() { done <- p.receive(&avFrame{}) }()
+	select {
+	case <-waiting:
+	case <-time.After(time.Second):
+		t.Fatal("native decoder did not reach its pending callback wait")
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != avExit {
+			t.Fatalf("cancellation returned %d", code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled native decode waited for an output callback")
+	}
+}

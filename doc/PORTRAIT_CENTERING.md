@@ -284,7 +284,7 @@ Seeking publishes a new media generation with `Loading` set before seek I/O or f
 
 Primary native implementation files:
 
-- `../internal/detection/detector.go`, `tflite.c`: preprocessing, inference, anchor decoding and suppression.
+- `../internal/detection/detector.go`, `inference.go`: preprocessing, inference, anchor decoding and suppression.
 - `../internal/tracking/target.go`: identity, coordinate mapping, target and motion smoothing.
 - `../internal/tracking/movement.go`: camera constraints, velocity, dead zones and ETA simulation.
 - `../internal/tracking/scan.go`: viewport retry, panorama recovery, refinement and inference scheduling.

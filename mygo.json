@@ -69,5 +69,18 @@
       "role": "Viewer",
       "mimeType": "video/mpeg"
     }
-  ]
+  ],
+  "linux": {
+    "webview": false,
+    "categories": [
+      "AudioVideo",
+      "Video",
+      "Player"
+    ],
+    "depends": [
+      "libc6",
+      "libstdc++6",
+      "libgcc-s1"
+    ]
+  }
 }

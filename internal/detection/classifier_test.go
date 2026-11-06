@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -77,6 +78,38 @@ func TestProjectionModel(t *testing.T) {
 	classifier.Close()
 	if _, err := classifier.Classify(image.NewRGBA(image.Rect(0, 0, 320, 160))); err == nil {
 		t.Fatal("closed classifier accepted an inference")
+	}
+}
+
+func TestInferenceOwnsModelMemory(t *testing.T) {
+	model, err := os.ReadFile("../../assets/models/projection.tflite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	classifier, err := NewImageClassifier(os.Getenv("FSVR_TFLITE_LIBRARY"), model, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer classifier.Close()
+	img := image.NewRGBA(image.Rect(0, 0, 320, 160))
+	scores, err := classifier.Classify(img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append([]float32(nil), scores...)
+	// The interpreter retains its own pinned model, independent of its caller's
+	// buffer and of garbage collection between native calls.
+	clear(model)
+	model = nil
+	runtime.GC()
+	scores, err = classifier.Classify(img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range want {
+		if scores[i] != want[i] {
+			t.Fatalf("model memory changed inference: %v, want %v", scores, want)
+		}
 	}
 }
 

@@ -20,6 +20,8 @@ go.work.sum
 .cache/
 build/
 .mygo/
+resources/*/lib/
+resources/*/runtime-notices/
 .DS_Store
 *.log
 __pycache__/

@@ -1,23 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export CGO_ENABLED=1
+export CGO_ENABLED="${CGO_ENABLED:-0}"
 export GOFLAGS="${GOFLAGS:-} -buildvcs=false"
-if [[ -f .cache/tflite/libtensorflowlite_c.2.17.1.dylib ]]; then
+if [[ "$(go env GOOS)/$(go env GOARCH)" == darwin/arm64 && -z "${FSVR_NATIVE_LIB_DIR:-}" && -f .cache/tflite/libtensorflowlite_c.2.17.1.dylib ]]; then
     export FSVR_TFLITE_LIBRARY="${FSVR_TFLITE_LIBRARY:-$PWD/.cache/tflite/libtensorflowlite_c.2.17.1.dylib}"
-fi
-
-# Respect explicitly supplied toolchains (including Windows/Linux SDKs).
-if [[ "$(uname -s)" == Darwin ]]; then
-    # Go adds -lobjc for each Objective-C cgo package: golang/go#67799.
-    export CGO_LDFLAGS="${CGO_LDFLAGS:-} -Wl,-no_warn_duplicate_libraries"
-    if command -v brew >/dev/null; then
-        # These dylibs have absolute install names, so no runtime rpath is needed.
-        for formula in ffmpeg sdl3; do
-            prefix="$(brew --prefix "$formula")"
-            export CGO_CFLAGS="${CGO_CFLAGS:-} -I${prefix}/include"
-            export CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${prefix}/lib"
-        done
-    fi
 fi
 exec "$@"

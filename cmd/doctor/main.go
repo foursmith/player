@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"github.com/foursmith/player/internal/media"
+	"github.com/foursmith/player/internal/native"
 	"github.com/foursmith/player/internal/video"
 	"log"
-	"os"
 )
 
 func main() {
@@ -16,11 +16,11 @@ func main() {
 	}
 	surface.Close()
 	fmt.Println("GPU renderer: ready")
-	path := os.Getenv("FSVR_TFLITE_LIBRARY")
-	if path == "" {
-		log.Fatal("LiteRT runtime is missing; run just deps")
+	path, err := native.FindLibrary(native.InferenceLibrary())
+	if err != nil {
+		log.Fatal(err)
 	}
-	if _, err = os.Stat(path); err != nil {
+	if err = native.HostTarget().CheckLibrary(path); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("LiteRT:", path)

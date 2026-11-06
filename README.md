@@ -23,9 +23,13 @@ macOS 使用 VideoToolbox + CVPixelBuffer + Metal，视频帧不经过 Go 的 RG
 
 视频画面跟随片源时间戳更新，使用屏幕原生像素比例渲染。AB 标记用于循环播放所选片段。
 
-Windows/Linux 需要本平台的 FFmpeg、SDL3 开发 SDK 与 LiteRT C 库，设置 `FSVR_TFLITE_LIBRARY` 后在目标系统执行相同的 `just build`。Windows 打包从 FFmpeg 工具链、LiteRT 所在目录及可选的 `FSVR_NATIVE_LIB_DIR` 收集 DLL；Linux 需要 `patchelf`，按 `ldd` 收集非 glibc 依赖。跨平台代码与打包流程尚未做其他系统的实机验收。
+构建仅支持本机平台：在 macOS、Windows 或 Linux 上运行 `just build`，统一输出到 `build/<系统>-<架构>/`。不提供交叉编译、其他平台运行库自动下载或跨架构打包流程。Windows/Linux 的播放与打包尚未通过实机验收。
 
-`just doctor` 检查媒体依赖和 GPU。`FSVR_TFLITE_LIBRARY` 可指定兼容的 TensorFlow Lite C 运行库。开发时需要 FFmpeg 与 SDL3 头文件和动态库；macOS 自动读取 Homebrew 路径，其他平台使用 `CGO_CFLAGS` / `CGO_LDFLAGS` 指定工具链。
+FFmpeg、SDL3 和 LiteRT 通过 purego 动态调用。FFmpeg 绑定固定为 **FFmpeg 9** 的 ABI：avutil 61、avcodec/avformat 63、avfilter 12、swscale 10、swresample 7；加载时校验主版本。`scripts/ffmpeg-abi.py` 仅用于升级绑定时根据本机开发头文件重新生成 64 位结构体布局。
+
+本机需要 FFmpeg 9、SDL3 和兼容的 LiteRT C 运行库。`just deps` 在 macOS arm64 下载固定版本的 LiteRT；其他系统通过 `FSVR_TFLITE_LIBRARY` 指定本机推理库，`FSVR_NATIVE_LIB_DIR` 可指定本机媒体运行库目录。Linux 打包还需要预先安装 `patchelf`，使用本机 `ldd` 收集依赖；生成包的系统库兼容范围取决于本机构建环境。
+
+macOS 的异步 VideoToolbox 解码与 Metal 渲染同样通过 purego 调用系统框架，保留 CVPixelBuffer 零拷贝和 8/10 位 YUV 处理。日常开发与构建使用 `CGO_ENABLED=0`，无需 C 编译器或开发头文件；仅重新生成 FFmpeg ABI 时需要匹配的开发头文件和 C 编译器，竞态测试需要 Go 的 CGO 竞态运行时。`just doctor` 检查媒体依赖和 GPU。
 
 设置、最近文件和播放历史保存在系统用户数据目录中的 `Foursmith Player/state.json`，只读取当前应用的数据目录。macOS 最近文件同时通过 MyGo 同步到系统，供 Dock 菜单显示；MyGo 在同一用户数据目录维护 `recent-documents.json`。`--data-dir` 可隔离开发配置；文件或文件夹可直接作为启动参数。本地续播和视频类型缓存以“完整路径:文件大小:修改时间”的 SHA-256 作为键，DLNA 使用设备 ID 与媒体对象 ID 的哈希，不保存明文文件名或临时播放地址；只读取当前哈希格式，不迁移旧开发版记录。最近文件列表按其用途保留完整路径；仅开启“启动时打开上次视频”时保留单独的 LastFile 路径，关闭后清除。
 

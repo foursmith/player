@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestRefreshDMGChecksum(t *testing.T) {
+func TestRefreshChecksum(t *testing.T) {
 	dir := t.TempDir()
 	image := filepath.Join(dir, "player-1.0-arm64.dmg")
 	checksums := filepath.Join(dir, "SHA256SUMS")
@@ -20,7 +20,7 @@ func TestRefreshDMGChecksum(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		if err := refreshDMGChecksum(image, checksums); err != nil {
+		if err := refreshChecksum(image, checksums); err != nil {
 			t.Fatal(err)
 		}
 		got, err := os.ReadFile(checksums)
@@ -35,7 +35,7 @@ func TestRefreshDMGChecksum(t *testing.T) {
 	if err := os.Remove(checksums); err != nil {
 		t.Fatal(err)
 	}
-	if err := refreshDMGChecksum(image, checksums); err != nil {
+	if err := refreshChecksum(image, checksums); err != nil {
 		t.Fatal(err)
 	}
 }

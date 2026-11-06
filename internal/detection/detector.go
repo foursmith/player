@@ -1,19 +1,12 @@
 // Package detection runs local face and image classifiers through LiteRT's C API.
 package detection
 
-/*
-#cgo linux LDFLAGS: -ldl
-#include <stdlib.h>
-#include "tflite.h"
-*/
-import "C"
 import (
 	"errors"
 	"fmt"
 	"image"
 	"math"
 	"sort"
-	"unsafe"
 )
 
 type Face struct{ X, Y, Width, Height, Score float64 }
@@ -23,12 +16,11 @@ func (f Face) Size() float64              { return math.Sqrt(math.Max(0, f.Width
 
 type anchor struct{ X, Y float64 }
 type Detector struct {
-	ptr           *C.FsvrInference
+	ptr           *inference
 	Width, Height int
 	anchors       []anchor
 	input         []float32
 	outputs       [][]float32
-	message       [1024]C.char
 }
 
 func New(library string, model []byte) (*Detector, error) {
@@ -36,37 +28,28 @@ func New(library string, model []byte) (*Detector, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Detector{ptr: ptr, Height: int(C.fsvr_inference_size(ptr, 1)), Width: int(C.fsvr_inference_size(ptr, 2))}
+	d := &Detector{ptr: ptr, Height: ptr.size(1), Width: ptr.size(2)}
 	if d.Width <= 0 || d.Height <= 0 {
 		d.Close()
 		return nil, errors.New("invalid face model input")
 	}
 	d.anchors = anchors(d.Width)
 	d.input = make([]float32, d.Width*d.Height*3)
-	d.outputs = make([][]float32, int(C.fsvr_inference_output_count(ptr)))
+	d.outputs = make([][]float32, ptr.outputCount())
 	for i := range d.outputs {
-		size := int(C.fsvr_inference_output(ptr, C.int(i), nil, 0))
+		size, err := ptr.output(i, nil)
+		if err != nil {
+			d.Close()
+			return nil, err
+		}
 		d.outputs[i] = make([]float32, size)
 	}
 	return d, nil
 }
 
-func openInference(library string, model []byte) (*C.FsvrInference, error) {
-	if len(model) == 0 {
-		return nil, errors.New("empty inference model")
-	}
-	path := C.CString(library)
-	defer C.free(unsafe.Pointer(path))
-	var message [1024]C.char
-	ptr := C.fsvr_inference_open(path, (*C.uchar)(unsafe.Pointer(&model[0])), C.size_t(len(model)), &message[0], C.int(len(message)))
-	if ptr == nil {
-		return nil, errors.New(C.GoString(&message[0]))
-	}
-	return ptr, nil
-}
 func (d *Detector) Close() {
 	if d != nil && d.ptr != nil {
-		C.fsvr_inference_close(d.ptr)
+		d.ptr.close()
 		d.ptr = nil
 	}
 }
@@ -124,8 +107,8 @@ func (d *Detector) Detect(img *image.RGBA) ([]Face, error) {
 			}
 		}
 	}
-	if C.fsvr_inference_run(d.ptr, (*C.float)(unsafe.Pointer(&input[0])), C.size_t(len(input)), &d.message[0], C.int(len(d.message))) < 0 {
-		return nil, errors.New(C.GoString(&d.message[0]))
+	if err := d.ptr.run(input); err != nil {
+		return nil, err
 	}
 	var boxes, scores []float32
 	for i, output := range d.outputs {
@@ -133,8 +116,8 @@ func (d *Detector) Detect(img *image.RGBA) ([]Face, error) {
 		if size == 0 {
 			continue
 		}
-		if C.fsvr_inference_output(d.ptr, C.int(i), (*C.float)(unsafe.Pointer(&output[0])), C.size_t(size)) == 0 {
-			return nil, errors.New("cannot read face inference output")
+		if _, err := d.ptr.output(i, output); err != nil {
+			return nil, err
 		}
 		if size == len(d.anchors)*16 {
 			boxes = output

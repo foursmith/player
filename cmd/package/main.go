@@ -9,11 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
+
+	"github.com/foursmith/player/internal/native"
 )
 
 var output = flag.String("out", "build", "MyGo output directory")
+var prepare = flag.Bool("prepare", false, "prepare local libraries before MyGo creates archives and installers")
 
 type packageConfig struct {
 	Name, Slug, Version string
@@ -66,6 +68,13 @@ func deps(path string) ([]string, error) {
 	return result, nil
 }
 func run() error {
+	target := native.HostTarget()
+	if *prepare {
+		if target.OS == "darwin" {
+			return target.CheckLibrary(target.InferencePath())
+		}
+		return preparePortable(target)
+	}
 	manifest, err := os.ReadFile("mygo.json")
 	if err != nil {
 		return err
@@ -77,10 +86,10 @@ func run() error {
 	if config.Name == "" {
 		return fmt.Errorf("mygo.json is missing the application name")
 	}
-	if runtime.GOOS != "darwin" {
-		return portable(config.Name)
+	if target.OS != "darwin" {
+		return portable(config, target)
 	}
-	bundle := filepath.Join(*output, "darwin-"+runtime.GOARCH, config.Name+".app")
+	bundle := filepath.Join(*output, target.Directory(), config.Name+".app")
 	resource := filepath.Join(bundle, "Contents", "Resources")
 	lib := filepath.Join(resource, "lib")
 	if err := os.MkdirAll(lib, 0755); err != nil {
@@ -90,17 +99,32 @@ func run() error {
 	if _, err := os.Stat(main); err != nil {
 		return err
 	}
-	rt := os.Getenv("FSVR_TFLITE_LIBRARY")
-	if rt == "" {
-		rt = filepath.Join(".cache", "tflite", "libtensorflowlite_c.2.17.1.dylib")
-	}
-	runtimeDest := filepath.Join(lib, filepath.Base(rt))
+	rt := target.InferencePath()
+	runtimeDest := filepath.Join(lib, target.InferenceLibrary())
 	if err = copyFile(rt, runtimeDest); err != nil {
 		return err
 	}
 	queue := []string{main, runtimeDest}
-	seen := map[string]string{filepath.Base(rt): rt}
+	seen := map[string]string{target.InferenceLibrary(): rt}
 	var libraries []string
+	// Purego loads these at runtime, so otool on the executable cannot discover
+	// SDL, filters and scaling. Seed every direct dependency explicitly.
+	for _, name := range target.MediaLibraries() {
+		path, err := native.FindLibrary(name)
+		if err != nil {
+			return err
+		}
+		if err := target.CheckLibrary(path); err != nil {
+			return err
+		}
+		dest := filepath.Join(lib, name)
+		if err := copyFile(path, dest); err != nil {
+			return err
+		}
+		seen[name] = path
+		queue = append(queue, dest)
+		libraries = append(libraries, dest)
+	}
 	for len(queue) > 0 {
 		path := queue[0]
 		queue = queue[1:]

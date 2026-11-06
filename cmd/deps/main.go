@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/foursmith/player/internal/native"
 )
 
 func main() {
@@ -21,9 +23,9 @@ func main() {
 	}
 }
 func run() error {
-	if path := os.Getenv("FSVR_TFLITE_LIBRARY"); path != "" {
-		_, err := os.Stat(path)
-		return err
+	host := native.HostTarget()
+	if os.Getenv("FSVR_TFLITE_LIBRARY") != "" || os.Getenv("FSVR_NATIVE_LIB_DIR") != "" {
+		return host.CheckLibrary(host.InferencePath())
 	}
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		return fmt.Errorf("set FSVR_TFLITE_LIBRARY to a TensorFlow Lite C runtime for %s/%s", runtime.GOOS, runtime.GOARCH)
