@@ -197,16 +197,15 @@ func (a *application) timelineInput(e ui.InputEvent, width float32, state media.
 		a.activity(mouseHideDelay)
 		return true
 	case ui.InputKeyDown:
-		position := state.Position
-		if a.scrubbing {
-			position = a.scrubTime
+		// Outside a drag, the timeline only owns Home/End; playback shortcuts
+		// own the arrows, including custom bindings.
+		if e.Mods != 0 || !a.scrubbing && e.Key != ui.KeyHome && e.Key != ui.KeyEnd {
+			return false
 		}
+		position := a.scrubTime
 		step := 1 / max(1, state.Metadata.FrameRate)
 		switch e.Key {
 		case ui.KeyEscape:
-			if !a.scrubbing {
-				return false
-			}
 			a.scrubbing, a.seekUI.fine = false, false
 			return true
 		case ui.KeyLeft:

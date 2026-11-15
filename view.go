@@ -416,7 +416,8 @@ func (a *application) keyboard(c *ui.Context) {
 func (a *application) playbackKeyboard(c *ui.Context) {
 	for _, def := range playbackShortcuts {
 		for _, chord := range a.preferences.shortcutKeys(def) {
-			if a.timelineHandle.Focused(c) && (chord.Key == ui.KeyLeft || chord.Key == ui.KeyRight || chord.Key == ui.KeyUp || chord.Key == ui.KeyDown) {
+			// While dragging, plain arrows adjust the preview one frame at a time.
+			if a.scrubbing && a.timelineHandle.Focused(c) && chord.Mods == 0 && (chord.Key == ui.KeyLeft || chord.Key == ui.KeyRight) {
 				continue
 			}
 			if c.Shortcut(chord.Mods, chord.Key) {
