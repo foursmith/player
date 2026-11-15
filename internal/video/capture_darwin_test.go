@@ -108,7 +108,7 @@ func TestFlatReadbackFitsAndIgnoresVRCameraAndSplit(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				cpu, err := (&rgbaSurface{}).Capture(frame, p, output[0], output[1])
+				cpu, err := (&bitmapSurface{}).Capture(frame, p, output[0], output[1])
 				if err != nil {
 					t.Fatal(err)
 				}

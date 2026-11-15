@@ -43,7 +43,7 @@ type direct3d struct {
 	capture, captureView, staging                 uintptr
 	captureSize                                   image.Point
 	converter                                     media.RGBAConverter
-	fallback                                      rgbaSurface
+	fallback                                      bitmapSurface
 	failedOwner                                   uintptr
 }
 

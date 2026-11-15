@@ -85,7 +85,7 @@ func TestD3D11HardwareProjectionMatchesReference(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					want, err := (&rgbaSurface{}).Capture(frame, p, 96, 64)
+					want, err := (&bitmapSurface{}).Capture(frame, p, 96, 64)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -295,7 +295,7 @@ func TestD3D11VideoColorRangeAndMatrices(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want, err := (&rgbaSurface{}).Capture(frame, p, 80, 40)
+			want, err := (&bitmapSurface{}).Capture(frame, p, 80, 40)
 			if err != nil {
 				t.Fatal(err)
 			}

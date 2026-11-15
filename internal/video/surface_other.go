@@ -4,4 +4,4 @@ package video
 
 const TransparentWindow = false
 
-func New(window uintptr) (Surface, error) { return &rgbaSurface{}, nil }
+func New(window uintptr) (Surface, error) { return &bitmapSurface{}, nil }

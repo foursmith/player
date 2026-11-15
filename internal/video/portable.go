@@ -1,11 +1,13 @@
 package video
 
 import (
+	"errors"
+	"image"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/shader"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/projection"
-	"image"
 )
 
 // Paint draws surfaces sharing MyGo's GPU renderer; native layers draw below it.
@@ -37,37 +39,62 @@ func Fragment(dst vec4,pos vec2)vec4{
  if !visible{return vec4(.0784314,.0705882,.0588235,1)};return image0Sample(source*image0Size())
 }`)
 
-var flatShader = shader.MustCompile(`package main
-var Flat vec3
-func Fragment(dst vec4,pos vec2)vec4{
- size:=rectSize();ratio:=(size.x/size.y)/(image0Size().x/image0Size().y)
- source:=(pos/size-vec2(.5))*vec2(max(1,ratio),max(1,1/ratio))/Flat.z+vec2(.5)-Flat.xy
- if source.x<0||source.x>1||source.y<0||source.y>1{return vec4(0,0,0,1)}
- return image0Sample(source*image0Size())
-}`)
-
-// rgbaSurface is used when direct hardware-texture sharing is unavailable.
+// bitmapSurface is used when direct hardware-texture sharing is unavailable.
 // Projection still runs on MyGo's platform GPU backend.
-type rgbaSurface struct {
+type bitmapSurface struct {
 	converter media.RGBAConverter
 	bitmap    *ui.Bitmap
+	frame     *media.Frame // owns the planes borrowed by UpdateYUV
 	serial    uint64
 	params    Parameters
 	aspect    float64
 }
 
-func (r *rgbaSurface) Present(frame *media.Frame, p Parameters, width, height, scale float64) error {
-	if r.bitmap == nil || frame.ID() != r.serial {
-		w, h := frame.Size()
-		img, err := r.converter.Convert(frame, w, h)
-		if err != nil {
-			return err
+func (r *bitmapSurface) Present(frame *media.Frame, p Parameters, width, height, scale float64) error {
+	if r.bitmap == nil || frame.ID() != r.serial || (p.Mode == projection.Flat) != (r.params.Mode == projection.Flat) {
+		var held *media.Frame
+		var yuv media.YUV420
+		var direct bool
+		if p.Mode == projection.Flat {
+			yuv, direct = frame.YUV420()
 		}
-		if r.bitmap == nil {
-			r.bitmap = ui.NewBitmap(img)
+		if direct {
+			held = frame.Clone()
+			if held == nil {
+				return errors.New("cannot retain video frame")
+			}
+			if r.bitmap == nil {
+				r.bitmap = ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 1, 1)))
+			}
+			format, matrix := ui.I420, ui.BT601
+			if yuv.Interleaved {
+				format = ui.NV12
+			}
+			switch yuv.Colorspace {
+			case 1:
+				matrix = ui.BT709
+			case 9, 10:
+				matrix = ui.BT2020
+			}
+			r.bitmap.UpdateYUV(&ui.YUVImage{Format: format, Matrix: matrix, FullRange: yuv.FullRange,
+				Width: yuv.Width, Height: yuv.Height, Planes: yuv.Planes, Strides: yuv.Strides})
+			r.converter.Close()
 		} else {
-			r.bitmap.Update(img)
+			w, h := frame.Size()
+			img, err := r.converter.Convert(frame, w, h)
+			if err != nil {
+				return err
+			}
+			if r.bitmap == nil {
+				r.bitmap = ui.NewBitmap(img)
+			} else {
+				r.bitmap.Update(img)
+			}
 		}
+		// UpdateYUV borrows its planes, including for paused redraws. Retire
+		// the old reference only after the bitmap has its replacement.
+		r.frame.Close()
+		r.frame = held
 		r.serial = frame.ID()
 	}
 	r.params = p
@@ -75,13 +102,18 @@ func (r *rgbaSurface) Present(frame *media.Frame, p Parameters, width, height, s
 	r.aspect = float64(w) / float64(h)
 	return nil
 }
-func (r *rgbaSurface) Paint(p *ui.Painter, rect ui.Rect) {
+func (r *bitmapSurface) Paint(p *ui.Painter, rect ui.Rect) {
 	if r.bitmap == nil {
 		return
 	}
 	if r.params.Mode == projection.Flat {
 		v := r.params.FlatView.Constrain(float64(rect.W/rect.H), r.aspect)
-		flatShader.Draw(p, rect, shader.Options{Images: [4]*ui.Bitmap{r.bitmap}, Uniforms: map[string]any{"Flat": [3]float32{float32(v.X), float32(v.Y), float32(v.Zoom)}}})
+		ex, ey := flatExtent(float64(rect.W/rect.H), r.aspect)
+		w, h := float32(v.Zoom/ex)*rect.W, float32(v.Zoom/ey)*rect.H
+		dst := ui.Rect{X: rect.X + rect.W/2 - float32(.5-v.X)*w,
+			Y: rect.Y + rect.H/2 - float32(.5-v.Y)*h, W: w, H: h}
+		p.Fill(rect, ui.RGB(0, 0, 0), 0)
+		p.Clip(rect, 0, func() { p.ImageRegion(r.bitmap, ui.Rect{}, dst, ui.ImageOptions{}) })
 		return
 	}
 	fov := r.params.FOV
@@ -95,7 +127,7 @@ func (r *rgbaSurface) Paint(p *ui.Painter, rect ui.Rect) {
 	v := r.params.View
 	vrShader.Draw(p, rect, shader.Options{Images: [4]*ui.Bitmap{r.bitmap}, Uniforms: map[string]any{"Camera": [4]float32{float32(v.Yaw), float32(v.Pitch), float32(v.Zoom), float32(v.Forward)}, "Mode": int(r.params.Mode), "Split": max(1, r.params.SplitCount), "Portrait": portrait, "FOV": fov}})
 }
-func (r *rgbaSurface) Capture(frame *media.Frame, p Parameters, width, height int) (*image.RGBA, error) {
+func (r *bitmapSurface) Capture(frame *media.Frame, p Parameters, width, height int) (*image.RGBA, error) {
 	sw, sh := frame.Size()
 	source, err := frame.RGBA(sw, sh)
 	if err != nil {
@@ -147,9 +179,11 @@ func (r *rgbaSurface) Capture(frame *media.Frame, p Parameters, width, height in
 	}
 	return out, nil
 }
-func (r *rgbaSurface) Clear() {
+func (r *bitmapSurface) Clear() {
 	r.converter.Close()
 	r.bitmap = nil
+	r.frame.Close()
+	r.frame = nil
 	r.serial = 0
 }
-func (r *rgbaSurface) Close() { r.Clear() }
+func (r *bitmapSurface) Close() { r.Clear() }
