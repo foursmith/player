@@ -54,6 +54,8 @@ type application struct {
 	playlistList                              ui.ListState
 	timelineHandle                            ui.Handle
 	controlsPanel                             ui.Handle
+	playButton                                ui.Handle
+	fullscreenButton                          ui.Handle
 	projectionButton                          ui.Handle
 	adjustmentsButton                         ui.Handle
 	scrubbing                                 bool
@@ -102,7 +104,7 @@ type application struct {
 	adjustmentsOpen                           bool
 	debugOpen                                 bool
 	controlsUntil                             time.Time
-	controlsHeld                              bool
+	controlsKeyboard                          bool
 	lastPointer, pressPointer                 ui.Point
 	dragging                                  bool
 	dragDistance                              float64
@@ -268,10 +270,13 @@ func main() {
 		a.windowRef.Store(a.window)
 		a.window.OnFocus(func() {
 			a.homeAnimation.setFocused(time.Now(), true)
+			a.activity(mouseHideDelay)
 			a.window.Invalidate()
 		})
 		a.window.OnBlur(func() {
 			a.homeAnimation.setFocused(time.Now(), false)
+			a.cancelStageInteraction()
+			a.controlsKeyboard = false
 			a.window.Invalidate()
 		})
 		a.inference = newInferenceWorker(a)
@@ -299,7 +304,13 @@ func main() {
 	}
 }
 
-func (a *application) activity(delay time.Duration) { a.controlsUntil = time.Now().Add(delay) }
+func (a *application) activity(delay time.Duration) { a.showControls(time.Now(), delay) }
+
+func (a *application) showControls(at time.Time, delay time.Duration) {
+	if until := at.Add(delay); until.After(a.controlsUntil) {
+		a.controlsUntil = until
+	}
+}
 
 // Opening replaces the queue and always plays the requested selection.
 // Appending leaves the current selection alone, including when it is paused.
@@ -395,6 +406,7 @@ func (a *application) choose(directory, appendOnly bool) {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: window, Title: title, Multiple: !directory, Directory: directory})
 		window.Update(func() {
 			a.dialogOpen = false
+			a.activity(mouseHideDelay)
 			if ctx.Err() != nil {
 				return
 			}
@@ -471,6 +483,7 @@ func (a *application) params(pip bool) video.Parameters {
 	return video.Parameters{Mode: a.mode, View: a.view, SplitCount: count, Portrait: a.preferences.PreferredSplitAspect == "9:16"}
 }
 func (a *application) togglePip() {
+	a.cancelStageInteraction()
 	if a.pipWindow != nil {
 		a.pipWindow.Close()
 		return
@@ -491,6 +504,7 @@ func (a *application) togglePip() {
 	a.pipWindow = mygo.NewWindow(mygo.WindowOptions{Title: appInfo.Name, Width: width, Height: height, MinWidth: 240, MinHeight: 180, AlwaysOnTop: true, BackgroundColor: "#000000", Transparent: video.TransparentWindow, Content: ui.View(func(c *ui.Context) { a.renderStage(c, true) })})
 	a.pipWindow.SetWindowButtonsTheme(mygo.ThemeDark)
 	a.pipWindowRef.Store(a.pipWindow)
+	a.pipWindow.OnBlur(a.cancelStageInteraction)
 	a.refreshVideoOnReveal(a.pipWindow, 1)
 	var err error
 	a.pipSurface, err = video.New(a.pipWindow.NativeHandle())
@@ -498,6 +512,7 @@ func (a *application) togglePip() {
 		a.notice = err.Error()
 	}
 	a.pipWindow.OnClosed(func() {
+		a.cancelStageInteraction()
 		a.pipWindowRef.Store(nil)
 		if a.pipSurface != nil {
 			a.pipSurface.Close()
@@ -511,9 +526,12 @@ func (a *application) togglePip() {
 func (a *application) refreshVideoOnReveal(window *mygo.Window, index int) {
 	refresh := func() {
 		a.presentation[index].frame = 0
+		a.activity(mouseHideDelay)
 		window.Invalidate()
 	}
 	window.OnShow(refresh)
 	window.OnRestore(refresh)
 	window.OnFocus(refresh)
+	window.OnEnterFullScreen(refresh)
+	window.OnLeaveFullScreen(refresh)
 }

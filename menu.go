@@ -2,6 +2,7 @@ package main
 
 import (
 	"runtime"
+	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -21,7 +22,11 @@ func (a *application) refreshMenu() {
 func (a *application) newMenus() (*mygo.Menu, *mygo.Menu) {
 	action := func(key, accelerator string, run func()) *mygo.MenuItem {
 		return &mygo.MenuItem{Label: a.t(key), Accelerator: accelerator, Click: func(*mygo.MenuItem, *mygo.Window) {
-			a.window.Update(run)
+			a.window.Update(func() {
+				a.singleClickAt = time.Time{}
+				a.activity(mouseHideDelay)
+				run()
+			})
 		}}
 	}
 	settings := action("common.settings", "CmdOrCtrl+,", a.openSettings)

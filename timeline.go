@@ -38,7 +38,7 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 			a.seekUI.hoverTime = timelineTime(x, a.timelineHandle.Bounds(c).W, state.Metadata.Duration)
 		}
 		if a.scrubbing || track.Hovered() {
-			a.controlsHeld = true
+			a.showControls(c.Now(), mouseHideDelay)
 		}
 		track.Draw(func(p *ui.Painter, r ui.Rect) {
 			y := r.Y + r.H/2
@@ -426,7 +426,7 @@ func (a *application) chapterPicker(c *ui.Context, state media.State) {
 		return
 	}
 	box := panel(c.Key("chapter-picker"), 12).Absolute().Left(max(float32(12), min(bounds.X, a.width-width-12))).Top(bounds.Y-height-12).Size(width, height).Padding(8).Gap(4).Label(a.t("timeline.chapters"))
-	hold(a, box)
+	hold(c, a, box)
 	box.Children(func() {
 		ui.Text(c, a.t("timeline.chapters")).FontSize(12).FontWeight(600).Height(22)
 		current := media.ChapterAt(state.Metadata.Chapters, state.Position)
@@ -459,6 +459,7 @@ func (a *application) chapterPicker(c *ui.Context, state media.State) {
 				if button.Clicked() {
 					a.player.Seek(chapter.Start)
 					a.seekUI.chaptersOpen = false
+					a.timelineHandle.Focus(c)
 					a.activity(mouseHideDelay)
 				}
 			})

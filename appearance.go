@@ -249,9 +249,9 @@ func formatTime(seconds float64) string {
 func smallText(c *ui.Context, text string, alpha float32) ui.Element {
 	return ui.Text(c, text).FontSize(10).TextColor(textColor(c, alpha))
 }
-func hold(a *application, element ui.Element) {
-	if element.Hovered() || element.FocusWithin() || element.Pressed() {
-		a.controlsHeld = true
+func hold(c *ui.Context, a *application, element ui.Element) {
+	if c.WindowActive() && (element.Hovered() || a.controlsKeyboard && element.FocusWithin() || element.Pressed()) {
+		a.showControls(c.Now(), mouseHideDelay)
 	}
 }
 

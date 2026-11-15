@@ -34,7 +34,7 @@ func TestSeekShortcutsWithTimelineFocus(t *testing.T) {
 		c.SetTheme(darkPlayerTheme)
 		a.timeline(c, player.Snapshot())
 		a.timelineHandle.Focus(c)
-		a.playbackKeyboard(c)
+		a.playbackKeyboard(c, false)
 	}, 640, 120)
 	for _, test := range []struct {
 		mods  ui.Modifiers
@@ -129,7 +129,7 @@ func TestCustomShortcutRunsActionAndReplacesDefault(t *testing.T) {
 	view := ui.NewTester(func(c *ui.Context) {
 		c.SetTheme(darkPlayerTheme)
 		ui.Box(c).Fill().Focusable().AutoFocus()
-		a.playbackKeyboard(c)
+		a.playbackKeyboard(c, false)
 	}, 320, 200)
 	view.Key(0, ui.KeyUp)
 	if a.preferences.Volume != .5 {
