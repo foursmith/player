@@ -111,6 +111,10 @@ var trackingStarted = time.Now()
 
 func trackingNow() float64 { return float64(time.Since(trackingStarted).Microseconds()) / 1000 }
 func (a *application) trackingAspect() float64 {
+	if a.systemPip != nil {
+		w, h := a.systemPip.surface.Size()
+		return w / max(1, h)
+	}
 	if a.pipWindow != nil {
 		if shown := a.presentation[1]; shown.height > 0 {
 			return float64(shown.width / shown.height)

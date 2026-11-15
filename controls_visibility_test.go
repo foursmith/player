@@ -171,6 +171,7 @@ func TestControlsRemainAvailableOutsideNormalPlayback(t *testing.T) {
 		{name: "seek", setup: func(a *application) { a.scrubbing = true }},
 		{name: "drag", setup: func(a *application) { a.dragging = true }},
 		{name: "pip", setup: func(a *application) { a.pipWindow = &mygo.Window{} }},
+		{name: "system-pip", setup: func(a *application) { a.systemPip = &systemPipPresentation{} }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			a := modeTestApplication(t)

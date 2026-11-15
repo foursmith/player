@@ -14,7 +14,7 @@ import (
 
 func (a *application) render(c *ui.Context) {
 	a.width, a.height = c.Size()
-	if a.pipWindow == nil {
+	if !a.pipActive() {
 		a.stageClick(c)
 	}
 	if !a.openFilesAt.IsZero() {
@@ -30,33 +30,16 @@ func (a *application) render(c *ui.Context) {
 	}
 	a.usePlayerTheme(c, state.URL != "")
 	a.refreshFailedPlayback(state)
-	if state.PlaybackID == a.playbackID {
-		a.resolveVideoMode(state)
-	}
-	if state.Generation != a.lastGeneration {
-		a.lastGeneration = state.Generation
-		a.tracker.Reset()
-		a.endedGeneration = 0
-	}
-	if state.Ended && !a.loopPlayback(state) && a.endedGeneration != state.Generation {
-		if a.selected >= 0 && a.selected < len(a.entries) {
-			a.recordPlaybackHistory(a.entries[a.selected], state)
-		}
-		a.endedGeneration = state.Generation
-		a.next(true)
-	}
-	if a.selected >= 0 && time.Since(a.lastSaved) > 5*time.Second {
-		a.persist()
-	}
+	a.updatePlaybackPresentation(state)
 	if a.selected >= 0 && state.Playing {
 		c.After(max(time.Millisecond, 5*time.Second-time.Since(a.lastSaved)))
 	}
 	a.updateControlsVisibility(c, state)
 	a.playerContent(c).Children(func() {
-		if a.pipWindow == nil {
+		if !a.pipActive() {
 			a.renderStage(c, false)
 		} else {
-			if a.pipNeedsView(state) {
+			if a.pipWindow != nil && a.pipNeedsView(state) {
 				a.pipWindow.Invalidate()
 			}
 			ui.Box(c).Fill().Background(ui.RGB(0, 0, 0)).Center().Children(func() { ui.Text(c, a.t("controls.playingInPip")).TextColor(white(.5)) })
@@ -152,7 +135,7 @@ func inputTime(event ui.InputEvent) time.Time {
 }
 
 func (a *application) updateControlsVisibility(c *ui.Context, state media.State) {
-	keep := state.URL == "" || !state.Playing || state.Loading || state.Error != "" || a.pipWindow != nil || a.dialogOpen || a.adjustmentsOpen || a.projectionOpen || a.scrubbing || a.dragging || a.seekUI.chaptersOpen
+	keep := state.URL == "" || !state.Playing || state.Loading || state.Error != "" || a.pipActive() || a.dialogOpen || a.adjustmentsOpen || a.projectionOpen || a.scrubbing || a.dragging || a.seekUI.chaptersOpen
 	a.controlsVisible = keep || c.Now().Before(a.controlsUntil)
 	if state.Playing && !state.Loading && (a.controlsVisible || a.debugOpen) {
 		interval := 250 * time.Millisecond
@@ -283,6 +266,28 @@ func (a *application) renderStage(c *ui.Context, pip bool) {
 	})
 	if pip && state.URL != "" {
 		a.playbackKeyboard(c, true)
+	}
+}
+
+// Keep playback lifecycle work running when the system PiP is the only visible window.
+func (a *application) updatePlaybackPresentation(state media.State) {
+	if state.PlaybackID == a.playbackID {
+		a.resolveVideoMode(state)
+	}
+	if state.Generation != a.lastGeneration {
+		a.lastGeneration = state.Generation
+		a.tracker.Reset()
+		a.endedGeneration = 0
+	}
+	if state.Ended && !a.loopPlayback(state) && a.endedGeneration != state.Generation {
+		if a.selected >= 0 && a.selected < len(a.entries) {
+			a.recordPlaybackHistory(a.entries[a.selected], state)
+		}
+		a.endedGeneration = state.Generation
+		a.next(true)
+	}
+	if a.selected >= 0 && time.Since(a.lastSaved) > 5*time.Second {
+		a.persist()
 	}
 }
 
@@ -551,10 +556,10 @@ func (a *application) controls(c *ui.Context, state media.State) {
 						a.projectionOpen, a.seekUI.chaptersOpen = false, false
 					}).Bind(&a.adjustmentsButton)
 					pipLabel := "controls.enterPip"
-					if a.pipWindow != nil {
+					if a.pipActive() {
 						pipLabel = "controls.exitPip"
 					}
-					a.iconControl(c, "picture-in-picture", a.t(pipLabel), iconStyle{buttonSize, 18, floatingIcon}, a.pipWindow != nil, a.togglePip)
+					a.iconControl(c, "picture-in-picture", a.t(pipLabel), iconStyle{buttonSize, 18, floatingIcon}, a.pipActive(), a.togglePip)
 					name = "corners-out"
 					fullscreenLabel := "controls.enterFullscreen"
 					if fullscreen {

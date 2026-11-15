@@ -28,9 +28,7 @@ func (a *application) closePlayerWindow(event *mygo.CloseEvent) {
 	a.scrubbing, a.dragging = false, false
 	a.player.Pause()
 	a.persist()
-	if a.pipWindow != nil {
-		a.pipWindow.Close()
-	}
+	a.closePip()
 	if a.settingsWindow != nil {
 		a.settingsWindow.Close()
 	}

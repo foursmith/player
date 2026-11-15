@@ -117,7 +117,15 @@ type metal struct {
 	cache                                         uintptr
 }
 
-func New(window uintptr) (_ Surface, err error) {
+func New(window uintptr) (Surface, error) {
+	var view objc.ID
+	if window != 0 {
+		view = send(objc.ID(window), "contentView")
+	}
+	return newMetal(view)
+}
+
+func newMetal(view objc.ID) (_ *metal, err error) {
 	if err := loadMetal(); err != nil {
 		return nil, err
 	}
@@ -158,8 +166,8 @@ func New(window uintptr) (_ Surface, err error) {
 	if status := textureAPI.Cache(0, 0, r.device, 0, &r.cache); status != 0 {
 		return nil, fmt.Errorf("CVMetalTextureCacheCreate: %d", status)
 	}
-	if window != 0 {
-		r.view = send(send(objc.ID(window), "contentView"), "retain")
+	if view != 0 {
+		r.view = send(view, "retain")
 		send(r.view, "setWantsLayer:", true)
 		r.layer = send(send(class("CAMetalLayer"), "layer"), "retain")
 		send(r.layer, "setDevice:", r.device)
@@ -308,16 +316,21 @@ func (r *metal) render(f *media.Frame, p Parameters, output, drawable objc.ID, r
 	return nil
 }
 func (r *metal) Present(f *media.Frame, p Parameters, w, h, scale float64) error {
+	_, err := r.present(f, p, w, h, scale)
+	return err
+}
+
+func (r *metal) present(f *media.Frame, p Parameters, w, h, scale float64) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.device == 0 {
-		return errors.New("video surface closed")
+		return false, errors.New("video surface closed")
 	}
 	if r.layer == 0 {
-		return errors.New("video surface has no window")
+		return false, errors.New("video surface has no window")
 	}
 	if w <= 0 || h <= 0 || scale <= 0 {
-		return errors.New("invalid video surface size")
+		return false, errors.New("invalid video surface size")
 	}
 	defer metalPool()()
 	transaction := class("CATransaction")
@@ -329,9 +342,10 @@ func (r *metal) Present(f *media.Frame, p Parameters, w, h, scale float64) error
 	send(transaction, "commit")
 	drawable := send(r.layer, "nextDrawable")
 	if drawable == 0 {
-		return nil
+		return false, nil
 	}
-	return r.render(f, p, send(drawable, "texture"), drawable, nil)
+	err := r.render(f, p, send(drawable, "texture"), drawable, nil)
+	return err == nil, err
 }
 func (r *metal) Capture(f *media.Frame, p Parameters, w, h int) (*image.RGBA, error) {
 	r.mu.Lock()

@@ -216,9 +216,7 @@ func (a *application) resetPlayback() {
 	a.adjustmentsOpen, a.projectionOpen = false, false
 	a.notice = ""
 	a.tracker.Reset()
-	if a.pipWindow != nil {
-		a.pipWindow.Close()
-	}
+	a.closePip()
 	a.window.SetTitle(appInfo.Name)
 	a.stored.LastPlayback = nil
 	a.persist()
