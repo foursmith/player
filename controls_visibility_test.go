@@ -214,10 +214,15 @@ func TestPlaybackControlsFitMinimumWindowAcrossLocales(t *testing.T) {
 				state := media.State{URL: "video.mp4", Playing: true, Metadata: media.Metadata{Duration: 180}}
 				view := ui.NewTester(func(c *ui.Context) {
 					a.width, a.height = c.Size()
-					ui.Box(c).Fill().Background(ui.RGB(0, 0, 0)).Children(func() { a.controls(c, state) })
+					ui.Box(c).Fill().Background(white(1)).Children(func() { a.controls(c, state); a.topControls(c) })
 				}, width, 320)
 				view.Advance(300 * time.Millisecond)
 				writeUISnapshot(t, fmt.Sprintf("playback-%s-%d.png", locale, width), view)
+				if locale == "en" && width == 1200 {
+					a.preferences.ControlsEffect = "clear"
+					view.Frame()
+					writeUISnapshot(t, "playback-en-1200-clear.png", view)
+				}
 				for _, label := range []string{"controls.pause", "controls.nextVideo", "controls.hideSubtitles", "controls.adjustVolumeSpeed", "controls.enterPip", "controls.enterFullscreen", "timeline.playbackPosition"} {
 					r, ok := view.Find(a.t(label))
 					if !ok || r.X < 0 || r.Y < 0 || r.X+r.W > float32(width) || r.Y+r.H > 320 {

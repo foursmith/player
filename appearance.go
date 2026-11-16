@@ -37,6 +37,13 @@ func textColor(surface themedSurface, alpha float32) ui.Color {
 var darkPlayerTheme = newPlayerTheme(true)
 var lightPlayerTheme = newPlayerTheme(false)
 
+func (p preferences) controlsTheme(current *ui.Theme) *ui.Theme {
+	if p.ControlsEffect == controlsClear {
+		return darkPlayerTheme
+	}
+	return current
+}
+
 func newPlayerTheme(dark bool) *ui.Theme {
 	theme := ui.LightTheme()
 	if dark {
@@ -178,6 +185,7 @@ const (
 	floatingIcon iconSurface = iota
 	subtleIcon
 	bareIcon
+	playbackIcon
 )
 
 type iconStyle struct {
@@ -189,21 +197,30 @@ func (a *application) iconButton(c *ui.Context, name, label string, size float32
 	return a.iconControl(c, name, label, iconStyle{size, size / 2, floatingIcon}, active, action)
 }
 
+func (a *application) playbackIconButton(c *ui.Context, name, label string, size float32, active bool, action func()) ui.Element {
+	return a.iconControl(c, name, label, iconStyle{size, size / 2, playbackIcon}, active, action)
+}
+
 func (a *application) iconControl(c *ui.Context, name, label string, style iconStyle, active bool, action func()) ui.Element {
 	radius := style.size / 2
 	if style.surface == bareIcon {
 		radius = 6
 	}
 	button := ui.Button(c, "").Size(style.size, style.size).Padding(0).Radius(radius).Background(ui.Transparent).Border(0, ui.Transparent).Label(label)
+	clear := style.surface == playbackIcon && a.preferences.ControlsEffect == controlsClear
 	hover := button.Hovered()
 	down := button.Pressed()
 	focus := button.FocusVisible()
 	button.Draw(func(p *ui.Painter, r ui.Rect) {
 		color := ink(p, .92)
-		if style.surface == floatingIcon {
+		if style.surface == floatingIcon || clear {
 			paintGlass(p, r, radius, active, hover)
 			if focus {
 				p.Fill(r, ink(p, .10), radius)
+			}
+		} else if style.surface == playbackIcon {
+			if hover || down || active || focus {
+				p.Fill(r, ink(p, .08), radius)
 			}
 		} else {
 			background := ui.Transparent
@@ -228,6 +245,9 @@ func (a *application) iconControl(c *ui.Context, name, label string, style iconS
 			p.Icon(icon, bounds, color)
 		}
 	})
+	if style.surface == playbackIcon && !clear {
+		button.Material(playbackFrostMaterial{})
+	}
 	button.OnClick(action)
 	return button
 }

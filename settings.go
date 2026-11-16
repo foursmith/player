@@ -302,6 +302,15 @@ func (a *application) generalSettings(c *ui.Context) {
 			a.preferences.Appearance = []mygo.ThemeSource{mygo.ThemeSystem, mygo.ThemeDark, mygo.ThemeLight}[i]
 			a.applyAppearance()
 		})
+		ui.Divider(c).Margin(0, 12).Background(ink(c, .045))
+		effect := 1
+		if a.preferences.ControlsEffect == controlsClear {
+			effect = 0
+		}
+		a.segmentSetting(c, "settings.controlsEffect", "", []string{a.t("settings.controlsClear"), a.t("settings.controlsFrosted")}, effect, func(i int) {
+			a.preferences.ControlsEffect = []string{controlsClear, controlsFrosted}[i]
+			a.refreshWindows()
+		})
 	})
 	a.sectionTitle(c, "settings.appBehavior")
 	settingsGroup(c).Children(func() {

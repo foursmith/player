@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,10 +32,15 @@ func TestAppearancePreferenceDefaultsAndRoundTrip(t *testing.T) {
 			if state.Preferences.Appearance != want {
 				t.Fatalf("appearance = %q, want %q", state.Preferences.Appearance, want)
 			}
+			state.Preferences.ControlsEffect = "clear"
 			if err := saveState(path, state); err != nil {
 				t.Fatal(err)
 			}
-			if got := loadState(path).Preferences.Appearance; got != want {
+			restored := loadState(path).Preferences
+			if got := restored.ControlsEffect; got != "clear" {
+				t.Fatalf("control effect after restart = %q", got)
+			}
+			if got := restored.Appearance; got != want {
 				t.Fatalf("appearance after restart = %q, want %q", got, want)
 			}
 		})
@@ -72,7 +78,22 @@ func TestAppearanceSwitchAcrossLocales(t *testing.T) {
 					t.Fatal("library retained the previous theme")
 				}
 			}
+
+			for _, choice := range []struct{ key, effect string }{
+				{"settings.controlsClear", "clear"}, {"settings.controlsFrosted", "frosted"}, {"settings.controlsClear", "clear"},
+			} {
+				if err := view.Click(a.t(choice.key)); err != nil {
+					t.Fatal(err)
+				}
+				if a.preferences.ControlsEffect != choice.effect || a.stored.Preferences.ControlsEffect != choice.effect {
+					t.Fatal("control effect was not applied and saved")
+				}
+			}
+			writeUISnapshot(t, fmt.Sprintf("settings-controls-effect-%s.png", locale), view)
 			a.resetPreferences()
+			if a.preferences.ControlsEffect != "frosted" {
+				t.Fatal("reset did not restore frosted controls")
+			}
 			if a.preferences.Appearance != mygo.ThemeDark {
 				t.Fatal("reset did not restore the default appearance")
 			}
@@ -191,5 +212,52 @@ func TestPlaybackAppearancePanels(t *testing.T) {
 			view.SetScale(2)
 			writeUISnapshot(t, string(appearance)+"-playback-panels.png", view)
 		})
+	}
+}
+
+func TestPlaybackFrostRespectsReducedTransparency(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		view := ui.NewTester(func(c *ui.Context) {
+			c.SetTheme(newPlayerTheme(dark))
+			ui.Box(c).Fill().Background(ui.RGB(255, 0, 0)).Children(func() {
+				ui.Box(c).Absolute().Left(10).Top(10).Size(40, 40).Radius(20).Material(playbackFrostMaterial{})
+			})
+		}, 60, 60)
+		view.SetPreferences(ui.Preferences{ReduceTransparency: true, HighContrast: true})
+		pixel := view.Image().RGBAAt(30, 30)
+		want := ui.Hex(windowBackground(dark))
+		if pixel.R != want.R || pixel.G != want.G || pixel.B != want.B || pixel.A != 255 {
+			t.Fatalf("reduced-transparency glass must be opaque: dark=%v got=%v want=%v", dark, pixel, want)
+		}
+	}
+}
+
+func TestClearPlaybackControlsMatchOriginalGlass(t *testing.T) {
+	if err := loadAssets(); err != nil {
+		t.Fatal(err)
+	}
+	for _, dark := range []bool{false, true} {
+		for _, background := range []ui.Color{white(1), ui.RGB(0, 0, 0)} {
+			a := modeTestApplication(t)
+			a.preferences.ControlsEffect = controlsClear
+			render := func(surface iconSurface) *ui.Tester {
+				return ui.NewTester(func(c *ui.Context) {
+					c.SetTheme(a.preferences.controlsTheme(newPlayerTheme(dark)))
+					ui.Box(c).Fill().Background(background).Children(func() {
+						a.iconControl(c, "play", "Play", iconStyle{40, 20, surface}, false, func() {})
+					})
+				}, 60, 60)
+			}
+			original, clear := render(floatingIcon), render(playbackIcon)
+			for _, hover := range []bool{false, true} {
+				if hover {
+					original.Move(20, 20)
+					clear.Move(20, 20)
+				}
+				if !bytes.Equal(original.Image().Pix, clear.Image().Pix) {
+					t.Fatalf("clear controls differ from original glass: dark=%v hover=%v", dark, hover)
+				}
+			}
+		}
 	}
 }

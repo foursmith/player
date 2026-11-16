@@ -73,7 +73,10 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 			return
 		}
 		ui.Row(c).FillWidth().Gap(6).Children(func() {
-			smallText(c, formatTime(position), .48).Font("monospace")
+			elapsed := smallText(c, formatTime(position), .8).Font("monospace")
+			if c.Theme().Dark {
+				elapsed.TextShadow(0, 1, 2, ui.RGBA(0, 0, 0, .65))
+			}
 			if len(state.Metadata.Chapters) > 0 {
 				label := a.chapterTitle(state.Metadata.Chapters, media.ChapterAt(state.Metadata.Chapters, position))
 				if label == "" {
@@ -130,7 +133,10 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 				}
 			}
 			ui.Spacer(c).Grow(1)
-			smallText(c, formatTime(state.Metadata.Duration), .6).Font("monospace")
+			duration := smallText(c, formatTime(state.Metadata.Duration), .8).Font("monospace")
+			if c.Theme().Dark {
+				duration.TextShadow(0, 1, 2, ui.RGBA(0, 0, 0, .65))
+			}
 		})
 	})
 }

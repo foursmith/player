@@ -157,28 +157,28 @@ func topContentInset(c *ui.Context) float32 {
 
 func (a *application) topControls(c *ui.Context) {
 	inset := topContentMargin + topControlPadding
-	row := ui.Themed(c.Key("top-actions"), darkPlayerTheme).Row().Absolute().Top(topContentInset(c) + topControlPadding).Left(inset).Right(inset).Height(topControlSize).Gap(topControlPadding).AlignItems(ui.Center).PassThrough()
+	row := ui.Themed(c.Key("top-actions"), a.preferences.controlsTheme(c.Theme())).Row().Absolute().Top(topContentInset(c) + topControlPadding).Left(inset).Right(inset).Height(topControlSize).Gap(topControlPadding).AlignItems(ui.Center).PassThrough()
 	hold(c, a, row)
 	row.Children(func() {
 		if !a.playlistExpanded && len(a.playlistModel()) > 0 {
-			a.iconButton(c, "playlist", a.t("playlist.open"), topControlSize, false, func() { a.playlistExpanded = true })
+			a.playbackIconButton(c, "playlist", a.t("playlist.open"), topControlSize, false, func() { a.playlistExpanded = true })
 		}
 		ui.Spacer(c).Grow(1)
 		if a.selected >= 0 {
-			a.iconButton(c, "x", a.t("media.closeVideo"), topControlSize, false, a.closeVideo)
+			a.playbackIconButton(c, "x", a.t("media.closeVideo"), topControlSize, false, a.closeVideo)
 		}
 		if a.mode.IsVR() && (a.manuallyPaused || c.Now().Before(a.manualUntil)) {
-			a.iconButton(c, "scan-face", a.t("debug.resumeCentering"), topControlSize, false, func() { a.manuallyPaused = false; a.manualUntil = time.Time{}; a.tracker.Reset() })
+			a.playbackIconButton(c, "scan-face", a.t("debug.resumeCentering"), topControlSize, false, func() { a.manuallyPaused = false; a.manualUntil = time.Time{}; a.tracker.Reset() })
 		}
 		onTop := a.window != nil && a.window.IsAlwaysOnTop()
 		pinIcon, pinLabel := "pin", "controls.pinWindow"
 		if onTop {
 			pinIcon, pinLabel = "pin-filled", "controls.unpinWindow"
 		}
-		a.iconButton(c, pinIcon, a.t(pinLabel), topControlSize, onTop, func() {
+		a.playbackIconButton(c, pinIcon, a.t(pinLabel), topControlSize, onTop, func() {
 			a.window.SetAlwaysOnTop(!a.window.IsAlwaysOnTop())
 		})
-		a.iconButton(c, "settings", a.t("common.settings"), topControlSize, false, a.openSettings)
+		a.playbackIconButton(c, "settings", a.t("common.settings"), topControlSize, false, a.openSettings)
 	})
 }
 
@@ -519,7 +519,7 @@ func (a *application) controls(c *ui.Context, state media.State) {
 	if a.width < 640 {
 		pad, inset, buttonSize, playSize, gap = 12, 8, 44, 56, 8
 	}
-	panel := ui.Themed(c.Key("controls"), darkPlayerTheme).Bind(&a.controlsPanel).Absolute().Left(pad).Right(pad).Bottom(pad).MaxWidth(1152).Margin(0, ui.Auto).Padding(inset).Gap(12).Transition(ui.ElementTransition{Duration: 300 * time.Millisecond, Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}})
+	panel := ui.Themed(c.Key("controls"), a.preferences.controlsTheme(c.Theme())).Bind(&a.controlsPanel).Absolute().Left(pad).Right(pad).Bottom(pad).MaxWidth(1152).Margin(0, ui.Auto).Padding(inset).Gap(12).Transition(ui.ElementTransition{Duration: 300 * time.Millisecond, Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}})
 	hold(c, a, panel)
 	panel.Children(func() {
 		if !a.scrubbing || !a.seekUI.fine {
@@ -528,9 +528,9 @@ func (a *application) controls(c *ui.Context, state media.State) {
 				if state.Playing {
 					name, label = "pause", "controls.pause"
 				}
-				a.iconControl(c, name, a.t(label), iconStyle{playSize, 26, floatingIcon}, false, a.player.Toggle).Bind(&a.playButton)
+				a.iconControl(c, name, a.t(label), iconStyle{playSize, 26, playbackIcon}, false, a.player.Toggle).Bind(&a.playButton)
 				if len(a.entries) > 1 {
-					a.iconControl(c, "skip-forward", a.t("controls.nextVideo"), iconStyle{buttonSize, 18, floatingIcon}, false, func() { a.next(false) })
+					a.iconControl(c, "skip-forward", a.t("controls.nextVideo"), iconStyle{buttonSize, 18, playbackIcon}, false, func() { a.next(false) })
 				}
 				ui.Spacer(c).Grow(1)
 				actions := ui.Row(c).Gap(8).AlignItems(ui.Center)
@@ -543,15 +543,15 @@ func (a *application) controls(c *ui.Context, state media.State) {
 						if a.preferences.SubtitlesEnabled {
 							subtitleIcon, label = "subtitles", "controls.hideSubtitles"
 						}
-						a.iconControl(c, subtitleIcon, a.t(label), iconStyle{buttonSize, 18, floatingIcon}, a.preferences.SubtitlesEnabled, func() { a.preferences.SubtitlesEnabled = !a.preferences.SubtitlesEnabled; a.persist() })
+						a.iconControl(c, subtitleIcon, a.t(label), iconStyle{buttonSize, 18, playbackIcon}, a.preferences.SubtitlesEnabled, func() { a.preferences.SubtitlesEnabled = !a.preferences.SubtitlesEnabled; a.persist() })
 					}
-					a.iconControl(c, "projection-"+projection.IDs[a.mode], a.projectionLabel(int(a.mode)), iconStyle{buttonSize, 18, floatingIcon}, false, func() {
+					a.iconControl(c, "projection-"+projection.IDs[a.mode], a.projectionLabel(int(a.mode)), iconStyle{buttonSize, 18, playbackIcon}, false, func() {
 						a.projectionOpen = !a.projectionOpen
 						a.projectionFocused = int(a.mode)
 						a.adjustmentsOpen = false
 						a.seekUI.chaptersOpen = false
 					}).Bind(&a.projectionButton)
-					a.iconControl(c, "sliders", a.t("controls.adjustVolumeSpeed"), iconStyle{buttonSize, 18, floatingIcon}, false, func() {
+					a.iconControl(c, "sliders", a.t("controls.adjustVolumeSpeed"), iconStyle{buttonSize, 18, playbackIcon}, false, func() {
 						a.adjustmentsOpen = !a.adjustmentsOpen
 						a.projectionOpen, a.seekUI.chaptersOpen = false, false
 					}).Bind(&a.adjustmentsButton)
@@ -560,14 +560,14 @@ func (a *application) controls(c *ui.Context, state media.State) {
 					if pipActive {
 						pipIcon, pipLabel = "picture-in-picture-exit", "controls.exitPip"
 					}
-					a.iconControl(c, pipIcon, a.t(pipLabel), iconStyle{buttonSize, 18, floatingIcon}, pipActive, a.togglePip)
+					a.iconControl(c, pipIcon, a.t(pipLabel), iconStyle{buttonSize, 18, playbackIcon}, pipActive, a.togglePip)
 					name = "corners-out"
 					fullscreenLabel := "controls.enterFullscreen"
 					if fullscreen {
 						name = "corners-in"
 						fullscreenLabel = "controls.exitFullscreen"
 					}
-					a.iconControl(c, name, a.t(fullscreenLabel), iconStyle{buttonSize, 18, floatingIcon}, fullscreen, a.window.ToggleFullScreen).Bind(&a.fullscreenButton)
+					a.iconControl(c, name, a.t(fullscreenLabel), iconStyle{buttonSize, 18, playbackIcon}, fullscreen, a.window.ToggleFullScreen).Bind(&a.fullscreenButton)
 				})
 			})
 		}

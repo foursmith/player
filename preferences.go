@@ -11,6 +11,11 @@ import (
 	"github.com/foursmith/player/library"
 )
 
+const (
+	controlsClear   = "clear"
+	controlsFrosted = "frosted"
+)
+
 type preferences struct {
 	Volume                 float64             `json:"volume"`
 	PlaybackRate           float64             `json:"playbackRate"`
@@ -33,6 +38,7 @@ type preferences struct {
 	RepeatMode             string              `json:"repeatMode"`
 	Locale                 string              `json:"locale"`
 	Appearance             mygo.ThemeSource    `json:"appearance"`
+	ControlsEffect         string              `json:"controlsEffect"`
 	QuitOnWindowClose      bool                `json:"quitOnWindowClose"`
 	Shortcuts              map[string]keyChord `json:"shortcuts,omitempty"`
 }
@@ -70,7 +76,7 @@ func defaultPreferences() preferences {
 		VRDragSensitivity: 1, CenteringResumeDelay: 1, ProjectionAI: true,
 		ResumePlaybackPosition: true, RecordPlaybackHistory: true, RecentFilesEnabled: true,
 		AmbientLight: true, SubtitlesEnabled: true, RepeatMode: "file", Locale: "en", Appearance: mygo.ThemeDark, LibraryAutoRefresh: true,
-		QuitOnWindowClose: true,
+		QuitOnWindowClose: true, ControlsEffect: controlsFrosted,
 	}
 }
 func loadState(path string) storedState {
@@ -99,6 +105,9 @@ func loadState(path string) storedState {
 	}
 	if p.Appearance != mygo.ThemeLight && p.Appearance != mygo.ThemeSystem {
 		p.Appearance = mygo.ThemeDark
+	}
+	if p.ControlsEffect != controlsClear {
+		p.ControlsEffect = controlsFrosted
 	}
 	if p.RepeatMode != "file" && p.RepeatMode != "folder" {
 		p.RepeatMode = "off"
