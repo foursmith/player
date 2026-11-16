@@ -21,6 +21,9 @@ func readCatalog(parent context.Context, source library.Source, parentID string,
 	var cancel context.CancelFunc
 	if sourceSnapshot(source) {
 		ctx, cancel = context.WithCancel(parent)
+		// Snapshot providers read the whole source; the selected directory is
+		// applied locally after the read, including background refreshes.
+		parentID = sourceRoot(source)
 	} else {
 		ctx, cancel = context.WithTimeout(parent, 20*time.Second)
 	}

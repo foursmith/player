@@ -72,8 +72,26 @@ func (a *application) openCatalog() {
 		a.startCatalogThumbnails()
 		a.refreshCatalog()
 	} else if len(a.stored.Libraries) > 0 {
-		a.selectCatalog(a.stored.Libraries[0].ID)
+		a.selectCatalog(a.defaultCatalogID())
 	}
+}
+
+func (a *application) defaultCatalogID() string {
+	// Prefer local media regardless of the order sources were added in.
+	for _, source := range a.stored.Libraries {
+		if source.LocalFolder() != "" {
+			return source.ID
+		}
+	}
+	for _, source := range a.stored.Libraries {
+		if source.IsLocal() {
+			return source.ID
+		}
+	}
+	if len(a.stored.Libraries) > 0 {
+		return a.stored.Libraries[0].ID
+	}
+	return ""
 }
 
 func (a *application) cancelCatalogRead() {
