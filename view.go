@@ -171,11 +171,11 @@ func (a *application) topControls(c *ui.Context) {
 			a.iconButton(c, "scan-face", a.t("debug.resumeCentering"), topControlSize, false, func() { a.manuallyPaused = false; a.manualUntil = time.Time{}; a.tracker.Reset() })
 		}
 		onTop := a.window != nil && a.window.IsAlwaysOnTop()
-		pinLabel := "controls.pinWindow"
+		pinIcon, pinLabel := "pin", "controls.pinWindow"
 		if onTop {
-			pinLabel = "controls.unpinWindow"
+			pinIcon, pinLabel = "pin-filled", "controls.unpinWindow"
 		}
-		a.iconButton(c, "pin", a.t(pinLabel), topControlSize, onTop, func() {
+		a.iconButton(c, pinIcon, a.t(pinLabel), topControlSize, onTop, func() {
 			a.window.SetAlwaysOnTop(!a.window.IsAlwaysOnTop())
 		})
 		a.iconButton(c, "settings", a.t("common.settings"), topControlSize, false, a.openSettings)
@@ -539,11 +539,11 @@ func (a *application) controls(c *ui.Context, state media.State) {
 				}
 				actions.Children(func() {
 					if len(a.cues) > 0 {
-						label := "controls.showSubtitles"
+						subtitleIcon, label := "subtitles-off", "controls.showSubtitles"
 						if a.preferences.SubtitlesEnabled {
-							label = "controls.hideSubtitles"
+							subtitleIcon, label = "subtitles", "controls.hideSubtitles"
 						}
-						a.iconControl(c, "subtitles", a.t(label), iconStyle{buttonSize, 18, floatingIcon}, a.preferences.SubtitlesEnabled, func() { a.preferences.SubtitlesEnabled = !a.preferences.SubtitlesEnabled; a.persist() })
+						a.iconControl(c, subtitleIcon, a.t(label), iconStyle{buttonSize, 18, floatingIcon}, a.preferences.SubtitlesEnabled, func() { a.preferences.SubtitlesEnabled = !a.preferences.SubtitlesEnabled; a.persist() })
 					}
 					a.iconControl(c, "projection-"+projection.IDs[a.mode], a.projectionLabel(int(a.mode)), iconStyle{buttonSize, 18, floatingIcon}, false, func() {
 						a.projectionOpen = !a.projectionOpen
@@ -555,11 +555,12 @@ func (a *application) controls(c *ui.Context, state media.State) {
 						a.adjustmentsOpen = !a.adjustmentsOpen
 						a.projectionOpen, a.seekUI.chaptersOpen = false, false
 					}).Bind(&a.adjustmentsButton)
-					pipLabel := "controls.enterPip"
-					if a.pipActive() {
-						pipLabel = "controls.exitPip"
+					pipActive := a.pipActive()
+					pipIcon, pipLabel := "picture-in-picture", "controls.enterPip"
+					if pipActive {
+						pipIcon, pipLabel = "picture-in-picture-exit", "controls.exitPip"
 					}
-					a.iconControl(c, "picture-in-picture", a.t(pipLabel), iconStyle{buttonSize, 18, floatingIcon}, a.pipActive(), a.togglePip)
+					a.iconControl(c, pipIcon, a.t(pipLabel), iconStyle{buttonSize, 18, floatingIcon}, pipActive, a.togglePip)
 					name = "corners-out"
 					fullscreenLabel := "controls.enterFullscreen"
 					if fullscreen {

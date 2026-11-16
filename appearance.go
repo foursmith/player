@@ -185,11 +185,11 @@ type iconStyle struct {
 	surface        iconSurface
 }
 
-func (a *application) iconButton(c *ui.Context, name, label string, size float32, pressed bool, action func()) ui.Element {
-	return a.iconControl(c, name, label, iconStyle{size, size / 2, floatingIcon}, pressed, action)
+func (a *application) iconButton(c *ui.Context, name, label string, size float32, active bool, action func()) ui.Element {
+	return a.iconControl(c, name, label, iconStyle{size, size / 2, floatingIcon}, active, action)
 }
 
-func (a *application) iconControl(c *ui.Context, name, label string, style iconStyle, pressed bool, action func()) ui.Element {
+func (a *application) iconControl(c *ui.Context, name, label string, style iconStyle, active bool, action func()) ui.Element {
 	radius := style.size / 2
 	if style.surface == bareIcon {
 		radius = 6
@@ -201,7 +201,7 @@ func (a *application) iconControl(c *ui.Context, name, label string, style iconS
 	button.Draw(func(p *ui.Painter, r ui.Rect) {
 		color := ink(p, .92)
 		if style.surface == floatingIcon {
-			paintGlass(p, r, radius, pressed, hover)
+			paintGlass(p, r, radius, active, hover)
 			if focus {
 				p.Fill(r, ink(p, .10), radius)
 			}
@@ -216,7 +216,7 @@ func (a *application) iconControl(c *ui.Context, name, label string, style iconS
 			}
 			p.Fill(r, background, radius)
 		}
-		if hover || pressed {
+		if hover || active {
 			color = ink(p, 1)
 		}
 		iconSize := style.iconSize
@@ -226,12 +226,6 @@ func (a *application) iconControl(c *ui.Context, name, label string, style iconS
 		if icon := icons[name]; icon != nil {
 			bounds := ui.Rect{X: r.X + (r.W-iconSize)/2, Y: r.Y + (r.H-iconSize)/2, W: iconSize, H: iconSize}
 			p.Icon(icon, bounds, color)
-		}
-		if pressed && style.surface == floatingIcon {
-			dot := ui.Rect{X: r.X + r.W/2 - 3, Y: r.Y + r.H - 10, W: 6, H: 6}
-			paintGlass(p, dot, 3, false, false)
-			p.Fill(dot, ink(p, .20), 3)
-			p.Stroke(dot, ink(p, .34), 3, 1)
 		}
 	})
 	button.OnClick(action)
