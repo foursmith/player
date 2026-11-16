@@ -42,5 +42,6 @@ func (a *application) openPip() {
 		}
 		a.pipWindow = nil
 		a.window.Invalidate()
+		a.quitIfAllWindowsClosed()
 	})
 }

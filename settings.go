@@ -22,7 +22,7 @@ func (a *application) openSettings() {
 		MinWidth: 720, MinHeight: 420, UseContentSize: true,
 		TitleBarStyle: mygo.TitleBarHiddenInset, BackgroundColor: windowBackground(mygo.Theme.IsDark()),
 		DisableFullScreen: true, DisableMaximize: true,
-		Parent: a.window, StateKey: "settings", Hidden: true,
+		StateKey: "settings", Hidden: true,
 		Content: ui.View(a.settings),
 	})
 	window := a.settingsWindow
@@ -33,6 +33,7 @@ func (a *application) openSettings() {
 	window.OnClosed(func() {
 		a.settingsWindow = nil
 		a.setShortcutRecording("")
+		a.quitIfAllWindowsClosed()
 	})
 }
 
@@ -133,11 +134,11 @@ func (a *application) vrSettings(c *ui.Context) {
 	a.sectionTitle(c, "settings.layout")
 	settingsGroup(c).Children(func() {
 		a.segmentSetting(c, "settings.portraitLayout", "settings.portraitLayoutDescription", []string{"1", "2", "3"}, a.preferences.SplitCount-1, func(i int) { a.preferences.SplitCount = i + 1 })
-		a.segmentSetting(c, "settings.preferredSplitAspect", "settings.preferredSplitAspectDescription", []string{"1:1", "9:16"}, map[bool]int{false: 0, true: 1}[a.preferences.PreferredSplitAspect == "9:16"], func(i int) { a.preferences.PreferredSplitAspect = []string{"1:1", "9:16"}[i] })
+		a.segmentSetting(c, "settings.preferredSplitAspect", "", []string{"1:1", "9:16"}, map[bool]int{false: 0, true: 1}[a.preferences.PreferredSplitAspect == "9:16"], func(i int) { a.preferences.PreferredSplitAspect = []string{"1:1", "9:16"}[i] })
 	})
 	a.sectionTitle(c, "settings.interaction")
 	settingsGroup(c).Children(func() {
-		a.numberSetting(c, "settings.dragSensitivity", "settings.dragSensitivityDescription", &a.preferences.VRDragSensitivity, .25, 3, .05, "×", false)
+		a.numberSetting(c, "settings.dragSensitivity", "", &a.preferences.VRDragSensitivity, .25, 3, .05, "×", false)
 	})
 	a.sectionTitle(c, "settings.recognition")
 	settingsGroup(c).Children(func() {
@@ -147,10 +148,10 @@ func (a *application) vrSettings(c *ui.Context) {
 	})
 	a.sectionTitle(c, "settings.centering")
 	settingsGroup(c).Children(func() {
-		if a.toggleSetting(c, "settings.faceCentering", "settings.faceCenteringDescription", &a.preferences.FaceAutoCenter, false) {
+		if a.toggleSetting(c, "settings.faceCentering", "", &a.preferences.FaceAutoCenter, false) {
 			a.persist()
 		}
-		if a.toggleSetting(c, "settings.resumeAfterMovement", "settings.resumeAfterMovementDescription", &a.preferences.ResumeAfterMovement, !a.preferences.FaceAutoCenter) {
+		if a.toggleSetting(c, "settings.resumeAfterMovement", "", &a.preferences.ResumeAfterMovement, !a.preferences.FaceAutoCenter) {
 			a.persist()
 		}
 		a.numberSetting(c, "settings.centeringDelay", "settings.centeringDelayDescription", &a.preferences.CenteringResumeDelay, .25, 5, .25, " s", !a.preferences.FaceAutoCenter || !a.preferences.ResumeAfterMovement)
@@ -204,7 +205,9 @@ func (a *application) segmentSetting(c *ui.Context, title, description string, o
 	ui.Row(c.Key(title)).FillWidth().MinHeight(52).Padding(10, 12).Gap(10).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			ui.Text(c, a.t(title)).FontSize(12).FontWeight(500).TextColor(textColor(c, .88))
-			smallText(c, a.t(description), .4).FontSize(10).FillWidth().Wrap()
+			if description != "" {
+				smallText(c, a.t(description), .4).FontSize(10).FillWidth().Wrap()
+			}
 		})
 		ui.Row(c).Padding(3).Radius(15).Background(ink(c, .035)).Children(func() {
 			for i, label := range options {
@@ -271,7 +274,9 @@ func (a *application) numberSetting(c *ui.Context, title, description string, va
 	row.Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			ui.Text(c, a.t(title)).FontSize(12).FontWeight(500).TextColor(textColor(c, .88))
-			smallText(c, a.t(description), .4).FontSize(10).FillWidth().Wrap()
+			if description != "" {
+				smallText(c, a.t(description), .4).FontSize(10).FillWidth().Wrap()
+			}
 		})
 		slider := ui.SliderBase(c, value, lo, hi).Step(step).Width(100).Height(24).Disabled(disabled).Label(a.t(title))
 		slider.Draw(func(p *ui.Painter, r ui.Rect) { paintGlassTrack(p, r, float32((*value-lo)/(hi-lo))) })
@@ -288,12 +293,12 @@ func (a *application) numberSetting(c *ui.Context, title, description string, va
 func (a *application) generalSettings(c *ui.Context) {
 	settingsGroup(c).Children(func() {
 		selected := map[string]int{"zh-CN": 0, "en": 1, "ja": 2}[a.preferences.Locale]
-		a.segmentSetting(c, "language.title", "language.description", []string{"简体中文", "English", "日本語"}, selected, func(i int) { a.preferences.Locale = []string{"zh-CN", "en", "ja"}[i] })
+		a.segmentSetting(c, "language.title", "", []string{"简体中文", "English", "日本語"}, selected, func(i int) { a.preferences.Locale = []string{"zh-CN", "en", "ja"}[i] })
 	})
 	a.sectionTitle(c, "settings.appearance")
 	settingsGroup(c).Children(func() {
 		selected := map[mygo.ThemeSource]int{mygo.ThemeSystem: 0, mygo.ThemeDark: 1, mygo.ThemeLight: 2}[a.preferences.Appearance]
-		a.segmentSetting(c, "settings.theme", "settings.themeDescription", []string{a.t("settings.system"), a.t("settings.dark"), a.t("settings.light")}, selected, func(i int) {
+		a.segmentSetting(c, "settings.theme", "", []string{a.t("settings.system"), a.t("settings.dark"), a.t("settings.light")}, selected, func(i int) {
 			a.preferences.Appearance = []mygo.ThemeSource{mygo.ThemeSystem, mygo.ThemeDark, mygo.ThemeLight}[i]
 			a.applyAppearance()
 		})
@@ -307,10 +312,10 @@ func (a *application) generalSettings(c *ui.Context) {
 	a.historySettings(c)
 	a.sectionTitle(c, "settings.data")
 	settingsGroup(c).Children(func() {
-		a.settingsAction(c, "settings.clearHistory", "settings.clearHistoryDescription", func() {
+		a.settingsAction(c, "settings.clearHistory", "settings.clearHistoryDescription", "common.clear", func() {
 			a.confirmSettingsAction("settings.clearHistory", "settings.clearHistoryConfirm", a.clearRecentFiles)
 		})
-		a.settingsAction(c, "settings.resetPreferences", "settings.resetPreferencesDescription", func() {
+		a.settingsAction(c, "settings.resetPreferences", "settings.resetPreferencesDescription", "common.reset", func() {
 			a.confirmSettingsAction("settings.resetPreferences", "settings.resetPreferencesConfirm", a.resetPreferences)
 		})
 	})
@@ -336,13 +341,13 @@ func (a *application) historySettings(c *ui.Context) {
 	}
 }
 
-func (a *application) settingsAction(c *ui.Context, title, description string, action func()) {
+func (a *application) settingsAction(c *ui.Context, title, description, buttonTitle string, action func()) {
 	ui.Row(c.Key(title)).FillWidth().Padding(10, 12).Gap(10).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 			ui.Text(c, a.t(title)).FontSize(12).FontWeight(500).TextColor(textColor(c, .88))
 			smallText(c, a.t(description), .4).FontSize(10).FillWidth().Wrap()
 		})
-		button := glassButton(c, a.t(title)).Height(26).FontSize(10).Disabled(a.dialogOpen)
+		button := glassButton(c, a.t(buttonTitle)).Label(a.t(title)).Height(26).FontSize(10).Disabled(a.dialogOpen)
 		if button.Clicked() {
 			action()
 		}

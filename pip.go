@@ -36,6 +36,7 @@ func (a *application) presentSystemPip(p *systemPipPresentation) {
 				a.showWindow()
 			}
 			a.window.Invalidate()
+			a.quitIfAllWindowsClosed()
 		}
 		return
 	}

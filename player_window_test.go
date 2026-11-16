@@ -25,7 +25,7 @@ func TestWindowCloseSettingAcrossLocales(t *testing.T) {
 				}
 			}
 			if !a.preferences.QuitOnWindowClose {
-				t.Fatal("closing the player must quit by default")
+				t.Fatal("closing all windows must quit by default")
 			}
 			if rect, ok := view.Find(label); !ok || rect.X < 200 || rect.Y < 64 || rect.X+rect.W > 720 || rect.Y+rect.H > 560 {
 				t.Fatalf("window-close control is outside the general settings pane: %+v", rect)

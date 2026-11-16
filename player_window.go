@@ -19,18 +19,22 @@ func (a *application) closePlayerWindow(event *mygo.CloseEvent) {
 		return
 	}
 	event.PreventDefault()
-	if a.preferences.QuitOnWindowClose {
-		mygo.App.Quit()
-		return
-	}
 	a.cancelImports()
 	a.singleClickAt = time.Time{}
 	a.scrubbing, a.dragging = false, false
-	a.player.Pause()
-	a.persist()
-	a.closePip()
-	if a.settingsWindow != nil {
-		a.settingsWindow.Close()
+	if !a.pipActive() {
+		a.player.Pause()
 	}
+	a.persist()
 	a.window.Hide()
+	a.quitIfAllWindowsClosed()
+}
+
+func (a *application) quitIfAllWindowsClosed() {
+	if a.shutdown || !a.preferences.QuitOnWindowClose || a.catalogWindow != nil || a.settingsWindow != nil || a.pipActive() {
+		return
+	}
+	if a.window != nil && !a.window.IsVisible() {
+		mygo.App.Quit()
+	}
 }

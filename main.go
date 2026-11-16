@@ -261,8 +261,8 @@ func main() {
 			a.pipSurface.Close()
 		}
 	})
-	mygo.App.OnActivate(func(bool) {
-		if a.window != nil && !a.shutdown && !a.window.IsVisible() {
+	mygo.App.OnActivate(func(hasVisibleWindows bool) {
+		if a.window != nil && !a.shutdown && !hasVisibleWindows && !a.pipActive() {
 			a.showWindow()
 		}
 	})

@@ -67,6 +67,7 @@ func (a *application) openCatalog() {
 		a.stopCatalogThumbnails()
 		a.catalog.list = ui.ListState{}
 		a.catalogWindow = nil
+		a.quitIfAllWindowsClosed()
 	})
 	if a.selectedCatalog() != nil {
 		a.startCatalogThumbnails()

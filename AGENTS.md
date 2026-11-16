@@ -2,6 +2,8 @@
 
 ## 代码维护与提交
 
+- 所有提交信息必须遵循 Conventional Commits，格式为 `<type>(<scope>): <summary>`，不可省略 type 或 scope；使用英文摘要，并与现有提交历史保持一致。例如 `feat(player): add ambient lighting for 2D playback`、`fix(library): refresh local files and select default source`。
+- 提交前检查最终提交信息是否符合上述格式。
 - 产品尚未发布，不为历史开发版保留状态迁移、废弃字段或重复接口；清理时保留当前功能所需的媒体格式支持和平台实现。
 - “准备 commit，但不要 commit”只授权清理、验证和暂存，不授权创建提交或推送。
 
