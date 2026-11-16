@@ -65,6 +65,8 @@
   "settings.portraitLayoutDescription": "设置宽屏上并排显示的最大画面数量。",
   "settings.preferredSplitAspect": "优先画面比例",
   "settings.preferredSplitAspectDescription": "分屏时优先采用正方形或竖屏比例。",
+  "settings.ambientLight": "流光溢彩",
+  "settings.ambientLightDescription": "将 2D 视频的画面色彩柔和延伸至窗口边缘。",
   "settings.resumeLastVideo": "启动时打开上次视频",
   "settings.resumeLastVideoDescription": "启动时恢复上次播放的视频和播放列表，支持本地与 DLNA。",
   "settings.shortcutsTab": "快捷键",

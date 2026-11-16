@@ -120,6 +120,9 @@ func (a *application) settingsNavigation(c *ui.Context) {
 
 func (a *application) playbackSettings(c *ui.Context) {
 	settingsGroup(c).Children(func() {
+		if a.toggleSetting(c, "settings.ambientLight", "settings.ambientLightDescription", &a.preferences.AmbientLight, false) {
+			a.persist()
+		}
 		if a.toggleSetting(c, "settings.resumeLastVideo", "settings.resumeLastVideoDescription", &a.preferences.AutoResume, !a.preferences.RecordPlaybackHistory) {
 			a.updateHistoryRecording()
 		}

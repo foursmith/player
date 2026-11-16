@@ -65,6 +65,8 @@
   "settings.portraitLayoutDescription": "Set the maximum number of views on wide screens.",
   "settings.preferredSplitAspect": "Preferred view ratio",
   "settings.preferredSplitAspectDescription": "Favor square or portrait views when splitting.",
+  "settings.ambientLight": "Ambient light",
+  "settings.ambientLightDescription": "Extend 2D video colors softly to the window edges.",
   "settings.resumeLastVideo": "Reopen last video on startup",
   "settings.resumeLastVideoDescription": "Restore the last video and playlist on startup, including DLNA.",
   "settings.shortcutsTab": "Shortcuts",

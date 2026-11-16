@@ -17,13 +17,6 @@ func Paint(surface Surface, p *ui.Painter, r ui.Rect) {
 	}
 }
 
-// ReleaseFrame drops presentation resources while keeping the surface reusable.
-func ReleaseFrame(surface Surface) {
-	if buffered, ok := surface.(interface{ Clear() }); ok {
-		buffered.Clear()
-	}
-}
-
 var vrShader = shader.MustCompile(`package main
 var Camera vec4
 var Mode int
@@ -39,15 +32,69 @@ func Fragment(dst vec4,pos vec2)vec4{
  if !visible{return vec4(.0784314,.0705882,.0588235,1)};return image0Sample(source*image0Size())
 }`)
 
+// Match the native ambient shaders while keeping the original image draw sharp.
+var ambientShader = shader.MustCompile(`package main
+var Extent vec2
+var Pan vec2
+var Zoom float
+var Aspect float
+func Fragment(dst vec4,pos vec2)vec4{
+ source:=(pos/rectSize()-.5)*Extent/Zoom+.5-Pan
+ if source.x>=0&&source.x<=1&&source.y>=0&&source.y<=1{return vec4(0,0,0,1)}
+ metric:=vec2(Aspect,1)/min(Aspect,1)
+ before:=(.5*Extent/Zoom-.5+Pan)*metric
+ after:=(.5*Extent/Zoom-.5-Pan)*metric
+ side:=before
+ if source.x>=.5{side.x=after.x};if source.y>=.5{side.y=after.y}
+ spread:=max(vec2(.000001),side)
+ outside:=(source-clamp(source,0,1))*metric
+ distance:=length(outside)
+ reach:=clamp(length(outside/spread),0,1)
+ transition:=smoothstep(0,.15,distance)
+ fade:=(1-.22*transition)*(1-.78*reach*reach*(3-2*reach))
+ center:=clamp(source,0,1)*.92+.04
+ blur:=.085+.07*reach
+ light:=vec3(0);total:=0.0
+ for y:=0;y<7;y++{for x:=0;x<7;x++{
+ uv:=(vec2(float(x),float(y))+.5)/7
+ delta:=(uv-center)/blur
+ weight:=exp(-dot(delta,delta)/2)
+ light+=image0Sample(uv*image0Size()).rgb*weight;total+=weight
+ }}
+ light/=total
+ luminance:=dot(light,vec3(.2126,.7152,.0722))
+ gain:=1+.35*transition*(1-max(light.r,max(light.g,light.b)))
+ light=clamp((luminance+(light-luminance)*(1+.25*transition))*gain,0,1)
+ light*=fade
+ noise:=fract(52.9829189*fract(dot(floor(dst.xy),vec2(.06711056,.00583715))))-.5
+ return vec4(clamp(light+noise/255,0,1),1)
+}`)
+
+var ambientStepShader = shader.MustCompile(`package main
+var Mix float
+func Fragment(dst vec4,pos vec2)vec4{
+ uv:=pos/rectSize()
+ current:=vec3(0)
+ for y:=-1;y<=1;y++{for x:=-1;x<=1;x++{
+ current+=image0Sample((uv+vec2(float(x),float(y))/21)*image0Size()).rgb/9
+ }}
+ if Mix>=1{return vec4(current,1)}
+ return vec4(mix(image1Sample(uv*image1Size()).rgb,current,Mix),1)
+}`)
+
 // bitmapSurface is used when direct hardware-texture sharing is unavailable.
 // Projection still runs on MyGo's platform GPU backend.
 type bitmapSurface struct {
-	converter media.RGBAConverter
-	bitmap    *ui.Bitmap
-	frame     *media.Frame // owns the planes borrowed by UpdateYUV
-	serial    uint64
-	params    Parameters
-	aspect    float64
+	converter       media.RGBAConverter
+	bitmap          *ui.Bitmap
+	frame           *media.Frame // owns the planes borrowed by UpdateYUV
+	serial          uint64
+	params          Parameters
+	aspect          float64
+	pts             float64
+	ambientHistory  ambientHistory
+	ambientCanvases [2]*ui.Canvas
+	ambientIndex    int
 }
 
 func (r *bitmapSurface) Present(frame *media.Frame, p Parameters, width, height, scale float64) error {
@@ -97,6 +144,7 @@ func (r *bitmapSurface) Present(frame *media.Frame, p Parameters, width, height,
 		r.frame = held
 		r.serial = frame.ID()
 	}
+	r.pts = frame.PTS()
 	r.params = p
 	w, h := frame.Size()
 	r.aspect = float64(w) / float64(h)
@@ -107,15 +155,42 @@ func (r *bitmapSurface) Paint(p *ui.Painter, rect ui.Rect) {
 		return
 	}
 	if r.params.Mode == projection.Flat {
+		light := r.bitmap
+		if !r.params.DisableAmbientLight {
+			bw, bh := r.bitmap.Size()
+			alpha, changed := r.ambientHistory.step(r.serial, r.pts, r.params.Generation, image.Pt(bw, bh))
+			if r.ambientCanvases[0] == nil {
+				for i := range r.ambientCanvases {
+					r.ambientCanvases[i] = ui.NewCanvas(ambientSize, ambientSize)
+				}
+			}
+			if changed {
+				next := 1 - r.ambientIndex
+				r.ambientCanvases[next].Draw(p, func(cp *ui.Painter) {
+					ambientStepShader.Draw(cp, ui.Rect{W: ambientSize, H: ambientSize}, shader.Options{Images: [4]*ui.Bitmap{r.bitmap, r.ambientCanvases[r.ambientIndex].Bitmap()}, Uniforms: map[string]any{"Mix": alpha}})
+				})
+				r.ambientIndex = next
+			}
+			light = r.ambientCanvases[r.ambientIndex].Bitmap()
+		}
 		v := r.params.FlatView.Constrain(float64(rect.W/rect.H), r.aspect)
 		ex, ey := flatExtent(float64(rect.W/rect.H), r.aspect)
 		w, h := float32(v.Zoom/ex)*rect.W, float32(v.Zoom/ey)*rect.H
 		dst := ui.Rect{X: rect.X + rect.W/2 - float32(.5-v.X)*w,
 			Y: rect.Y + rect.H/2 - float32(.5-v.Y)*h, W: w, H: h}
-		p.Fill(rect, ui.RGB(0, 0, 0), 0)
+		if r.params.DisableAmbientLight {
+			r.ambientHistory = ambientHistory{}
+			p.Fill(rect, ui.RGB(0, 0, 0), 0)
+		} else {
+			ambientShader.Draw(p, rect, shader.Options{Images: [4]*ui.Bitmap{light}, Uniforms: map[string]any{
+				"Extent": [2]float32{float32(ex), float32(ey)}, "Pan": [2]float32{float32(v.X), float32(v.Y)},
+				"Zoom": v.Zoom, "Aspect": r.aspect,
+			}})
+		}
 		p.Clip(rect, 0, func() { p.ImageRegion(r.bitmap, ui.Rect{}, dst, ui.ImageOptions{}) })
 		return
 	}
+	r.ambientHistory = ambientHistory{}
 	fov := r.params.FOV
 	if fov <= 0 {
 		fov = 80
@@ -139,6 +214,12 @@ func (r *bitmapSurface) Capture(frame *media.Frame, p Parameters, width, height 
 		count = 1
 	}
 	aspect := float64(width) / float64(count) / float64(height)
+	var field ambientField
+	var spread ambientSpread
+	if p.Mode == projection.Flat && !p.DisableAmbientLight {
+		field = newAmbientField(source)
+		spread = flatAmbientSpread(p.FlatView, aspect, float64(sw)/float64(sh))
+	}
 	fov := p.FOV
 	if fov <= 0 {
 		fov = 80
@@ -159,21 +240,16 @@ func (r *bitmapSurface) Capture(frame *media.Frame, p Parameters, width, height 
 			at := y*out.Stride + x*4
 			if !visible {
 				out.Pix[at], out.Pix[at+1], out.Pix[at+2], out.Pix[at+3] = 20, 18, 15, 255
-				if p.Mode == projection.Flat {
+				if p.Mode == projection.Flat && !p.DisableAmbientLight {
+					out.SetRGBA(x, y, field.color(u, v, float64(sw)/float64(sh), image.Pt(x, y), spread))
+				} else if p.Mode == projection.Flat {
 					out.Pix[at], out.Pix[at+1], out.Pix[at+2] = 0, 0, 0
 				}
 				continue
 			}
-			sx, sy := projection.Clamp(u*float64(sw)-.5, 0, float64(sw-1)), projection.Clamp(v*float64(sh)-.5, 0, float64(sh-1))
-			x0, y0 := int(sx), int(sy)
-			x1, y1 := min(sw-1, x0+1), min(sh-1, y0+1)
-			fx, fy := sx-float64(x0), sy-float64(y0)
-			for channel := range 4 {
-				a := float64(source.Pix[y0*source.Stride+x0*4+channel])
-				b := float64(source.Pix[y0*source.Stride+x1*4+channel])
-				c := float64(source.Pix[y1*source.Stride+x0*4+channel])
-				d := float64(source.Pix[y1*source.Stride+x1*4+channel])
-				out.Pix[at+channel] = uint8((a*(1-fx)+b*fx)*(1-fy) + (c*(1-fx)+d*fx)*fy + .5)
+			sample := sampleRGBA(source, u, v)
+			for channel, value := range sample {
+				out.Pix[at+channel] = uint8(value + .5)
 			}
 		}
 	}
@@ -181,6 +257,8 @@ func (r *bitmapSurface) Capture(frame *media.Frame, p Parameters, width, height 
 }
 func (r *bitmapSurface) Clear() {
 	r.converter.Close()
+	r.ambientHistory = ambientHistory{}
+	r.ambientCanvases = [2]*ui.Canvas{}
 	r.bitmap = nil
 	r.frame.Close()
 	r.frame = nil

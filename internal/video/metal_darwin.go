@@ -14,6 +14,7 @@ import (
 	"github.com/foursmith/player/internal/apple"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/native"
+	"github.com/foursmith/player/internal/projection"
 )
 
 //go:embed projection.metal
@@ -27,7 +28,7 @@ type metalParameters struct {
 	Mode, Split, Portrait, RGBA                int32
 	Aspect, Width, Height, FOV                 float32
 	KR, KB, YOffset, YScale, UVOffset, UVScale float32
-	FlatX, FlatY, FlatZoom                     float32
+	FlatX, FlatY, FlatZoom, AmbientMix         float32
 }
 type cgSize struct {
 	_             structs.HostLayout
@@ -115,6 +116,10 @@ type metal struct {
 	mu                                            sync.Mutex
 	device, queue, pipeline, layer, view, capture objc.ID
 	cache                                         uintptr
+	ambientPipeline                               objc.ID
+	ambientTextures                               [2]objc.ID
+	ambientIndex                                  int
+	ambientHistory                                ambientHistory
 }
 
 func New(window uintptr) (Surface, error) {
@@ -163,6 +168,15 @@ func newMetal(view objc.ID) (_ *metal, err error) {
 	if r.pipeline == 0 {
 		return nil, metalError(nativeError, "pipeline creation")
 	}
+	ambientFragment := send(library, "newFunctionWithName:", send(class("NSString"), "stringWithUTF8String:", "fragmentAmbient"))
+	defer send(ambientFragment, "release")
+	send(descriptor, "setFragmentFunction:", ambientFragment)
+	send(send(send(descriptor, "colorAttachments"), "objectAtIndexedSubscript:", uintptr(0)), "setPixelFormat:", uintptr(115))
+	r.ambientPipeline = send(r.device, "newRenderPipelineStateWithDescriptor:error:", descriptor, &nativeError)
+	if r.ambientPipeline == 0 {
+		return nil, metalError(nativeError, "ambient pipeline creation")
+	}
+
 	if status := textureAPI.Cache(0, 0, r.device, 0, &r.cache); status != 0 {
 		return nil, fmt.Errorf("CVMetalTextureCacheCreate: %d", status)
 	}
@@ -190,7 +204,11 @@ func parameters(p Parameters, aspect, sourceAspect float64) metalParameters {
 	if p.Portrait {
 		portrait = 1
 	}
-	return metalParameters{Yaw: float32(p.View.Yaw), Pitch: float32(p.View.Pitch), Zoom: float32(p.View.Zoom), Forward: float32(p.View.Forward), Mode: int32(p.Mode), Split: int32(max(1, p.SplitCount)), Portrait: portrait, FOV: float32(fov), FlatX: float32(flat.X), FlatY: float32(flat.Y), FlatZoom: float32(flat.Zoom)}
+	ambientMix := float32(ambientDirect)
+	if p.DisableAmbientLight {
+		ambientMix = ambientDisabled
+	}
+	return metalParameters{Yaw: float32(p.View.Yaw), Pitch: float32(p.View.Pitch), Zoom: float32(p.View.Zoom), Forward: float32(p.View.Forward), Mode: int32(p.Mode), Split: int32(max(1, p.SplitCount)), Portrait: portrait, FOV: float32(fov), FlatX: float32(flat.X), FlatY: float32(flat.Y), FlatZoom: float32(flat.Zoom), AmbientMix: ambientMix}
 }
 func source(f *media.Frame) (uintptr, *image.RGBA, error) {
 	if p := f.Native(); p != nil {
@@ -207,7 +225,7 @@ func textureDescriptor(format uintptr, width, height int, usage uintptr) objc.ID
 	return desc
 }
 
-func (r *metal) render(f *media.Frame, p Parameters, output, drawable objc.ID, readback *image.RGBA) error {
+func (r *metal) render(f *media.Frame, p Parameters, output, drawable objc.ID, readback *image.RGBA, smooth bool) error {
 	buffer, img, err := source(f)
 	if err != nil {
 		return err
@@ -267,29 +285,39 @@ func (r *metal) render(f *media.Frame, p Parameters, output, drawable objc.ID, r
 		uvtex = ytex
 		params.RGBA = 1
 	}
-	pass := send(class("MTLRenderPassDescriptor"), "renderPassDescriptor")
-	attachment := send(send(pass, "colorAttachments"), "objectAtIndexedSubscript:", uintptr(0))
-	send(attachment, "setTexture:", output)
-	send(attachment, "setLoadAction:", uintptr(2))
-	send(attachment, "setStoreAction:", uintptr(1))
-	send(attachment, "setClearColor:", mtlColor{A: 1})
 	command := send(r.queue, "commandBuffer")
-	encoder := send(command, "renderCommandEncoderWithDescriptor:", pass)
-	if encoder == 0 {
+	ambient := ytex // A valid binding even for stateless captures and VR.
+	if smooth && p.Mode == projection.Flat && !p.DisableAmbientLight {
+		alpha, changed := r.ambientHistory.step(f.ID(), f.PTS(), p.Generation, image.Pt(sw, sh))
+		if changed {
+			if err := r.updateAmbient(command, params, ytex, uvtex, alpha); err != nil {
+				if luma != 0 {
+					apple.Core.Release(luma)
+				}
+				if chroma != 0 {
+					apple.Core.Release(chroma)
+				}
+				r.ambientHistory = ambientHistory{}
+				return err
+			}
+		}
+		ambient = r.ambientTextures[r.ambientIndex]
+		params.AmbientMix = 0
+	} else if smooth {
+		r.ambientHistory = ambientHistory{}
+	}
+
+	if err := r.encode(command, output, r.pipeline, params, [3]objc.ID{ytex, uvtex, ambient}); err != nil {
 		if luma != 0 {
 			apple.Core.Release(luma)
 		}
 		if chroma != 0 {
 			apple.Core.Release(chroma)
 		}
-		return errors.New("Metal render encoder unavailable")
+		r.ambientHistory = ambientHistory{}
+		return err
 	}
-	send(encoder, "setRenderPipelineState:", r.pipeline)
-	send(encoder, "setFragmentBytes:length:atIndex:", unsafe.Pointer(&params), unsafe.Sizeof(params), uintptr(0))
-	send(encoder, "setFragmentTexture:atIndex:", ytex, uintptr(0))
-	send(encoder, "setFragmentTexture:atIndex:", uvtex, uintptr(1))
-	send(encoder, "drawPrimitives:vertexStart:vertexCount:", uintptr(3), uintptr(0), uintptr(3))
-	send(encoder, "endEncoding")
+
 	if drawable != 0 {
 		send(command, "presentDrawable:", drawable)
 	}
@@ -344,7 +372,7 @@ func (r *metal) present(f *media.Frame, p Parameters, w, h, scale float64) (bool
 	if drawable == 0 {
 		return false, nil
 	}
-	err := r.render(f, p, send(drawable, "texture"), drawable, nil)
+	err := r.render(f, p, send(drawable, "texture"), drawable, nil, true)
 	return err == nil, err
 }
 func (r *metal) Capture(f *media.Frame, p Parameters, w, h int) (*image.RGBA, error) {
@@ -367,7 +395,7 @@ func (r *metal) Capture(f *media.Frame, p Parameters, w, h int) (*image.RGBA, er
 		return nil, errors.New("Metal capture texture unavailable")
 	}
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
-	if err := r.render(f, p, r.capture, 0, out); err != nil {
+	if err := r.render(f, p, r.capture, 0, out, false); err != nil {
 		return nil, err
 	}
 	for i := 0; i < len(out.Pix); i += 4 {
@@ -383,7 +411,7 @@ func (r *metal) Close() {
 	}
 	defer metalPool()()
 	send(r.layer, "removeFromSuperlayer")
-	for _, object := range []*objc.ID{&r.capture, &r.layer, &r.view, &r.pipeline, &r.queue, &r.device} {
+	for _, object := range []*objc.ID{&r.ambientTextures[0], &r.ambientTextures[1], &r.ambientPipeline, &r.capture, &r.layer, &r.view, &r.pipeline, &r.queue, &r.device} {
 		if *object != 0 {
 			send(*object, "release")
 			*object = 0
@@ -393,4 +421,51 @@ func (r *metal) Close() {
 		apple.Core.Release(r.cache)
 		r.cache = 0
 	}
+}
+
+// A pair of 7x7 half-float color fields keeps temporal filtering on the GPU;
+// no video-sized history texture or CPU readback is needed.
+func (r *metal) updateAmbient(command objc.ID, params metalParameters, ytex, uvtex objc.ID, alpha float32) error {
+	for i := range r.ambientTextures {
+		if r.ambientTextures[i] == 0 {
+			r.ambientTextures[i] = send(r.device, "newTextureWithDescriptor:", textureDescriptor(115, ambientSize, ambientSize, 5))
+			if r.ambientTextures[i] == 0 {
+				return errors.New("Metal ambient texture unavailable")
+			}
+		}
+	}
+	next := 1 - r.ambientIndex
+	params.AmbientMix = alpha
+	if err := r.encode(command, r.ambientTextures[next], r.ambientPipeline, params, [3]objc.ID{ytex, uvtex, r.ambientTextures[r.ambientIndex]}); err != nil {
+		return err
+	}
+	r.ambientIndex = next
+	return nil
+}
+
+func (r *metal) encode(command, output, pipeline objc.ID, params metalParameters, textures [3]objc.ID) error {
+	pass := send(class("MTLRenderPassDescriptor"), "renderPassDescriptor")
+	attachment := send(send(pass, "colorAttachments"), "objectAtIndexedSubscript:", uintptr(0))
+	send(attachment, "setTexture:", output)
+	send(attachment, "setLoadAction:", uintptr(2))
+	send(attachment, "setStoreAction:", uintptr(1))
+	send(attachment, "setClearColor:", mtlColor{A: 1})
+	encoder := send(command, "renderCommandEncoderWithDescriptor:", pass)
+	if encoder == 0 {
+		return errors.New("Metal render encoder unavailable")
+	}
+	send(encoder, "setRenderPipelineState:", pipeline)
+	send(encoder, "setFragmentBytes:length:atIndex:", unsafe.Pointer(&params), unsafe.Sizeof(params), uintptr(0))
+	for i, texture := range textures {
+		send(encoder, "setFragmentTexture:atIndex:", texture, uintptr(i))
+	}
+	send(encoder, "drawPrimitives:vertexStart:vertexCount:", uintptr(3), uintptr(0), uintptr(3))
+	send(encoder, "endEncoding")
+	return nil
+}
+
+func (r *metal) Clear() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ambientHistory = ambientHistory{}
 }

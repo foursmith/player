@@ -97,10 +97,13 @@ type d3dSwapDesc struct {
 	Samples, Quality, Usage, Count, Scaling, Effect, Alpha, Flags uint32
 }
 
-var d3dShaders = sync.OnceValues(func() (code [2][]byte, err error) {
+var d3dShaders = sync.OnceValues(func() (code [3][]byte, err error) {
 	code[0], err = compileD3DShader("vertexMain", "vs_4_0")
 	if err == nil {
 		code[1], err = compileD3DShader("fragmentMain", "ps_4_0")
+	}
+	if err == nil {
+		code[2], err = compileD3DShader("fragmentAmbient", "ps_4_0")
 	}
 	return
 })

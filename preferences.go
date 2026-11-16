@@ -28,6 +28,7 @@ type preferences struct {
 	LibraryAutoRefresh     bool                `json:"libraryAutoRefresh"`
 	LibrarySort            int                 `json:"librarySort"`
 	LibraryFilter          int                 `json:"libraryFilter"`
+	AmbientLight           bool                `json:"ambientLight"`
 	SubtitlesEnabled       bool                `json:"subtitlesEnabled"`
 	RepeatMode             string              `json:"repeatMode"`
 	Locale                 string              `json:"locale"`
@@ -68,7 +69,7 @@ func defaultPreferences() preferences {
 		SplitCount: 2, PreferredSplitAspect: "1:1", FaceAutoCenter: true, ResumeAfterMovement: true,
 		VRDragSensitivity: 1, CenteringResumeDelay: 1, ProjectionAI: true,
 		ResumePlaybackPosition: true, RecordPlaybackHistory: true, RecentFilesEnabled: true,
-		SubtitlesEnabled: true, RepeatMode: "file", Locale: "en", Appearance: mygo.ThemeDark, LibraryAutoRefresh: true,
+		AmbientLight: true, SubtitlesEnabled: true, RepeatMode: "file", Locale: "en", Appearance: mygo.ThemeDark, LibraryAutoRefresh: true,
 		QuitOnWindowClose: true,
 	}
 }

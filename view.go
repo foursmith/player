@@ -25,8 +25,8 @@ func (a *application) render(c *ui.Context) {
 		}
 	}
 	state := a.player.Snapshot()
-	if state.URL == "" {
-		video.ReleaseFrame(a.surface)
+	if state.URL == "" && a.surface != nil {
+		a.surface.Clear()
 	}
 	a.usePlayerTheme(c, state.URL != "")
 	a.refreshFailedPlayback(state)

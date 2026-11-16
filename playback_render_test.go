@@ -35,6 +35,7 @@ func (s *countedVideoSurface) Present(frame *media.Frame, p video.Parameters, _,
 func (*countedVideoSurface) Capture(*media.Frame, video.Parameters, int, int) (*image.RGBA, error) {
 	return nil, nil
 }
+func (*countedVideoSurface) Clear() {}
 func (*countedVideoSurface) Close() {}
 
 func playbackRenderFixture(t *testing.T) string {

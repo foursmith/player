@@ -65,6 +65,8 @@
   "settings.portraitLayoutDescription": "横長の画面に並べる映像の最大数を設定します。",
   "settings.preferredSplitAspect": "優先する画面比率",
   "settings.preferredSplitAspectDescription": "分割時に正方形または縦長を優先します。",
+  "settings.ambientLight": "アンビエントライト",
+  "settings.ambientLightDescription": "2D 動画の色をウィンドウの端まで柔らかく広げます。",
   "settings.resumeLastVideo": "起動時に前回の動画を開く",
   "settings.resumeLastVideoDescription": "起動時に前回の動画と再生リストを復元します。DLNA 動画にも対応。",
   "settings.shortcutsTab": "ショートカット",

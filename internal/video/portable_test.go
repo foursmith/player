@@ -98,8 +98,9 @@ func TestPortableYUVFrameLifetimeAndModeSwitch(t *testing.T) {
 				t.Fatalf("YUV colors differ from swscale: got %v, want %v", got, expected)
 			}
 		}
-		if got := view.Image().RGBAAt(16, 0); got != (color.RGBA{A: 255}) {
-			t.Fatal("letterbox is not black", got)
+		bar := view.Image().RGBAAt(16, 7)
+		if bar.R == 0 || bar.R >= expected.R || bar.A != 255 {
+			t.Fatal("letterbox did not receive dimmed YUV light", bar)
 		}
 	}
 	owned := surface.frame.Clone()
@@ -211,10 +212,12 @@ func TestPortableFlatZoomPanAndLetterbox(t *testing.T) {
 				})
 			}, 88, 96)
 			out := view.Image()
+			field := newAmbientField(img)
+			spread := flatAmbientSpread(tc.view, 1, 2)
 			for y := 3; y < 80; y += 7 {
 				for x := 3; x < 80; x += 7 {
 					u, v, visible := tc.view.UV((float64(x)+.5)/80, (float64(y)+.5)/80, 1, 2)
-					want := color.RGBA{A: 255}
+					want := field.color(u, v, 2, image.Pt(4+x, 8+y), spread)
 					if visible {
 						want = img.RGBAAt(int(u*80), int(v*40))
 					}

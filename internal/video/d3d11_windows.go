@@ -12,6 +12,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/foursmith/player/internal/media"
 	"github.com/foursmith/player/internal/native"
+	"github.com/foursmith/player/internal/projection"
 )
 
 //go:embed projection.hlsl
@@ -45,6 +46,10 @@ type direct3d struct {
 	converter                                     media.RGBAConverter
 	fallback                                      bitmapSurface
 	failedOwner                                   uintptr
+	ambientFragment                               uintptr
+	ambientTextures, ambientViews, ambientTargets [2]uintptr
+	ambientIndex                                  int
+	ambientHistory                                ambientHistory
 }
 
 func New(window uintptr) (Surface, error) {
@@ -62,6 +67,9 @@ func (r *direct3d) releaseGPU() {
 	d3dFree(&r.views[0], &r.views[1], &r.input, &r.captureView, &r.capture, &r.staging,
 		&r.screenView, &r.visual, &r.target, &r.composition, &r.swap,
 		&r.vertex, &r.fragment, &r.constants, &r.sampler, &r.raster, &r.context, &r.device)
+	d3dFree(&r.ambientFragment, &r.ambientTextures[0], &r.ambientTextures[1], &r.ambientViews[0], &r.ambientViews[1], &r.ambientTargets[0], &r.ambientTargets[1])
+	r.ambientHistory = ambientHistory{}
+	r.ambientIndex = 0
 	r.owner, r.serial = 0, 0
 	r.inputDesc = d3dTextureDesc{}
 	r.screenSize, r.captureSize = image.Point{}, image.Point{}
@@ -104,6 +112,11 @@ func (r *direct3d) prepare(frame *media.Frame, texture media.D3D11Texture, hardw
 	if err := d3dCheck("create pixel shader", d3dCall(r.device, 15, uintptr(unsafe.Pointer(&fragment[0])), uintptr(len(fragment)), 0, uintptr(unsafe.Pointer(&r.fragment)))); err != nil {
 		return err
 	}
+	ambient := code[2]
+	if err := d3dCheck("create ambient shader", d3dCall(r.device, 15, uintptr(unsafe.Pointer(&ambient[0])), uintptr(len(ambient)), 0, uintptr(unsafe.Pointer(&r.ambientFragment)))); err != nil {
+		return err
+	}
+
 	buffer := d3dBufferDesc{Size: uint32(unsafe.Sizeof(d3dParameters{})), Bind: 4}
 	if err := d3dCheck("create parameters", d3dCall(r.device, 3, uintptr(unsafe.Pointer(&buffer)), 0, uintptr(unsafe.Pointer(&r.constants)))); err != nil {
 		return err
@@ -277,7 +290,7 @@ func (r *direct3d) parameters(frame *media.Frame, p Parameters, texture media.D3
 		Output: [4]float32{float32(w) / float32(h), float32(width), float32(height), float32(fov)},
 		Matrix: [4]float32{.299, .114, 16.0 / 255, 255.0 / 219},
 		Chroma: [4]float32{128.0 / 255, 255.0 / 224, float32(w) / float32(r.inputDesc.Width), float32(h) / float32(r.inputDesc.Height)},
-		Flat:   [4]float32{float32(flat.X), float32(flat.Y), float32(flat.Zoom), 0},
+		Flat:   [4]float32{float32(flat.X), float32(flat.Y), float32(flat.Zoom), ambientDirect},
 	}
 	switch texture.Colorspace {
 	case 1:
@@ -299,18 +312,42 @@ func (r *direct3d) parameters(frame *media.Frame, p Parameters, texture media.D3
 			params.Matrix[3], params.Chroma[1] = 65535.0/65472, 65535.0/65472
 		}
 	}
+	if p.DisableAmbientLight {
+		params.Flat[3] = ambientDisabled
+	}
+
 	return params
 }
 
-func (r *direct3d) draw(frame *media.Frame, p Parameters, texture media.D3D11Texture, hardware bool, view uintptr, width, height int) {
+func (r *direct3d) draw(frame *media.Frame, p Parameters, texture media.D3D11Texture, hardware bool, view uintptr, width, height int, smooth bool) error {
 	params := r.parameters(frame, p, texture, hardware, width, height)
+	views := [3]uintptr{r.views[0], r.views[1], 0}
+	if smooth && p.Mode == projection.Flat && !p.DisableAmbientLight {
+		w, h := frame.Size()
+		alpha, changed := r.ambientHistory.step(frame.ID(), frame.PTS(), p.Generation, image.Pt(w, h))
+		if changed {
+			if err := r.updateAmbient(params, alpha); err != nil {
+				r.ambientHistory = ambientHistory{}
+				return err
+			}
+		}
+		params.Flat[3] = 0
+		views[2] = r.ambientViews[r.ambientIndex]
+	} else if smooth {
+		r.ambientHistory = ambientHistory{}
+	}
+	r.drawPass(params, r.fragment, views, view, width, height)
+	return nil
+}
+
+func (r *direct3d) drawPass(params d3dParameters, fragment uintptr, views [3]uintptr, view uintptr, width, height int) {
 	d3dCall(r.context, 48, r.constants, 0, 0, uintptr(unsafe.Pointer(&params)), 0, 0)
 	d3dCall(r.context, 17, 0)
 	d3dCall(r.context, 24, 4) // triangle list, generated from SV_VertexID
 	d3dCall(r.context, 11, r.vertex, 0, 0)
-	d3dCall(r.context, 9, r.fragment, 0, 0)
+	d3dCall(r.context, 9, fragment, 0, 0)
 	d3dCall(r.context, 16, 0, 1, uintptr(unsafe.Pointer(&r.constants)))
-	d3dCall(r.context, 8, 0, 2, uintptr(unsafe.Pointer(&r.views[0])))
+	d3dCall(r.context, 8, 0, 3, uintptr(unsafe.Pointer(&views[0])))
 	d3dCall(r.context, 10, 0, 1, uintptr(unsafe.Pointer(&r.sampler)))
 	d3dCall(r.context, 43, r.raster)
 	viewport := d3dViewport{Width: float32(width), Height: float32(height), MaxDepth: 1}
@@ -318,8 +355,8 @@ func (r *direct3d) draw(frame *media.Frame, p Parameters, texture media.D3D11Tex
 	d3dCall(r.context, 33, 1, uintptr(unsafe.Pointer(&view)), 0)
 	d3dCall(r.context, 35, 0, 0, 0xffffffff)
 	d3dCall(r.context, 13, 3, 0) // Draw
-	var none [2]uintptr
-	d3dCall(r.context, 8, 0, 2, uintptr(unsafe.Pointer(&none[0])))
+	var none [3]uintptr
+	d3dCall(r.context, 8, 0, 3, uintptr(unsafe.Pointer(&none[0])))
 	d3dCall(r.context, 33, 0, 0, 0)
 }
 
@@ -352,7 +389,9 @@ func (r *direct3d) Present(frame *media.Frame, p Parameters, width, height, scal
 			err = r.screen(w, h)
 		}
 		if err == nil {
-			r.draw(frame, p, texture, hardware, r.screenView, w, h)
+			err = r.draw(frame, p, texture, hardware, r.screenView, w, h, true)
+		}
+		if err == nil {
 			err = d3dCheck("present", d3dCall(r.swap, 8, 0, 0))
 		}
 		if err == nil {
@@ -386,7 +425,9 @@ func (r *direct3d) Capture(frame *media.Frame, p Parameters, width, height int) 
 	if err := r.offscreen(width, height); err != nil {
 		return nil, err
 	}
-	r.draw(frame, p, texture, hardware, r.captureView, width, height)
+	if err := r.draw(frame, p, texture, hardware, r.captureView, width, height, false); err != nil {
+		return nil, err
+	}
 	d3dCall(r.context, 47, r.staging, r.capture) // GPU copy of the small rendered view.
 	var mapped d3dMapped
 	if err := d3dCheck("map capture", d3dCall(r.context, 14, r.staging, 0, 1, 0, uintptr(unsafe.Pointer(&mapped)))); err != nil {
@@ -414,3 +455,25 @@ func (r *direct3d) Clear() {
 func (r *direct3d) Close() { r.Clear() }
 
 var _ Surface = (*direct3d)(nil)
+
+func (r *direct3d) updateAmbient(params d3dParameters, alpha float32) error {
+	for i := range r.ambientTextures {
+		if r.ambientTextures[i] == 0 {
+			desc := d3dTextureDesc{Width: ambientSize, Height: ambientSize, Mips: 1, Array: 1, Format: 10, Samples: 1, Bind: 8 | 32}
+			if err := d3dCheck("create ambient texture", d3dCall(r.device, 5, uintptr(unsafe.Pointer(&desc)), 0, uintptr(unsafe.Pointer(&r.ambientTextures[i])))); err != nil {
+				return err
+			}
+			if err := d3dCheck("create ambient view", d3dCall(r.device, 7, r.ambientTextures[i], 0, uintptr(unsafe.Pointer(&r.ambientViews[i])))); err != nil {
+				return err
+			}
+			if err := d3dCheck("create ambient target", d3dCall(r.device, 9, r.ambientTextures[i], 0, uintptr(unsafe.Pointer(&r.ambientTargets[i])))); err != nil {
+				return err
+			}
+		}
+	}
+	next := 1 - r.ambientIndex
+	params.Flat[3] = alpha
+	r.drawPass(params, r.ambientFragment, [3]uintptr{r.views[0], r.views[1], r.ambientViews[r.ambientIndex]}, r.ambientTargets[next], ambientSize, ambientSize)
+	r.ambientIndex = next
+	return nil
+}

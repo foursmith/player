@@ -476,13 +476,13 @@ func (a *application) setRate(v float64) {
 }
 func (a *application) params(pip bool) video.Parameters {
 	if a.mode == projection.Flat {
-		return video.Parameters{Mode: a.mode, FlatView: a.flatView, SplitCount: 1}
+		return video.Parameters{Generation: a.lastGeneration, Mode: a.mode, DisableAmbientLight: !a.preferences.AmbientLight, FlatView: a.flatView, SplitCount: 1}
 	}
 	count := a.preferences.SplitCount
 	if pip {
 		count = 1
 	}
-	return video.Parameters{Mode: a.mode, View: a.view, SplitCount: count, Portrait: a.preferences.PreferredSplitAspect == "9:16"}
+	return video.Parameters{Generation: a.lastGeneration, Mode: a.mode, View: a.view, SplitCount: count, Portrait: a.preferences.PreferredSplitAspect == "9:16"}
 }
 func (a *application) togglePip() {
 	a.cancelStageInteraction()
