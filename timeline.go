@@ -67,7 +67,7 @@ func (a *application) timeline(c *ui.Context, state media.State) {
 		if fine {
 			width := a.timelineHandle.Bounds(c).W
 			keys := seekFilmstripKeys(a.scrubTime, state.Metadata, width)
-			ui.Box(c.Key("precise-filmstrip")).FillWidth().Height(seekFilmstripHeight).Radius(6).Clip().Background(ui.RGB(0, 0, 0)).Draw(func(p *ui.Painter, r ui.Rect) {
+			ui.Box(c.Key("precise-filmstrip")).FillWidth().Height(seekFilmstripHeight).Shrink(0).Radius(6).Clip().Draw(func(p *ui.Painter, r ui.Rect) {
 				a.paintFilmstrip(p, r, a.scrubTime, state.Metadata, width, keys)
 			})
 			return
@@ -303,12 +303,27 @@ func formatPreciseTime(at float64) string {
 
 const seekFilmstripHeight float32 = 64
 
+func seekPreviewAspect(width, height int) float32 {
+	if width > 0 && height > 0 {
+		return float32(width) / float32(height)
+	}
+	return 16.0 / 9.0
+}
+
 func seekFilmstripKeys(at float64, metadata media.Metadata, width float32) []int64 {
-	spacing := max(.5, 112*fineSecondsPerPixel(width, metadata))
+	secondsPerPixel := fineSecondsPerPixel(width, metadata)
+	frameWidth := seekFilmstripHeight * seekPreviewAspect(metadata.Width, metadata.Height)
+	spacing := max(1/max(1, metadata.FrameRate), float64(frameWidth)*secondsPerPixel)
 	center := math.Floor(at/spacing) * spacing
 	var keys []int64
-	for _, offset := range []float64{0, 1, -1, 2, -2, 3, -3, 4, -4} {
-		sample := center + offset*spacing
+	radius := int(math.Ceil(float64(width)*secondsPerPixel/spacing/2)) + 1
+	// Decode outward from the center: 0, +1, -1, +2, -2, ...
+	for index := 0; index <= 2*radius; index++ {
+		offset := (index + 1) / 2
+		if index%2 == 0 {
+			offset = -offset
+		}
+		sample := center + float64(offset)*spacing
 		if sample >= 0 && sample < metadata.Duration {
 			keys = append(keys, previewKey(sample, metadata, true))
 		}
@@ -351,7 +366,14 @@ func (a *application) timelinePreview(c *ui.Context, state media.State) {
 	}
 
 	width := min(float32(240), a.width-24)
-	pictureHeight := min(width*9/16, max(float32(24), bounds.Y-64))
+	aspect := seekPreviewAspect(state.Metadata.Width, state.Metadata.Height)
+	if bitmap, _ := a.seekPreviewImage(key); bitmap != nil {
+		w, h := bitmap.Size()
+		aspect = seekPreviewAspect(w, h)
+	}
+	// Fit the frame inside the preview limits without adding letterbox space.
+	pictureHeight := min(width/aspect, width*9/16, max(float32(24), bounds.Y-64))
+	pictureWidth := pictureHeight * aspect
 	height := pictureHeight + 44 // 14px hint, 22px caption, and two 4px gaps.
 	left := max(float32(12), min(a.width-width-12, bounds.X+x-width/2))
 	offset := left - (bounds.X + bounds.W/2 - width/2)
@@ -366,7 +388,7 @@ func (a *application) timelinePreview(c *ui.Context, state media.State) {
 			}
 			ui.Text(c, a.t(hint)).FontSize(9).TextColor(white(.85)).TextShadow(0, 1, 2, ui.RGBA(0, 0, 0, .8)).SingleLine().MinWidth(0).MaxWidth(width - 14)
 		})
-		ui.Box(c).Size(width, pictureHeight).Radius(6).Clip().Center().Children(func() { a.previewPicture(c, key) })
+		ui.Box(c).Size(pictureWidth, pictureHeight).Margin(0, ui.Auto).Children(func() { a.previewPicture(c, key) })
 		ui.Row(c).MaxWidth(width).Height(22).Margin(0, ui.Auto).Padding(3, 8).Gap(6).AlignItems(ui.Center).Radius(11).Background(ui.RGBA(0, 0, 0, .5)).Children(func() {
 			label := formatTime(at)
 			if fine {
@@ -383,7 +405,10 @@ func (a *application) timelinePreview(c *ui.Context, state media.State) {
 func (a *application) previewPicture(c *ui.Context, key int64) {
 	bitmap, ready := a.seekPreviewImage(key)
 	if bitmap != nil {
-		ui.Image(c.Key(bitmap), bitmap).Fill().Fit(ui.Contain).Background(ui.RGB(0, 0, 0)).Radius(6).Border(1, white(.65)).Transition(ui.ElementTransition{
+		ui.Box(c.Key(bitmap)).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+			p.Clip(r, 6, func() { p.Image(bitmap, r, ui.Contain) })
+			p.Stroke(r, white(.65), 6, 1)
+		}).Transition(ui.ElementTransition{
 			Duration: 120 * time.Millisecond,
 			Enter:    &ui.Motion{Opacity: 0},
 			Exit:     &ui.Motion{Opacity: 0},
@@ -400,9 +425,14 @@ func (a *application) paintFilmstrip(p *ui.Painter, r ui.Rect, at float64, m med
 	secondsPerPixel := fineSecondsPerPixel(trackWidth, m)
 	p.Clip(r, 6, func() {
 		for _, key := range keys {
-			x := r.X + r.W/2 + float32((float64(key)/1e6-at)/secondsPerPixel) - 56
 			if bitmap, _ := a.seekPreviewImage(key); bitmap != nil {
-				p.Image(bitmap, ui.Rect{X: x, Y: r.Y, W: 112, H: r.H}, ui.Contain)
+				w, h := bitmap.Size()
+				if w <= 0 || h <= 0 {
+					continue
+				}
+				width := r.H * float32(w) / float32(h)
+				x := r.X + r.W/2 + float32((float64(key)/1e6-at)/secondsPerPixel) - width/2
+				p.Image(bitmap, ui.Rect{X: x, Y: r.Y, W: width, H: r.H}, ui.Contain)
 			}
 		}
 	})

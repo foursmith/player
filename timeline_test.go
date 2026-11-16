@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -251,6 +252,105 @@ func TestTimelinePreviewLayoutsAcrossLocales(t *testing.T) {
 				writeUISnapshot(t, fmt.Sprintf("timeline-%s-%d-chapters.png", locale, size[0]), view)
 			})
 		}
+	}
+}
+
+func TestTimelinePreviewFitsVideoWithoutLetterboxing(t *testing.T) {
+	if err := loadAssets(); err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range [][2]int{{90, 160}, {160, 90}, {240, 100}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			img := image.NewRGBA(image.Rect(0, 0, size[0], size[1]))
+			draw.Draw(img, img.Bounds(), image.NewUniform(color.RGBA{R: 255, A: 255}), image.Point{}, draw.Src)
+			player := media.NewPlayer(nil)
+			defer player.Close()
+			a := &application{player: player, preferences: defaultPreferences(), seekPreviews: &seekPreviews{images: map[int64]seekPreviewImage{
+				300000000: {bitmap: ui.NewBitmap(img)},
+			}}}
+			state := media.State{Metadata: media.Metadata{Duration: 600, FrameRate: 25, Width: size[0], Height: size[1]}}
+			view := timelineTestView(t, a, state, 600, 420)
+			track, _ := view.Find(a.t("timeline.playbackPosition"))
+			view.Move(track.X+track.W/2, track.Y+12)
+			view.Advance(200 * time.Millisecond)
+			pixels := view.Image()
+			video := image.Rectangle{Min: image.Pt(600, 420)}
+			for y := 0; y < 420; y++ {
+				for x := 0; x < 600; x++ {
+					if p := pixels.RGBAAt(x, y); p.R < 10 && p.G < 10 && p.B < 10 {
+						t.Fatalf("black preview padding at (%d, %d): %v", x, y, p)
+					}
+					if p := pixels.RGBAAt(x, y); p.R == 255 && p.G == 0 && p.B == 0 {
+						video = video.Union(image.Rect(x, y, x+1, y+1))
+					}
+				}
+			}
+			if video.Empty() {
+				t.Fatal("video preview absent")
+			}
+			cx, cy := (video.Min.X+video.Max.X)/2, (video.Min.Y+video.Max.Y)/2
+			for _, p := range []image.Point{{video.Min.X - 4, cy}, {video.Max.X + 4, cy}, {cx, video.Min.Y - 4}, {cx, video.Max.Y + 4}} {
+				if pixel := pixels.RGBAAt(p.X, p.Y); pixel != (color.RGBA{R: 40, G: 51, B: 62, A: 255}) {
+					t.Fatalf("non-video space at %v: %v (video %v)", p, pixel, video)
+				}
+			}
+			writeUISnapshot(t, fmt.Sprintf("timeline-aspect-%dx%d.png", size[0], size[1]), view)
+		})
+	}
+}
+
+func TestPortraitFilmstripFillsWithVideoFrames(t *testing.T) {
+	metadata := media.Metadata{Duration: 600, FrameRate: 25, Width: 90, Height: 160}
+	keys := seekFilmstripKeys(150, metadata, 600)
+	img := image.NewRGBA(image.Rect(0, 0, 90, 160))
+	draw.Draw(img, img.Bounds(), image.NewUniform(color.RGBA{R: 255, A: 255}), image.Point{}, draw.Src)
+	bitmap := ui.NewBitmap(img)
+	a := &application{seekPreviews: &seekPreviews{images: map[int64]seekPreviewImage{}}}
+	for _, key := range keys {
+		a.seekPreviews.images[key] = seekPreviewImage{bitmap: bitmap}
+	}
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Box(c).Fill().Background(ui.Hex("#28333e")).Draw(func(p *ui.Painter, r ui.Rect) {
+			a.paintFilmstrip(p, r, 150, metadata, 600, keys)
+		})
+	}, 600, 64)
+	for x := 8; x < 592; x++ {
+		if x >= 298 && x <= 301 {
+			continue // The current-time marker overlays the frames.
+		}
+		if pixel := view.Image().RGBAAt(x, 32); pixel != (color.RGBA{R: 255, A: 255}) {
+			t.Fatalf("gap between portrait frames at x=%d: %v", x, pixel)
+		}
+	}
+	writeUISnapshot(t, "timeline-portrait-filmstrip.png", view)
+}
+
+func TestFilmstripPreservesWideFrameAtActualHeight(t *testing.T) {
+	for _, height := range []int{32, 64, 96} {
+		t.Run(fmt.Sprint(height), func(t *testing.T) {
+			img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+			draw.Draw(img, img.Bounds(), image.NewUniform(color.RGBA{R: 255, A: 255}), image.Point{}, draw.Src)
+			for _, edge := range []image.Rectangle{image.Rect(0, 0, 32, 180), image.Rect(288, 0, 320, 180)} {
+				draw.Draw(img, edge, image.NewUniform(color.RGBA{G: 255, A: 255}), image.Point{}, draw.Src)
+			}
+			a := &application{seekPreviews: &seekPreviews{images: map[int64]seekPreviewImage{
+				150000000: {bitmap: ui.NewBitmap(img)},
+			}}}
+			m := media.Metadata{Duration: 600, FrameRate: 25, Width: 320, Height: 180}
+			view := ui.NewTester(func(c *ui.Context) {
+				ui.Box(c).Fill().Background(ui.Hex("#28333e")).Draw(func(p *ui.Painter, r ui.Rect) {
+					a.paintFilmstrip(p, r, 150, m, 600, []int64{150000000})
+				})
+			}, 600, height)
+			width := float64(height) * 320 / 180
+			for _, side := range []float64{-1, 1} {
+				x := int(300 + side*width*.45)
+				if pixel := view.Image().RGBAAt(x, height/2); pixel.G < 240 || pixel.R > 15 {
+					t.Fatalf("wide frame edge was cropped or misplaced at height %d, x=%d: %v", height, x, pixel)
+				}
+			}
+			writeUISnapshot(t, fmt.Sprintf("timeline-wide-filmstrip-%d.png", height), view)
+		})
 	}
 }
 
